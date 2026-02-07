@@ -243,20 +243,6 @@ impl Relay {
                 }
             }
 
-            "close-stdin" => {
-                let params: StopSessionParams = match serde_json::from_value(params) {
-                    Ok(p) => p,
-                    Err(e) => return RpcResult::error(format!("invalid params: {}", e)),
-                };
-
-                tracing::debug!(session_id = %params.session_id, "closing stdin");
-
-                match session_manager.close_stdin(&params.session_id).await {
-                    Ok(()) => RpcResult::success(serde_json::json!({})),
-                    Err(e) => RpcResult::error(e.to_string()),
-                }
-            }
-
             _ => {
                 tracing::warn!(method = %method, "unknown RPC method");
                 RpcResult::error(format!("unknown method: {}", method))

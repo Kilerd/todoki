@@ -4,9 +4,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 
 use agent_client_protocol::RequestPermissionOutcome;
-use chrono::Utc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, Command};
+use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, mpsc};
 
 use crate::acp::{spawn_acp_session, AcpHandle};
@@ -19,19 +17,11 @@ pub struct SessionManager {
     safe_paths: Vec<String>,
 }
 
-/// Input mode for a session
-enum SessionInput {
-    /// Standard stdin for non-ACP processes
-    Stdin(Arc<Mutex<Option<ChildStdin>>>),
-    /// ACP handle for Claude-like agents
-    Acp(AcpHandle),
-}
-
 struct Session {
     agent_id: String,
     session_id: String,
     child: Arc<Mutex<Option<Child>>>,
-    input: SessionInput,
+    acp_handle: AcpHandle,
 }
 
 impl SessionManager {
@@ -41,37 +31,6 @@ impl SessionManager {
             output_tx,
             safe_paths,
         }
-    }
-
-    /// Check if command should use ACP mode
-    /// Note: Claude CLI does NOT support ACP protocol.
-    /// ACP is implemented by specialized programs like `agenthub-codex-acp`.
-    fn is_acp_command(command: &str) -> bool {
-        let cmd_name = Path::new(command)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or(command);
-        // Only these specific programs implement ACP protocol
-        matches!(cmd_name, "agenthub-codex-acp" | "codex-acp")
-    }
-
-    /// Check if command needs stdin closed immediately after spawn
-    /// Some commands (like `claude --print`) wait for EOF before processing
-    fn needs_immediate_stdin_close(command: &str, args: &[String]) -> bool {
-        let cmd_name = Path::new(command)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or(command);
-
-        // claude --print needs EOF to start processing
-        if cmd_name == "claude" && args.iter().any(|a| a == "--print" || a == "-p") {
-            // Only close stdin if there's a prompt in args (one-shot mode)
-            // If using stream-json input, we need to keep stdin open
-            let has_stream_input = args.iter().any(|a| a.contains("stream-json"));
-            return !has_stream_input;
-        }
-
-        false
     }
 
     /// Spawn a new session
@@ -96,9 +55,6 @@ impl SessionManager {
             tracing::error!(workdir = %workdir, "workdir does not exist");
             anyhow::bail!("workdir does not exist: {}", workdir);
         }
-
-        let use_acp = Self::is_acp_command(&params.command);
-        tracing::debug!(command = %params.command, use_acp = use_acp, "determined execution mode");
 
         tracing::debug!(
             command = %params.command,
@@ -144,89 +100,47 @@ impl SessionManager {
 
         let child_arc = Arc::new(Mutex::new(Some(child)));
 
-        // Create session with appropriate input mode
-        let session = if use_acp {
-            tracing::debug!(session_id = %params.session_id, "initializing ACP session");
-            // ACP mode: use agent-client-protocol
-            let stdout = stdout.ok_or_else(|| anyhow::anyhow!("no stdout for ACP"))?;
-            let stdin = stdin.ok_or_else(|| anyhow::anyhow!("no stdin for ACP"))?;
+        // Initialize ACP session
+        tracing::debug!(session_id = %params.session_id, "initializing ACP session");
+        let stdout = stdout.ok_or_else(|| anyhow::anyhow!("no stdout for ACP"))?;
+        let stdin = stdin.ok_or_else(|| anyhow::anyhow!("no stdin for ACP"))?;
 
-            tracing::debug!(session_id = %params.session_id, "calling spawn_acp_session");
-            let acp_handle = match spawn_acp_session(
-                self.output_tx.clone(),
-                params.agent_id.clone(),
-                params.session_id.clone(),
-                workdir.clone(),
-                stdout,
-                stdin,
-            )
-            .await
-            {
-                Ok(h) => h,
-                Err(e) => {
-                    tracing::error!(
-                        session_id = %params.session_id,
-                        error = %e,
-                        "failed to initialize ACP session"
-                    );
-                    return Err(e);
-                }
-            };
+        // stderr is not used in ACP mode
+        drop(stderr);
 
-            tracing::info!(
-                session_id = %params.session_id,
-                acp_session_id = %acp_handle.acp_session_id,
-                "ACP session initialized successfully"
-            );
-
-            Session {
-                agent_id: params.agent_id.clone(),
-                session_id: params.session_id.clone(),
-                child: child_arc.clone(),
-                input: SessionInput::Acp(acp_handle),
-            }
-        } else {
-            // Standard stdin mode
-            // Check if this is a one-shot command that needs stdin closed immediately
-            // (e.g., `claude --print "prompt"` waits for EOF before processing)
-            let needs_immediate_eof = Self::needs_immediate_stdin_close(&params.command, &params.args);
-
-            let stdin = if needs_immediate_eof {
-                tracing::debug!(session_id = %params.session_id, "closing stdin immediately for one-shot command");
-                // Drop stdin to send EOF
-                drop(stdin);
-                None
-            } else {
-                stdin
-            };
-
-            let stdin = Arc::new(Mutex::new(stdin));
-
-            // Spawn output readers for non-ACP mode
-            if let Some(stdout) = stdout {
-                self.spawn_output_reader(
-                    params.agent_id.clone(),
-                    params.session_id.clone(),
-                    "stdout",
-                    stdout,
+        tracing::debug!(session_id = %params.session_id, "calling spawn_acp_session");
+        let acp_handle = match spawn_acp_session(
+            self.output_tx.clone(),
+            params.agent_id.clone(),
+            params.session_id.clone(),
+            workdir.clone(),
+            stdout,
+            stdin,
+        )
+        .await
+        {
+            Ok(h) => h,
+            Err(e) => {
+                tracing::error!(
+                    session_id = %params.session_id,
+                    error = %e,
+                    "failed to initialize ACP session"
                 );
+                return Err(e);
             }
+        };
 
-            if let Some(stderr) = stderr {
-                self.spawn_output_reader(
-                    params.agent_id.clone(),
-                    params.session_id.clone(),
-                    "stderr",
-                    stderr,
-                );
-            }
+        tracing::info!(
+            session_id = %params.session_id,
+            acp_session_id = %acp_handle.acp_session_id,
+            "ACP session initialized successfully"
+        );
 
-            Session {
-                agent_id: params.agent_id.clone(),
-                session_id: params.session_id.clone(),
-                child: child_arc.clone(),
-                input: SessionInput::Stdin(stdin),
-            }
+        let session = Session {
+            agent_id: params.agent_id.clone(),
+            session_id: params.session_id.clone(),
+            child: child_arc.clone(),
+            acp_handle,
         };
 
         // Store session
@@ -253,54 +167,11 @@ impl SessionManager {
             .get(&params.session_id)
             .ok_or_else(|| anyhow::anyhow!("session not found: {}", params.session_id))?;
 
-        match &session.input {
-            SessionInput::Acp(handle) => {
-                // ACP mode: send as prompt
-                handle.prompt(params.input).await?;
-                Ok(())
-            }
-            SessionInput::Stdin(stdin) => {
-                // Standard stdin mode
-                let mut stdin_guard = stdin.lock().await;
-                if let Some(stdin_ref) = stdin_guard.as_mut() {
-                    stdin_ref.write_all(params.input.as_bytes()).await?;
-                    stdin_ref.flush().await?;
-
-                    // If input ends with EOF marker, close stdin
-                    if params.input.ends_with("\x04") || params.input.ends_with("<<EOF>>") {
-                        tracing::debug!(session_id = %params.session_id, "closing stdin (EOF marker)");
-                        *stdin_guard = None; // Drop the stdin to send EOF
-                    }
-                    Ok(())
-                } else {
-                    anyhow::bail!("session stdin closed")
-                }
-            }
-        }
+        session.acp_handle.prompt(params.input).await?;
+        Ok(())
     }
 
-    /// Close stdin to send EOF signal (for commands like `claude --print`)
-    pub async fn close_stdin(&self, session_id: &str) -> anyhow::Result<()> {
-        let sessions = self.sessions.lock().await;
-        let session = sessions
-            .get(session_id)
-            .ok_or_else(|| anyhow::anyhow!("session not found: {}", session_id))?;
-
-        match &session.input {
-            SessionInput::Stdin(stdin) => {
-                let mut stdin_guard = stdin.lock().await;
-                *stdin_guard = None; // Drop to send EOF
-                tracing::debug!(session_id = %session_id, "stdin closed");
-                Ok(())
-            }
-            SessionInput::Acp(_) => {
-                // ACP mode doesn't need explicit EOF
-                Ok(())
-            }
-        }
-    }
-
-    /// Respond to a permission request (ACP mode only)
+    /// Respond to a permission request
     pub async fn respond_permission(
         &self,
         session_id: &str,
@@ -312,35 +183,19 @@ impl SessionManager {
             .get(session_id)
             .ok_or_else(|| anyhow::anyhow!("session not found: {}", session_id))?;
 
-        match &session.input {
-            SessionInput::Acp(handle) => {
-                handle.respond_permission(request_id, outcome).await?;
-                Ok(())
-            }
-            SessionInput::Stdin(_) => {
-                anyhow::bail!("session is not in ACP mode")
-            }
-        }
+        session.acp_handle.respond_permission(request_id, outcome).await?;
+        Ok(())
     }
 
-    /// Cancel current operation in a session (ACP mode only)
+    /// Cancel current operation in a session
     pub async fn cancel(&self, session_id: &str) -> anyhow::Result<()> {
         let sessions = self.sessions.lock().await;
         let session = sessions
             .get(session_id)
             .ok_or_else(|| anyhow::anyhow!("session not found: {}", session_id))?;
 
-        match &session.input {
-            SessionInput::Acp(handle) => {
-                handle.cancel().await?;
-                Ok(())
-            }
-            SessionInput::Stdin(_) => {
-                // For non-ACP sessions, cancellation is not supported via this method
-                // Use stop() to kill the process instead
-                Ok(())
-            }
-        }
+        session.acp_handle.cancel().await?;
+        Ok(())
     }
 
     /// Stop a session
@@ -364,56 +219,6 @@ impl SessionManager {
                 let _ = child.kill().await;
             }
         }
-    }
-
-    fn spawn_output_reader<R>(
-        &self,
-        agent_id: String,
-        session_id: String,
-        stream: &'static str,
-        reader: R,
-    ) where
-        R: tokio::io::AsyncRead + Unpin + Send + 'static,
-    {
-        let output_tx = self.output_tx.clone();
-        let sid = session_id.clone();
-        tracing::debug!(session_id = %sid, stream = %stream, "spawning output reader");
-        tokio::spawn(async move {
-            tracing::debug!(session_id = %session_id, stream = %stream, "output reader started");
-            let mut lines = BufReader::new(reader).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                tracing::debug!(
-                    session_id = %session_id,
-                    stream = %stream,
-                    line_len = line.len(),
-                    "read line from process"
-                );
-                let seq = Utc::now().timestamp_nanos_opt().unwrap_or(0);
-                let ts = Utc::now().timestamp();
-
-                // Check if this looks like an ACP message
-                let actual_stream = if is_acp_message(&line) {
-                    "acp"
-                } else {
-                    stream
-                };
-
-                let msg = RelayToServer::AgentOutput {
-                    agent_id: agent_id.clone(),
-                    session_id: session_id.clone(),
-                    seq,
-                    ts,
-                    stream: actual_stream.to_string(),
-                    message: line,
-                };
-
-                if output_tx.send(msg).await.is_err() {
-                    tracing::error!(session_id = %session_id, "output channel closed");
-                    break;
-                }
-            }
-            tracing::debug!(session_id = %session_id, stream = %stream, "output reader ended");
-        });
     }
 
     fn spawn_exit_watcher(
@@ -512,30 +317,4 @@ fn normalize_path(path: &str) -> String {
         }
     }
     format!("/{}", parts.join("/"))
-}
-
-fn is_acp_message(line: &str) -> bool {
-    let trimmed = line.trim_start();
-    if !trimmed.starts_with('{') {
-        return false;
-    }
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
-        return false;
-    };
-    let Some(obj) = value.as_object() else {
-        return false;
-    };
-    let Some(ty) = obj.get("type").and_then(|v| v.as_str()) else {
-        return false;
-    };
-    matches!(
-        ty,
-        "tool_call"
-            | "tool_call_update"
-            | "agent_message"
-            | "agent_thought"
-            | "user_message"
-            | "permission_request"
-            | "run_status"
-    )
 }
