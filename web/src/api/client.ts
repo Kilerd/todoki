@@ -1,15 +1,26 @@
 import { Fetcher } from "openapi-typescript-fetch";
 import type { paths } from "./schema";
+import { getToken } from "@/lib/auth";
 
 const fetcher = Fetcher.for<paths>();
 
 fetcher.configure({
   baseUrl: import.meta.env.VITE_API_URL,
   init: {
-    headers: {
-      Authorization: `Bearer ${import.meta.env.VITE_USER_TOKEN}`,
-    },
+    headers: {},
   },
+  use: [
+    async (url, init, next) => {
+      const token = getToken();
+      if (token) {
+        init.headers = {
+          ...init.headers,
+          Authorization: `Bearer ${token}`,
+        };
+      }
+      return next(url, init);
+    },
+  ],
 });
 
 export default fetcher;

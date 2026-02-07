@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.deps import AuthDep
 from app.routers import report, tasks
 
 app = FastAPI(
@@ -22,6 +23,6 @@ app.include_router(report.router, prefix="/api")
 
 
 @app.get("/api")
-async def health_check() -> dict[str, str]:
+async def health_check(_: AuthDep) -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}
