@@ -1,0 +1,41 @@
+[package]
+name = "todoki"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Web framework
+gotcha = { git = "https://github.com/Kilerd/gotcha.git", branch = "main", features=["cors", "openapi"] }
+
+# Database ORM
+conservator = { git = "https://github.com/kilerd/conservator.git", branch = "main" }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-postgres = "0.7"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Configuration
+config = "0.14"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+thiserror = "1"
+
+# Async trait
+async-trait = "0.1"
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Environment variables
+dotenvy = "0.15"
