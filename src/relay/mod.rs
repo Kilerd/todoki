@@ -19,6 +19,8 @@ pub use manager::RelayManager;
 pub enum RelayToServer {
     /// Registration request
     Register {
+        /// Stable relay ID (e.g. hash of machine id)
+        relay_id: String,
         name: String,
         safe_paths: Vec<String>,
         #[serde(default)]

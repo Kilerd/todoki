@@ -1,7 +1,9 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
@@ -12,21 +14,79 @@ use crate::protocol::{
 };
 use crate::session::SessionManager;
 
+const RECONNECT_DELAY: Duration = Duration::from_secs(3);
+const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(60);
+const BUFFER_SIZE: usize = 4096;
+
 pub struct Relay {
     config: RelayConfig,
-    relay_id: Option<String>,
+    relay_id: String,
 }
 
 impl Relay {
     pub fn new(config: RelayConfig) -> Self {
-        Self {
-            config,
-            relay_id: None,
-        }
+        let relay_id = generate_relay_id();
+        Self { config, relay_id }
     }
 
     pub async fn run(&mut self) -> anyhow::Result<()> {
-        let url = self.config.server_url()?;
+        // Create a persistent buffer channel
+        // All session output goes here first, then forwarded to WebSocket
+        let (buffer_tx, buffer_rx) = mpsc::channel::<RelayToServer>(BUFFER_SIZE);
+
+        // Create session manager once - persists across reconnects
+        let session_manager = Arc::new(SessionManager::new(
+            buffer_tx.clone(),
+            self.config.safe_paths().to_vec(),
+        ));
+
+        let mut reconnect_delay = RECONNECT_DELAY;
+
+        // Wrap buffer_rx in Option so we can take ownership in the loop
+        let mut buffer_rx = Some(buffer_rx);
+
+        loop {
+            let rx = buffer_rx.take().expect("buffer_rx should be available");
+
+            match self
+                .run_connection(session_manager.clone(), buffer_tx.clone(), rx)
+                .await
+            {
+                ConnectionResult::Reconnect(returned_rx) => {
+                    // Put the receiver back for next iteration
+                    buffer_rx = Some(returned_rx);
+
+                    tracing::info!(
+                        delay_secs = reconnect_delay.as_secs(),
+                        "connection lost, reconnecting..."
+                    );
+                    tokio::time::sleep(reconnect_delay).await;
+                    reconnect_delay = std::cmp::min(reconnect_delay * 2, MAX_RECONNECT_DELAY);
+                }
+                ConnectionResult::ReconnectImmediate(returned_rx) => {
+                    // Successfully ran, reset delay and reconnect immediately
+                    buffer_rx = Some(returned_rx);
+                    reconnect_delay = RECONNECT_DELAY;
+                }
+                ConnectionResult::FatalError(e) => {
+                    tracing::error!(error = %e, "fatal error, stopping relay");
+                    session_manager.stop_all().await;
+                    return Err(e);
+                }
+            }
+        }
+    }
+
+    async fn run_connection(
+        &mut self,
+        session_manager: Arc<SessionManager>,
+        buffer_tx: mpsc::Sender<RelayToServer>,
+        mut buffer_rx: mpsc::Receiver<RelayToServer>,
+    ) -> ConnectionResult {
+        let url = match self.config.server_url() {
+            Ok(u) => u,
+            Err(e) => return ConnectionResult::FatalError(e.into()),
+        };
         tracing::info!(url = %url, "connecting to server");
 
         // Add token to URL if configured
@@ -40,64 +100,100 @@ impl Relay {
             url.clone()
         };
 
-        let (ws_stream, _) = connect_async(&connect_url).await?;
+        let (ws_stream, _) = match connect_async(&connect_url).await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!(error = %e, "failed to connect");
+                return ConnectionResult::Reconnect(buffer_rx);
+            }
+        };
         tracing::info!("connected to server");
 
-        let (mut write, mut read) = ws_stream.split();
+        let (mut ws_write, mut ws_read) = ws_stream.split();
 
-        // Channel for outbound messages
-        let (outbound_tx, mut outbound_rx) = mpsc::channel::<RelayToServer>(256);
-
-        // Create session manager
-        let session_manager = Arc::new(SessionManager::new(
-            outbound_tx.clone(),
-            self.config.safe_paths().to_vec(),
-        ));
-
-        // Send registration
+        // Send registration with stable relay ID
         let register_msg = RelayToServer::Register {
+            relay_id: self.relay_id.clone(),
             name: self.config.relay_name(),
             safe_paths: self.config.safe_paths().to_vec(),
             labels: self.config.labels().clone(),
         };
-        let msg_text = serde_json::to_string(&register_msg)?;
-        write.send(Message::Text(msg_text)).await?;
-        tracing::info!(name = %self.config.relay_name(), "registration sent");
+        let msg_text = match serde_json::to_string(&register_msg) {
+            Ok(t) => t,
+            Err(e) => return ConnectionResult::FatalError(e.into()),
+        };
+        if let Err(e) = ws_write.send(Message::Text(msg_text)).await {
+            tracing::error!(error = %e, "failed to send registration");
+            return ConnectionResult::Reconnect(buffer_rx);
+        }
+        tracing::info!(
+            relay_id = %self.relay_id,
+            name = %self.config.relay_name(),
+            "registration sent"
+        );
 
-        // Spawn outbound sender task
-        let outbound_handle = tokio::spawn(async move {
-            while let Some(msg) = outbound_rx.recv().await {
-                let msg_text = match serde_json::to_string(&msg) {
-                    Ok(text) => text,
-                    Err(e) => {
-                        tracing::error!(error = %e, "failed to serialize message");
-                        continue;
+        // Channel to signal shutdown to forwarder
+        let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
+
+        // Spawn forwarder task: buffer_rx -> WebSocket
+        let forwarder_handle = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    // Check for shutdown signal
+                    _ = shutdown_rx.recv() => {
+                        tracing::debug!("forwarder received shutdown signal");
+                        break;
                     }
-                };
-                if write.send(Message::Text(msg_text)).await.is_err() {
-                    break;
+                    // Forward messages from buffer to WebSocket
+                    msg = buffer_rx.recv() => {
+                        match msg {
+                            Some(msg) => {
+                                let msg_text = match serde_json::to_string(&msg) {
+                                    Ok(text) => text,
+                                    Err(e) => {
+                                        tracing::error!(error = %e, "failed to serialize message");
+                                        continue;
+                                    }
+                                };
+                                if ws_write.send(Message::Text(msg_text)).await.is_err() {
+                                    tracing::warn!("websocket send failed, stopping forwarder");
+                                    break;
+                                }
+                            }
+                            None => {
+                                // Buffer channel closed (shouldn't happen normally)
+                                tracing::warn!("buffer channel closed");
+                                break;
+                            }
+                        }
+                    }
                 }
             }
+            // Return the receiver so it can be reused
+            buffer_rx
         });
 
-        // Process inbound messages
-        while let Some(msg) = read.next().await {
-            let msg = match msg {
-                Ok(Message::Text(text)) => text,
-                Ok(Message::Ping(_)) => {
-                    let _ = outbound_tx
-                        .send(RelayToServer::Pong)
-                        .await;
+        // Process inbound messages from server
+        let mut was_registered = false;
+        let disconnect_reason = loop {
+            let msg = match ws_read.next().await {
+                Some(Ok(Message::Text(text))) => text,
+                Some(Ok(Message::Ping(_))) => {
+                    let _ = buffer_tx.send(RelayToServer::Pong).await;
                     continue;
                 }
-                Ok(Message::Close(_)) => {
+                Some(Ok(Message::Close(_))) => {
                     tracing::info!("server closed connection");
-                    break;
+                    break "server closed";
                 }
-                Ok(_) => continue,
-                Err(e) => {
-                    tracing::error!(error = %e, "websocket error");
-                    break;
+                Some(Ok(_)) => continue,
+                Some(Err(e)) => {
+                    tracing::warn!(error = %e, "websocket error, will reconnect");
+                    break "websocket error";
+                }
+                None => {
+                    tracing::info!("websocket stream ended");
+                    break "stream ended";
                 }
             };
 
@@ -111,7 +207,7 @@ impl Relay {
 
             match server_msg {
                 ServerToRelay::Registered { relay_id } => {
-                    self.relay_id = Some(relay_id.clone());
+                    was_registered = true;
                     tracing::info!(relay_id = %relay_id, "registered with server");
                 }
 
@@ -130,14 +226,12 @@ impl Relay {
                         "RPC handler returned, sending response"
                     );
                     let response = RelayToServer::RpcResponse { id: id.clone(), result };
-                    if let Err(e) = outbound_tx.send(response).await {
+                    if let Err(e) = buffer_tx.send(response).await {
                         tracing::error!(
                             request_id = %id,
                             error = %e,
-                            "failed to send RPC response"
+                            "failed to send RPC response to buffer"
                         );
-                    } else {
-                        tracing::debug!(request_id = %id, "RPC response sent");
                     }
                 }
 
@@ -172,17 +266,37 @@ impl Relay {
                 }
 
                 ServerToRelay::Ping => {
-                    let _ = outbound_tx.send(RelayToServer::Pong).await;
+                    let _ = buffer_tx.send(RelayToServer::Pong).await;
                 }
             }
+        };
+
+        tracing::info!(reason = disconnect_reason, "disconnected from server");
+
+        // Signal forwarder to stop
+        let _ = shutdown_tx.send(()).await;
+
+        // Wait for forwarder to return the receiver
+        let returned_rx = match forwarder_handle.await {
+            Ok(rx) => rx,
+            Err(e) => {
+                tracing::error!(error = %e, "forwarder task panicked");
+                // Create a new channel pair - we'll lose buffered messages
+                let (new_tx, new_rx) = mpsc::channel::<RelayToServer>(BUFFER_SIZE);
+                // Update session manager with new sender
+                // This is a fallback - shouldn't normally happen
+                drop(new_tx);
+                new_rx
+            }
+        };
+
+        tracing::info!("keeping sessions alive, buffered messages will be sent on reconnect");
+
+        if was_registered {
+            ConnectionResult::ReconnectImmediate(returned_rx)
+        } else {
+            ConnectionResult::Reconnect(returned_rx)
         }
-
-        // Cleanup: stop all sessions
-        tracing::info!("stopping all sessions");
-        session_manager.stop_all().await;
-
-        outbound_handle.abort();
-        Ok(())
     }
 
     async fn handle_rpc(
@@ -249,4 +363,34 @@ impl Relay {
             }
         }
     }
+}
+
+enum ConnectionResult {
+    /// Reconnect after delay, with the buffer receiver
+    Reconnect(mpsc::Receiver<RelayToServer>),
+    /// Reconnect immediately (was connected successfully), reset backoff
+    ReconnectImmediate(mpsc::Receiver<RelayToServer>),
+    /// Fatal error, stop relay
+    FatalError(anyhow::Error),
+}
+
+/// Generate a stable relay ID based on machine ID
+fn generate_relay_id() -> String {
+    let machine_id = match machine_uid::get() {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to get machine id, using hostname");
+            hostname::get()
+                .map(|h| h.to_string_lossy().to_string())
+                .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string())
+        }
+    };
+
+    let mut hasher = Sha256::new();
+    hasher.update(machine_id.as_bytes());
+    let hash = hasher.finalize();
+    let relay_id = hex::encode(&hash[..16]);
+
+    tracing::info!(relay_id = %relay_id, "generated stable relay ID");
+    relay_id
 }

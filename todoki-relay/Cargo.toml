@@ -43,6 +43,11 @@ url = "2"
 # Hostname
 hostname = "0.4"
 
+# Machine ID for stable relay ID
+machine-uid = "0.5"
+sha2 = "0.10"
+hex = "0.4"
+
 # ACP protocol for Claude Code
 agent-client-protocol = { version = "0.9.3", features = ["unstable"] }
 async-trait = "0.1"

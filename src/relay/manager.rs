@@ -45,15 +45,31 @@ impl RelayManager {
         }
     }
 
-    /// Register a new relay connection
+    /// Register a relay connection with a stable ID provided by the relay
+    /// If a relay with the same ID is already connected, it will be replaced (reconnect scenario)
     pub async fn register(
         &self,
+        relay_id: String,
         name: String,
         safe_paths: Vec<String>,
         labels: HashMap<String, String>,
         tx: mpsc::Sender<ServerToRelay>,
     ) -> String {
-        let relay_id = Uuid::new_v4().to_string();
+        let mut relays = self.relays.write().await;
+
+        // Check if this relay was previously connected (reconnect scenario)
+        let previous_sessions = if let Some(old_conn) = relays.remove(&relay_id) {
+            tracing::info!(
+                relay_id = %relay_id,
+                name = %old_conn.name,
+                "relay reconnecting, replacing old connection"
+            );
+            // Preserve active sessions from old connection
+            old_conn.active_sessions
+        } else {
+            HashSet::new()
+        };
+
         let connection = RelayConnection {
             relay_id: relay_id.clone(),
             name: name.clone(),
@@ -61,10 +77,9 @@ impl RelayManager {
             labels,
             tx,
             connected_at: Utc::now().timestamp(),
-            active_sessions: HashSet::new(),
+            active_sessions: previous_sessions,
         };
 
-        let mut relays = self.relays.write().await;
         relays.insert(relay_id.clone(), connection);
         tracing::info!(relay_id = %relay_id, name = %name, "relay registered");
 
