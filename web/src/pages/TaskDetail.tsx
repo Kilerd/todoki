@@ -1,134 +1,327 @@
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-} from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import dayjs from "dayjs";
+import {
+  Archive,
+  ArrowLeft,
+  Check,
+  Clock,
+  Inbox,
+  RotateCcw,
+  Send,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { useParams } from "react-router-dom";
-import NavBar from "../components/NavBar";
-import TaskItemDetail from "../components/TaskItemDetail";
-import { useTask, addComment } from "../hooks/useTasks";
-import type { TaskEventResponse } from "../api/schema";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  useTask,
+  addComment,
+  updateTaskStatus,
+  archiveTask,
+  unarchiveTask,
+  deleteTask,
+} from "../hooks/useTasks";
+import type { TaskEventResponse, TaskStatus } from "../api/schema";
 
-const STATUS_LABELS: Record<string, string> = {
-  backlog: "Backlog",
-  todo: "Todo",
-  "in-progress": "In Progress",
-  "in-review": "In Review",
-  done: "Done",
+const STATUS_CONFIG: Record<
+  string,
+  { label: string; color: string }
+> = {
+  backlog: { label: "Later", color: "bg-slate-100 text-slate-600" },
+  todo: { label: "Todo", color: "bg-blue-50 text-blue-600" },
+  "in-progress": { label: "In Progress", color: "bg-amber-50 text-amber-600" },
+  "in-review": { label: "In Review", color: "bg-purple-50 text-purple-600" },
+  done: { label: "Done", color: "bg-teal-50 text-teal-600" },
 };
 
-export const eventTypeConverter = (event: TaskEventResponse) => {
+function formatEvent(event: TaskEventResponse): string {
   switch (event.event_type) {
     case "Create":
       return "Created";
     case "StatusChange":
-      return `Status changed to: ${STATUS_LABELS[event.state ?? ""] ?? event.state}`;
+      return `→ ${STATUS_CONFIG[event.state ?? ""]?.label ?? event.state}`;
     case "Archived":
       return "Archived";
     case "Unarchived":
-      return "Unarchived";
+      return "Restored";
     case "CreateComment":
-      return "Comment added";
+      return "Commented";
     default:
       return event.event_type;
   }
-};
+}
 
 export default function TaskDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [comment, setComment] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   const { task, isLoading, refresh } = useTask(id!);
 
-  const onSubmit = async () => {
+  const onSubmitComment = async () => {
+    if (comment.trim() === "") return;
+    setIsSubmitting(true);
     await addComment(id!, comment);
-    toast({
-      title: "Comment submitted",
-      description: "Comment submitted successfully",
-    });
+    toast({ title: "Comment added" });
     setComment("");
+    setIsSubmitting(false);
     refresh();
   };
 
+  const handleStatusChange = async (status: TaskStatus) => {
+    await updateTaskStatus(id!, status);
+    refresh();
+  };
+
+  const handleArchive = async () => {
+    await archiveTask(id!);
+    refresh();
+  };
+
+  const handleUnarchive = async () => {
+    await unarchiveTask(id!);
+    refresh();
+  };
+
+  const handleDelete = async () => {
+    await deleteTask(id!);
+    navigate("/inbox");
+  };
+
+  if (isLoading || !task) {
+    return (
+      <div className="container mx-auto mt-12 max-w-3xl">
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 w-32 bg-slate-200 rounded" />
+          <div className="h-12 w-full bg-slate-200 rounded" />
+          <div className="h-64 w-full bg-slate-200 rounded" />
+        </div>
+      </div>
+    );
+  }
+
+  const isDone = task.status === "done";
+  const isBacklog = task.status === "backlog";
+  const isActive =
+    task.status === "todo" ||
+    task.status === "in-progress" ||
+    task.status === "in-review";
+
+  const statusConfig = STATUS_CONFIG[task.status];
+
   return (
-    <div className="container mt-12">
-      <NavBar />
+    <div className="container mx-auto mt-12 max-w-3xl pb-12">
+      {/* Back button */}
+      <button
+        onClick={() => navigate(-1)}
+        className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700 transition-colors duration-150 cursor-pointer mb-6"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back
+      </button>
 
-      {!isLoading && task && (
-        <div className="m-8">
-          <div className="text-xl">
-            <TaskItemDetail {...task} />
-          </div>
+      {/* Task Header */}
+      <div className="space-y-4">
+        {/* Status & Group badges */}
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              "inline-flex items-center px-2.5 py-1 text-xs font-medium rounded",
+              statusConfig.color
+            )}
+          >
+            {statusConfig.label}
+          </span>
+          {task.group && (
+            <Badge variant="outline" className="text-xs text-slate-500">
+              {task.group}
+            </Badge>
+          )}
+          {task.archived && (
+            <Badge variant="outline" className="text-xs text-orange-500 border-orange-200">
+              Archived
+            </Badge>
+          )}
+        </div>
 
-          <div className="grid grid-cols-12 gap-4 mt-8">
-            <div className="col-span-9">
-              {task.comments.length === 0 ? (
-                <div className="flex justify-center items-center my-8">
-                  <p className="text-sm text-muted-foreground">No Comments</p>
+        {/* Task content */}
+        <h1
+          className={cn(
+            "text-2xl font-medium text-slate-800",
+            (isDone || task.archived) && "line-through text-slate-400"
+          )}
+        >
+          {task.priority > 0 && (
+            <span className="text-red-500 mr-2">
+              {"!".repeat(task.priority)}
+            </span>
+          )}
+          {task.content}
+        </h1>
+
+        {/* Meta info */}
+        <div className="flex items-center gap-4 text-xs text-slate-400">
+          <span>Created {dayjs(task.create_at).format("MMM D, YYYY")}</span>
+          {task.comments.length > 0 && (
+            <span>{task.comments.length} comments</span>
+          )}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-2 mt-6 pt-6 border-t border-slate-100">
+        {isBacklog && !task.archived && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleStatusChange("todo")}
+            className="cursor-pointer"
+          >
+            <Inbox className="h-4 w-4 mr-1.5" />
+            Move to Inbox
+          </Button>
+        )}
+
+        {isActive && !task.archived && (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleStatusChange("backlog")}
+              className="cursor-pointer"
+            >
+              <Clock className="h-4 w-4 mr-1.5" />
+              Later
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => handleStatusChange("done")}
+              className="bg-teal-600 hover:bg-teal-700 cursor-pointer"
+            >
+              <Check className="h-4 w-4 mr-1.5" />
+              Done
+            </Button>
+          </>
+        )}
+
+        {isDone && !task.archived && (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleStatusChange("todo")}
+              className="cursor-pointer"
+            >
+              <RotateCcw className="h-4 w-4 mr-1.5" />
+              Reopen
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleArchive}
+              className="cursor-pointer"
+            >
+              <Archive className="h-4 w-4 mr-1.5" />
+              Archive
+            </Button>
+          </>
+        )}
+
+        {task.archived && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleUnarchive}
+            className="cursor-pointer"
+          >
+            <RotateCcw className="h-4 w-4 mr-1.5" />
+            Restore
+          </Button>
+        )}
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleDelete}
+          className="text-red-500 hover:text-red-600 hover:bg-red-50 ml-auto cursor-pointer"
+        >
+          <Trash2 className="h-4 w-4 mr-1.5" />
+          Delete
+        </Button>
+      </div>
+
+      {/* Activity Timeline */}
+      <div className="mt-8">
+        <h2 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-4">
+          Activity
+        </h2>
+        <div className="space-y-2">
+          {[...task.events].reverse().map((event, idx) => (
+            <div
+              key={event.id || idx}
+              className="flex items-center gap-3 text-sm"
+            >
+              <span className="text-xs text-slate-400 font-mono w-32 shrink-0">
+                {dayjs(event.datetime).format("MMM D, HH:mm")}
+              </span>
+              <span className="text-slate-600">{formatEvent(event)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Comments */}
+      <div className="mt-8">
+        <h2 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-4">
+          Comments ({task.comments.length})
+        </h2>
+
+        {task.comments.length === 0 ? (
+          <p className="text-sm text-slate-400 py-4">No comments yet</p>
+        ) : (
+          <div className="space-y-4">
+            {task.comments.map((c) => (
+              <div
+                key={c.id}
+                className="border border-slate-200 rounded-lg p-4 bg-white"
+              >
+                <div className="text-xs text-slate-400 mb-2">
+                  {dayjs(c.create_at).format("MMM D, YYYY HH:mm")}
                 </div>
-              ) : (
-                task.comments.map((comment) => (
-                  <Card key={comment.id} className="my-2">
-                    <CardHeader>
-                      <p className="text-sm text-muted-foreground">
-                        {dayjs(comment.create_at).format("YYYY-MM-DD HH:mm:ss")}
-                      </p>
-                    </CardHeader>
-                    <CardContent>
-                      <ReactMarkdown>{comment.content}</ReactMarkdown>
-                    </CardContent>
-                  </Card>
-                ))
-              )}
-
-              <Separator className="my-4" />
-
-              <Card>
-                <CardHeader>
-                  <p className="text-sm text-muted-foreground">New Comment</p>
-                </CardHeader>
-                <CardContent>
-                  <Textarea
-                    placeholder="Your comment"
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                  />
-                </CardContent>
-                <CardFooter className="flex justify-end">
-                  <Button disabled={comment.trim() === ""} onClick={onSubmit}>
-                    Submit
-                  </Button>
-                </CardFooter>
-              </Card>
-            </div>
-
-            <div className="col-span-3">
-              <div className="space-y-4">
-                {task.events.map((event, index) => (
-                  <div
-                    key={index}
-                    className="relative pl-6 pb-4 border-l-2 border-primary last:border-l-0"
-                  >
-                    <div className="absolute left-[-5px] w-2.5 h-2.5 rounded-full bg-primary" />
-                    <h4 className="font-medium">{eventTypeConverter(event)}</h4>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {dayjs(event.datetime).format("YYYY-MM-DD HH:mm:ss")}
-                    </p>
-                  </div>
-                ))}
+                <div className="prose prose-sm prose-slate max-w-none">
+                  <ReactMarkdown>{c.content}</ReactMarkdown>
+                </div>
               </div>
-            </div>
+            ))}
+          </div>
+        )}
+
+        {/* New comment */}
+        <div className="mt-6 border border-slate-200 rounded-lg p-4 bg-white">
+          <Textarea
+            placeholder="Write a comment..."
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            className="border-0 p-0 focus-visible:ring-0 resize-none min-h-[80px]"
+          />
+          <div className="flex justify-end mt-3">
+            <Button
+              size="sm"
+              disabled={comment.trim() === "" || isSubmitting}
+              onClick={onSubmitComment}
+              className="bg-teal-600 hover:bg-teal-700 cursor-pointer"
+            >
+              <Send className="h-4 w-4 mr-1.5" />
+              Send
+            </Button>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

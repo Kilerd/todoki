@@ -20,6 +20,26 @@ export async function fetchTasks() {
   return response.data;
 }
 
+export async function fetchInboxTasks() {
+  const token = getToken();
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/api/tasks/inbox`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  return response.json();
+}
+
+export async function fetchTodayDoneTasks() {
+  const token = getToken();
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/api/tasks/done/today`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  return response.json();
+}
+
 export async function fetchBacklogTasks() {
   const token = getToken();
   const response = await fetch(`${import.meta.env.VITE_API_URL}/api/tasks/backlog`, {
@@ -29,6 +49,7 @@ export async function fetchBacklogTasks() {
   });
   return response.json();
 }
+
 
 export async function fetchTask(taskId: string) {
   const response = await getTask({ task_id: taskId });
@@ -67,4 +88,17 @@ export async function deleteTask(taskId: string) {
 export async function addComment(taskId: string, content: string) {
   const response = await addCommentApi({ task_id: taskId, content });
   return response.data;
+}
+
+export async function fetchReport(period: "today" | "week" | "month" = "today") {
+  const token = getToken();
+  const response = await fetch(
+    `${import.meta.env.VITE_API_URL}/api/report?period=${period}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+  return response.json();
 }

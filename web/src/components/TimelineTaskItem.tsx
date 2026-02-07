@@ -122,7 +122,7 @@ export default function TimelineTaskItem(props: Props) {
           </DropdownMenu>
 
           <Link
-            to={`/tasks/${props.id}`}
+            to={`/inbox/${props.id}`}
             className={cn(
               "leading-7",
               isDone || props.archived ? "line-through text-gray-500" : ""

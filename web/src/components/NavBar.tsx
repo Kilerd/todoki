@@ -4,13 +4,13 @@ import { useTasks, useBacklogTasks } from "../hooks/useTasks";
 
 function NavBar() {
   const { tasks } = useTasks();
-  const { tasks: backlogTasks } = useBacklogTasks();
+  const { tasks: laterTasks } = useBacklogTasks();
 
   const todoTasksNumber = tasks.filter(
     (item) => item.archived === false && item.status === "todo"
   ).length;
 
-  const backlogTasksNumber = backlogTasks.filter(
+  const laterTasksNumber = laterTasks.filter(
     (item) => item.archived === false
   ).length;
 
@@ -19,36 +19,36 @@ function NavBar() {
       <div className="flex justify-between items-end m-4">
         <div className="flex items-end gap-4">
           <NavLink
-            to="/tasks"
+            to="/inbox"
             className={({ isActive }) =>
               `decoration-none ${
                 isActive ? "text-3xl text-gray-900" : " text-lg  text-gray-500"
               }`
             }
           >
-            {todoTasksNumber > 0 ? `Today (${todoTasksNumber})` : "Today"}
+            {todoTasksNumber > 0 ? `Inbox (${todoTasksNumber})` : "Inbox"}
           </NavLink>
 
           <NavLink
-            to="/backlog"
+            to="/later"
             className={({ isActive }) =>
               `decoration-none ${
                 isActive ? "text-3xl text-gray-900" : " text-lg  text-gray-500"
               }`
             }
           >
-            {backlogTasksNumber > 0 ? `Backlog (${backlogTasksNumber})` : "Backlog"}
+            {laterTasksNumber > 0 ? `Later (${laterTasksNumber})` : "Later"}
           </NavLink>
 
           <NavLink
-            to="/timeline"
+            to="/report"
             className={({ isActive }) =>
               `decoration-none ${
                 isActive ? "text-3xl text-gray-900" : " text-lg  text-gray-500"
               }`
             }
           >
-            Timeline
+            Report
           </NavLink>
         </div>
       </div>

@@ -23,7 +23,7 @@ export function useTasks() {
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await api.fetchTasks();
+      const data = await api.fetchInboxTasks();
       globalTasks = data;
       setTasks(data);
       notifyListeners();
@@ -101,15 +101,55 @@ export function useTask(taskId: string) {
   return { task, isLoading, refresh };
 }
 
+let globalTodayDoneTasks: TaskResponse[] = [];
+let globalTodayDoneListeners: Set<() => void> = new Set();
+
+function notifyTodayDoneListeners() {
+  globalTodayDoneListeners.forEach((listener) => listener());
+}
+
+export function useTodayDoneTasks() {
+  const [tasks, setTasks] = useState<TaskResponse[]>(globalTodayDoneTasks);
+  const [isLoading, setIsLoading] = useState(globalTodayDoneTasks.length === 0);
+
+  const refresh = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await api.fetchTodayDoneTasks();
+      globalTodayDoneTasks = data;
+      setTasks(data);
+      notifyTodayDoneListeners();
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const listener = () => setTasks(globalTodayDoneTasks);
+    globalTodayDoneListeners.add(listener);
+
+    refresh();
+
+    return () => {
+      globalTodayDoneListeners.delete(listener);
+    };
+  }, [refresh]);
+
+  return { tasks, isLoading, refresh };
+}
+
 async function refreshAllTasks() {
-  const [todayData, backlogData] = await Promise.all([
-    api.fetchTasks(),
+  const [inboxData, backlogData, todayDoneData] = await Promise.all([
+    api.fetchInboxTasks(),
     api.fetchBacklogTasks(),
+    api.fetchTodayDoneTasks(),
   ]);
-  globalTasks = todayData;
+  globalTasks = inboxData;
   globalBacklogTasks = backlogData;
+  globalTodayDoneTasks = todayDoneData;
   notifyListeners();
   notifyBacklogListeners();
+  notifyTodayDoneListeners();
 }
 
 // Re-export API functions with auto-refresh

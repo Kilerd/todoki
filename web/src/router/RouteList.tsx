@@ -1,19 +1,19 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
-import Today from "../pages/Today";
-import Backlog from "../pages/Backlog";
-import Timeline from "../pages/Timeline";
+import Inbox from "../pages/Inbox";
+import Later from "../pages/Later";
+import Report from "../pages/Report";
 import TaskDetail from "../pages/TaskDetail";
 import NotFoundTitle from "../pages/NotFound";
 
 function RouteList() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/tasks" replace />} />
-      <Route path="/tasks" element={<Today />} />
-      <Route path="/tasks/:id" element={<TaskDetail />} />
-      <Route path="/backlog" element={<Backlog />} />
-      <Route path="/timeline" element={<Timeline />} />
+      <Route path="/" element={<Navigate to="/inbox" replace />} />
+      <Route path="/inbox" element={<Inbox />} />
+      <Route path="/inbox/:id" element={<TaskDetail />} />
+      <Route path="/later" element={<Later />} />
+      <Route path="/report" element={<Report />} />
       <Route path="*" element={<NotFoundTitle />} />
     </Routes>
   );

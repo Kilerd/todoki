@@ -23,6 +23,13 @@ def get_tasks(_: AuthDep, db: DbSession) -> list[TaskResponse]:
     return [TaskResponse.model_validate(t) for t in tasks]
 
 
+@router.get("/inbox", response_model=list[TaskResponse])
+def get_inbox_tasks(_: AuthDep, db: DbSession) -> list[TaskResponse]:
+    """Get inbox tasks (todo, in-progress, in-review and not archived)."""
+    tasks = task_service.get_inbox_tasks(db)
+    return [TaskResponse.model_validate(t) for t in tasks]
+
+
 @router.get("/backlog", response_model=list[TaskResponse])
 def get_backlog_tasks(_: AuthDep, db: DbSession) -> list[TaskResponse]:
     """Get backlog tasks (status='backlog' and not archived)."""
@@ -41,6 +48,13 @@ def get_in_progress_tasks(_: AuthDep, db: DbSession) -> list[TaskResponse]:
 def get_done_tasks(_: AuthDep, db: DbSession) -> list[TaskResponse]:
     """Get done tasks (status='done' and not archived)."""
     tasks = task_service.get_done_tasks(db)
+    return [TaskResponse.model_validate(t) for t in tasks]
+
+
+@router.get("/done/today", response_model=list[TaskResponse])
+def get_today_done_tasks(_: AuthDep, db: DbSession) -> list[TaskResponse]:
+    """Get tasks marked done today (not archived)."""
+    tasks = task_service.get_today_done_tasks(db)
     return [TaskResponse.model_validate(t) for t in tasks]
 
 

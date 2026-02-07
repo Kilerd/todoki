@@ -28,6 +28,25 @@ def get_today_tasks(db: Session) -> list[Task]:
     return list(db.exec(stmt).all())
 
 
+def get_inbox_tasks(db: Session) -> list[Task]:
+    """
+    Get inbox tasks (todo, in-progress, in-review) and not archived.
+    """
+    stmt = (
+        select(Task)
+        .where(
+            Task.status.in_([
+                TaskStatus.TODO,
+                TaskStatus.IN_PROGRESS,
+                TaskStatus.IN_REVIEW,
+            ]),
+            Task.archived == False,
+        )
+        .order_by(Task.priority.desc(), Task.create_at.desc())
+    )
+    return list(db.exec(stmt).all())
+
+
 def get_backlog_tasks(db: Session) -> list[Task]:
     """
     Get tasks that are in 'backlog' status and not archived.
@@ -62,6 +81,28 @@ def get_done_tasks(db: Session) -> list[Task]:
         .order_by(Task.priority.desc(), Task.create_at.desc())
     )
     return list(db.exec(stmt).all())
+
+
+def get_today_done_tasks(db: Session) -> list[Task]:
+    """
+    Get tasks that were marked done today and not archived.
+    """
+    today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Find tasks that have a "done" status change event today
+    stmt = (
+        select(Task)
+        .join(TaskEvent)
+        .where(
+            Task.status == TaskStatus.DONE,
+            Task.archived == False,
+            TaskEvent.event_type == TaskEventType.STATUS_CHANGE,
+            TaskEvent.state == TaskStatus.DONE,
+            TaskEvent.datetime >= today_start,
+        )
+        .order_by(Task.priority.desc(), Task.create_at.desc())
+    )
+    return list(db.exec(stmt).unique().all())
 
 
 def get_task_by_id(db: Session, task_id: UUID) -> Task:
