@@ -22,11 +22,11 @@ def get_report(db: Session, period: ReportPeriod) -> ReportResponse:
 
     query = text(f"""
         SELECT
-            COUNT(*) FILTER (WHERE event_type = 'Create') AS created_count,
-            COUNT(*) FILTER (WHERE event_type = 'Done') AS done_count,
-            COUNT(*) FILTER (WHERE event_type = 'Archived') AS archived_count,
-            COUNT(*) FILTER (WHERE event_type = 'UpdateState') AS state_changes_count,
-            COUNT(*) FILTER (WHERE event_type = 'CreateComment') AS comments_count
+            COUNT(*) FILTER (WHERE event_type = 'CREATE') AS created_count,
+            COUNT(*) FILTER (WHERE event_type = 'STATUS_CHANGE' AND state = 'done') AS done_count,
+            COUNT(*) FILTER (WHERE event_type = 'ARCHIVED') AS archived_count,
+            COUNT(*) FILTER (WHERE event_type = 'STATUS_CHANGE') AS state_changes_count,
+            COUNT(*) FILTER (WHERE event_type = 'CREATE_COMMENT') AS comments_count
         FROM task_events
         WHERE {date_filter}
     """)

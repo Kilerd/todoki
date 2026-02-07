@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import NavBar from "../components/NavBar";
 import type { TaskResponse, TaskEventResponse } from "../api/schema";
-import { useTasks } from "../hooks/useTasks";
+import { useTasks, useTodayDoneTasks } from "../hooks/useTasks";
 import { fetchReport } from "../api/tasks";
 
 interface ReportSummary {
@@ -60,8 +60,14 @@ function formatEventDescription(event: TaskEventResponse): string {
   switch (event.event_type) {
     case "Create":
       return "Created";
-    case "StatusChange":
-      return `→ ${STATUS_LABELS[event.state ?? ""] ?? event.state}`;
+    case "StatusChange": {
+      const fromLabel = STATUS_LABELS[event.from_state ?? ""] ?? event.from_state;
+      const toLabel = STATUS_LABELS[event.state ?? ""] ?? event.state;
+      if (fromLabel && toLabel) {
+        return `${fromLabel} → ${toLabel}`;
+      }
+      return `→ ${toLabel}`;
+    }
     case "Archived":
       return "Archived";
     case "Unarchived":
@@ -101,12 +107,18 @@ function useReport() {
 
 export default function Report() {
   const { tasks } = useTasks();
+  const { tasks: doneTasks } = useTodayDoneTasks();
   const { report, isLoading: isReportLoading } = useReport();
 
   const activityByDay = useMemo(() => {
     const allEvents: ActivityEvent[] = [];
+    const seenTaskIds = new Set<string>();
 
-    (tasks ?? []).forEach((task) => {
+    // Combine inbox tasks and done tasks, avoiding duplicates
+    const allTasks = [...(tasks ?? []), ...(doneTasks ?? [])];
+    allTasks.forEach((task) => {
+      if (seenTaskIds.has(task.id)) return;
+      seenTaskIds.add(task.id);
       task.events.forEach((event) => {
         allEvents.push({ task, event });
       });
@@ -124,7 +136,7 @@ export default function Report() {
         date,
         events: grouped[date],
       }));
-  }, [tasks]);
+  }, [tasks, doneTasks]);
 
   return (
     <div className="container mx-auto mt-12 max-w-3xl">
