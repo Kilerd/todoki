@@ -56,32 +56,52 @@ function StatItem({
   );
 }
 
-function formatEventDescription(event: TaskEventResponse): string {
-  switch (event.event_type) {
-    case "Create":
-      return "Created";
-    case "StatusChange": {
-      const fromLabel = STATUS_LABELS[event.from_state ?? ""] ?? event.from_state;
-      const toLabel = STATUS_LABELS[event.state ?? ""] ?? event.state;
-      if (fromLabel && toLabel) {
-        return `${fromLabel} → ${toLabel}`;
-      }
-      return `→ ${toLabel}`;
-    }
-    case "Archived":
-      return "Archived";
-    case "Unarchived":
-      return "Restored";
-    case "CreateComment":
-      return "Commented";
-    default:
-      return event.event_type;
-  }
+interface TaskActivity {
+  task: TaskResponse;
+  events: TaskEventResponse[];
+  summary: string;
+  lastEventTime: string;
 }
 
-interface ActivityEvent {
-  task: TaskResponse;
-  event: TaskEventResponse;
+function summarizeTaskActivity(events: TaskEventResponse[]): string {
+  const sorted = sortBy(events, (e) => e.datetime);
+  const parts: string[] = [];
+
+  const created = sorted.some((e) => e.event_type === "Create");
+  const archived = sorted.some((e) => e.event_type === "Archived");
+  const unarchived = sorted.some((e) => e.event_type === "Unarchived");
+  const commentCount = sorted.filter((e) => e.event_type === "CreateComment").length;
+
+  // Build status flow from StatusChange events
+  const statusChanges = sorted.filter((e) => e.event_type === "StatusChange");
+  const statusFlow: string[] = [];
+
+  if (created) {
+    statusFlow.push("Created");
+  }
+
+  statusChanges.forEach((e) => {
+    const toLabel = STATUS_LABELS[e.state ?? ""] ?? e.state;
+    if (toLabel && statusFlow[statusFlow.length - 1] !== toLabel) {
+      statusFlow.push(toLabel);
+    }
+  });
+
+  if (statusFlow.length > 0) {
+    parts.push(statusFlow.join(" → "));
+  }
+
+  if (archived) {
+    parts.push("Archived");
+  }
+  if (unarchived) {
+    parts.push("Restored");
+  }
+  if (commentCount > 0) {
+    parts.push(`${commentCount} comment${commentCount > 1 ? "s" : ""}`);
+  }
+
+  return parts.join(" · ") || "Activity";
 }
 
 function useReport() {
@@ -110,32 +130,48 @@ export default function Report() {
   const { tasks: doneTasks } = useTodayDoneTasks();
   const { report, isLoading: isReportLoading } = useReport();
 
-  const activityByDay = useMemo(() => {
-    const allEvents: ActivityEvent[] = [];
+  const todayActivity = useMemo(() => {
     const seenTaskIds = new Set<string>();
+    const today = dayjs().format("YYYY-MM-DD");
 
     // Combine inbox tasks and done tasks, avoiding duplicates
-    const allTasks = [...(tasks ?? []), ...(doneTasks ?? [])];
-    allTasks.forEach((task) => {
-      if (seenTaskIds.has(task.id)) return;
+    const allTasks = [...(tasks ?? []), ...(doneTasks ?? [])].filter((task) => {
+      if (seenTaskIds.has(task.id)) return false;
       seenTaskIds.add(task.id);
-      task.events.forEach((event) => {
-        allEvents.push({ task, event });
-      });
+      return true;
     });
 
-    const sorted = sortBy(allEvents, (e) => e.event.datetime).reverse();
+    // Get today's events grouped by task
+    const taskEventsMap: Record<string, { task: TaskResponse; events: TaskEventResponse[] }> = {};
 
-    const grouped = groupBy(sorted, (e) =>
-      dayjs(e.event.datetime).format("YYYY-MM-DD")
+    allTasks.forEach((task) => {
+      const todayEvents = task.events.filter(
+        (event) => dayjs(event.datetime).format("YYYY-MM-DD") === today
+      );
+      if (todayEvents.length > 0) {
+        taskEventsMap[task.id] = { task, events: todayEvents };
+      }
+    });
+
+    // Convert to activities with summaries
+    const taskActivities: TaskActivity[] = Object.values(taskEventsMap).map(
+      ({ task, events }) => {
+        const sorted = sortBy(events, (e) => e.datetime);
+        return {
+          task,
+          events,
+          summary: summarizeTaskActivity(events),
+          lastEventTime: sorted[sorted.length - 1]?.datetime ?? "",
+        };
+      }
     );
 
-    return sortBy(Object.keys(grouped), (d) => d)
-      .reverse()
-      .map((date) => ({
-        date,
-        events: grouped[date],
-      }));
+    // Group by task group
+    const byGroup = groupBy(taskActivities, (a) => a.task.group || "default");
+    return sortBy(Object.keys(byGroup)).map((groupName) => ({
+      groupName,
+      activities: sortBy(byGroup[groupName], (a) => a.lastEventTime).reverse(),
+    }));
   }, [tasks, doneTasks]);
 
   return (
@@ -174,55 +210,39 @@ export default function Report() {
         </section>
 
         {/* Activity Log */}
-        <section>
-          <h2 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-4">
-            Activity
-          </h2>
-
-          <div className="space-y-6">
-            {activityByDay.map((group) => (
-              <div key={group.date}>
-                <div className="flex items-center gap-3 mb-3">
-                  <span className="text-sm font-medium text-slate-700">
-                    {dayjs(group.date).format("ddd, MMM D")}
-                  </span>
-                  <div className="flex-1 h-px bg-slate-100" />
-                  <span className="text-xs text-slate-400">
-                    {group.events.length} events
+        {todayActivity.map((group) => (
+          <section key={group.groupName}>
+            <h2 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-4">
+              {group.groupName} activity
+            </h2>
+            <div className="space-y-1">
+              {group.activities.map((activity) => (
+                <div
+                  key={activity.task.id}
+                  className="flex items-center gap-3 py-1.5 rounded hover:bg-slate-50 transition-colors"
+                >
+                  <Link
+                    to={`/inbox/${activity.task.id}`}
+                    className="text-sm text-slate-700 hover:text-teal-600 transition-colors duration-150 truncate flex-1 cursor-pointer"
+                  >
+                    {activity.task.content}
+                  </Link>
+                  <span className="text-xs text-slate-500 shrink-0">
+                    {activity.summary}
                   </span>
                 </div>
+              ))}
+            </div>
+          </section>
+        ))}
 
-                <div className="space-y-1 pl-1">
-                  {group.events.map((item, idx) => (
-                    <div
-                      key={`${item.event.id}-${idx}`}
-                      className="flex items-baseline gap-3 py-1.5 group"
-                    >
-                      <span className="text-xs text-slate-400 font-mono w-14 shrink-0">
-                        {dayjs(item.event.datetime).format("HH:mm")}
-                      </span>
-                      <Link
-                        to={`/inbox/${item.task.id}`}
-                        className="text-sm text-slate-700 hover:text-teal-600 transition-colors duration-150 truncate cursor-pointer"
-                      >
-                        {item.task.content}
-                      </Link>
-                      <span className="text-xs text-slate-400 shrink-0">
-                        {formatEventDescription(item.event)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-
-            {activityByDay.length === 0 && (
-              <div className="text-center py-12 text-slate-400">
-                No activity yet
-              </div>
-            )}
-          </div>
-        </section>
+        {todayActivity.length === 0 && (
+          <section>
+            <div className="text-center py-12 text-slate-400">
+              No activity today
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );
