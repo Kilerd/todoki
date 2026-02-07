@@ -1,0 +1,85 @@
+name: Snapshot Build
+
+on:
+  push:
+
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  GCP_PROJECT: your-project-id  # 替换为您的 GCP 项目 ID
+  GCP_REGION: asia-east1       # 替换为您的 Cloud Run 区域
+  SERVICE_NAME: your-service-name # 替换为您的 Cloud Run 服务名称
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+         # 登录到 Docker Hub
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+      
+      - name: Extract metadata (tags, labels) for Docker Hub
+        id: meta-dockerhub
+        uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
+        with:
+          images: docker.io/nobodyfldka7890r23lk/iroenmrqejrlnqjl
+
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
+        with:
+          context: ./api
+          push: true
+          tags: |
+            ${{ steps.meta-dockerhub.outputs.tags }}
+            ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      # 新增 GCP 部署步骤
+      - name: Google Auth
+        id: auth
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+
+      - name: Deploy to Cloud Run
+        run: |
+          # 获取最新推送的镜像 digest
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' docker.io/nobodyfldka7890r23lk/iroenmrqejrlnqjl:latest)
+          
+          # 部署到 Cloud Run
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image=$DIGEST \
+            --project=${{ env.GCP_PROJECT }} \
+            --region=${{ env.GCP_REGION }} \
+            --platform=managed \
+            --allow-unauthenticated

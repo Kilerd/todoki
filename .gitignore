@@ -1,0 +1,15 @@
+.DS_Store
+.idea
+.env
+.fleet
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+*.egg-info/
+dist/
+build/
+.ruff_cache/
+.pytest_cache/
