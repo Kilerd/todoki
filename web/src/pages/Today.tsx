@@ -47,7 +47,10 @@ function Today() {
   }, [tasks]);
 
   const handleNewTask = async () => {
-    await createTask(parsedTask);
+    await createTask({
+      ...parsedTask,
+      group: parsedTask.group ?? null,
+    });
     setNewTaskText("");
   };
 

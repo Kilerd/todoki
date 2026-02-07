@@ -1,5 +1,4 @@
-from sqlalchemy.orm import DeclarativeBase
+from sqlmodel import SQLModel
 
-
-class Base(DeclarativeBase):
-    pass
+# Re-export SQLModel as Base for compatibility
+Base = SQLModel

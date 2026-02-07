@@ -1,16 +1,22 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlmodel import Session, select, text
 
 from app.core.exceptions import InvalidStatesError, ResourceNotFoundError
-from app.models.task import Task, TaskComment, TaskEvent, TaskEventType, TaskType
-from app.schemas.task import TaskCreate, TaskStatusUpdate, TaskUpdate
+from app.models.task import (
+    Task,
+    TaskComment,
+    TaskCreate,
+    TaskEvent,
+    TaskEventType,
+    TaskStatusUpdate,
+    TaskType,
+    TaskUpdate,
+)
 
 
-async def get_today_tasks(db: AsyncSession) -> list[Task]:
+def get_today_tasks(db: Session) -> list[Task]:
     """
     Get tasks that are either:
     - Not done and not archived
@@ -30,34 +36,24 @@ async def get_today_tasks(db: AsyncSession) -> list[Task]:
               (NOW() AT TIME ZONE 'Asia/Hong_Kong')::date
     """)
 
-    result = await db.execute(query)
+    result = db.exec(query)
     task_ids = [row[0] for row in result.fetchall()]
 
     if not task_ids:
         return []
 
-    stmt = (
-        select(Task)
-        .options(selectinload(Task.events), selectinload(Task.comments))
-        .where(Task.id.in_(task_ids))
-        .order_by(Task.priority.desc(), Task.create_at.desc())
-    )
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
+    stmt = select(Task).where(Task.id.in_(task_ids)).order_by(Task.priority.desc(), Task.create_at.desc())
+    return list(db.exec(stmt).all())
 
 
-async def get_task_by_id(db: AsyncSession, task_id: UUID) -> Task:
-    stmt = (
-        select(Task).options(selectinload(Task.events), selectinload(Task.comments)).where(Task.id == task_id)
-    )
-    result = await db.execute(stmt)
-    task = result.scalar_one_or_none()
+def get_task_by_id(db: Session, task_id: UUID) -> Task:
+    task = db.get(Task, task_id)
     if not task:
         raise ResourceNotFoundError(f"Task {task_id} not found")
     return task
 
 
-async def create_task(db: AsyncSession, payload: TaskCreate) -> Task:
+def create_task(db: Session, payload: TaskCreate) -> Task:
     current_state = None
     if payload.task_type == TaskType.STATEFUL:
         states = payload.states or []
@@ -77,7 +73,8 @@ async def create_task(db: AsyncSession, payload: TaskCreate) -> Task:
         states=payload.states,
     )
     db.add(task)
-    await db.flush()
+    db.commit()
+    db.refresh(task)
 
     event = TaskEvent(
         task_id=task.id,
@@ -85,13 +82,14 @@ async def create_task(db: AsyncSession, payload: TaskCreate) -> Task:
         datetime=datetime.now(UTC),
     )
     db.add(event)
-    await db.flush()
+    db.commit()
+    db.refresh(task)
 
     return task
 
 
-async def update_task(db: AsyncSession, task_id: UUID, payload: TaskUpdate) -> Task:
-    task = await get_task_by_id(db, task_id)
+def update_task(db: Session, task_id: UUID, payload: TaskUpdate) -> Task:
+    task = get_task_by_id(db, task_id)
 
     current_state: str | None = None
     if payload.states:
@@ -110,12 +108,14 @@ async def update_task(db: AsyncSession, task_id: UUID, payload: TaskUpdate) -> T
     task.current_state = current_state
     task.task_type = task_type
 
-    await db.flush()
+    db.add(task)
+    db.commit()
+    db.refresh(task)
     return task
 
 
-async def update_task_status(db: AsyncSession, task_id: UUID, payload: TaskStatusUpdate) -> Task:
-    task = await get_task_by_id(db, task_id)
+def update_task_status(db: Session, task_id: UUID, payload: TaskStatusUpdate) -> Task:
+    task = get_task_by_id(db, task_id)
 
     if task.task_type == TaskType.TODO:
         is_done = payload.status == "Done"
@@ -157,12 +157,14 @@ async def update_task_status(db: AsyncSession, task_id: UUID, payload: TaskStatu
             )
             db.add(done_event)
 
-    await db.flush()
+    db.add(task)
+    db.commit()
+    db.refresh(task)
     return task
 
 
-async def archive_task(db: AsyncSession, task_id: UUID) -> Task:
-    task = await get_task_by_id(db, task_id)
+def archive_task(db: Session, task_id: UUID) -> Task:
+    task = get_task_by_id(db, task_id)
     task.archived = True
 
     event = TaskEvent(
@@ -171,12 +173,14 @@ async def archive_task(db: AsyncSession, task_id: UUID) -> Task:
         datetime=datetime.now(UTC),
     )
     db.add(event)
-    await db.flush()
+    db.add(task)
+    db.commit()
+    db.refresh(task)
     return task
 
 
-async def unarchive_task(db: AsyncSession, task_id: UUID) -> Task:
-    task = await get_task_by_id(db, task_id)
+def unarchive_task(db: Session, task_id: UUID) -> Task:
+    task = get_task_by_id(db, task_id)
     task.archived = False
 
     event = TaskEvent(
@@ -185,18 +189,20 @@ async def unarchive_task(db: AsyncSession, task_id: UUID) -> Task:
         datetime=datetime.now(UTC),
     )
     db.add(event)
-    await db.flush()
+    db.add(task)
+    db.commit()
+    db.refresh(task)
     return task
 
 
-async def delete_task(db: AsyncSession, task_id: UUID) -> None:
-    task = await get_task_by_id(db, task_id)
-    await db.delete(task)
-    await db.flush()
+def delete_task(db: Session, task_id: UUID) -> None:
+    task = get_task_by_id(db, task_id)
+    db.delete(task)
+    db.commit()
 
 
-async def add_task_comment(db: AsyncSession, task_id: UUID, content: str) -> TaskComment:
-    task = await get_task_by_id(db, task_id)
+def add_task_comment(db: Session, task_id: UUID, content: str) -> TaskComment:
+    task = get_task_by_id(db, task_id)
 
     comment = TaskComment(
         task_id=task.id,
@@ -204,5 +210,6 @@ async def add_task_comment(db: AsyncSession, task_id: UUID, content: str) -> Tas
         content=content,
     )
     db.add(comment)
-    await db.flush()
+    db.commit()
+    db.refresh(comment)
     return comment

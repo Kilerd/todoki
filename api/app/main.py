@@ -1,8 +1,8 @@
+import subprocess
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from alembic import command
-from alembic.config import Config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -10,20 +10,13 @@ from app.deps import AuthDep
 from app.routers import report, tasks
 
 
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-
-
 def run_migrations() -> None:
-    alembic_cfg = Config("alembic.ini")
-    command.upgrade(alembic_cfg, "head")
+    subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], check=True)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    loop = asyncio.get_running_loop()
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        await loop.run_in_executor(executor, run_migrations)
+    run_migrations()
     yield
 
 
@@ -47,6 +40,6 @@ app.include_router(report.router, prefix="/api")
 
 
 @app.get("/api")
-async def health_check(_: AuthDep) -> dict[str, str]:
+def health_check(_: AuthDep) -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}

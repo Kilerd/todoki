@@ -701,7 +701,9 @@ export interface operations {
     health_check_api_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                authorization: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -718,15 +720,15 @@ export interface operations {
                     };
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
 }
-
-// Convenience type exports
-export type TaskResponse = components["schemas"]["TaskResponse"];
-export type TaskCreate = components["schemas"]["TaskCreate"];
-export type TaskUpdate = components["schemas"]["TaskUpdate"];
-export type TaskEventResponse = components["schemas"]["TaskEventResponse"];
-export type TaskCommentResponse = components["schemas"]["TaskCommentResponse"];
-export type TaskType = components["schemas"]["TaskType"];
-export type TaskEventType = components["schemas"]["TaskEventType"];

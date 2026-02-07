@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "generate:api": "openapi-typescript http://localhost:8201/openapi.json -o src/api/schema.d.ts"
+    "api": "openapi-typescript http://localhost:8201/openapi.json -o src/api/schema.d.ts"
   },
   "dependencies": {
     "@mantine/hooks": "^7.14.3",

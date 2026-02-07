@@ -1,19 +1,14 @@
-from collections.abc import AsyncGenerator
+from collections.abc import Generator
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlmodel import Session, create_engine
 
 from app.config import settings
-from app.core.base import Base  # noqa: F401
 
-engine = create_async_engine(settings.database_url, echo=False)
-async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+# Convert async URL to sync URL
+database_url = settings.database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
+engine = create_engine(database_url, echo=False)
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    async with async_session_maker() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
+def get_db() -> Generator[Session, None, None]:
+    with Session(engine) as session:
+        yield session

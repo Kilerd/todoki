@@ -4,7 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { DialogProps } from "@radix-ui/react-dialog";
 import { useMemo, useState } from "react";
 import PreviewTaskItem from "../components/PreviewTaskItem";
-import { updateTask } from "../services/api";
+import { updateTask } from "../hooks/useTasks";
 import { parseTask } from "../utils/taskParser";
 
 interface Props {
@@ -32,7 +32,12 @@ export default function TaskItemEditModal({ onOpenChange, innerProps: props }: D
     const parsedTask = useMemo(() => parseTask(newTaskText), [newTaskText])
 
     const handleSubmitClick = async () => {
-        await updateTask(props.id, parsedTask.task_type, parsedTask.priority, parsedTask.content, parsedTask.group, parsedTask.states)
+        await updateTask(props.id, {
+            priority: parsedTask.priority,
+            content: parsedTask.content,
+            group: parsedTask.group ?? null,
+            states: parsedTask.states,
+        });
         toast({
             title: "更改成功",
             description: "更改成功"

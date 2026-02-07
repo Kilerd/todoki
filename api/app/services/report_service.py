@@ -1,10 +1,9 @@
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import Session, text
 
 from app.schemas.report import ReportPeriod, ReportResponse
 
 
-async def get_report(db: AsyncSession, period: ReportPeriod) -> ReportResponse:
+def get_report(db: Session, period: ReportPeriod) -> ReportResponse:
     """
     Get task activity report for a given period.
     Aggregates task_events to count creates, dones, archives, state changes.
@@ -32,7 +31,7 @@ async def get_report(db: AsyncSession, period: ReportPeriod) -> ReportResponse:
         WHERE {date_filter}
     """)
 
-    result = await db.execute(query)
+    result = db.exec(query)
     row = result.fetchone()
 
     return ReportResponse(

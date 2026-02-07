@@ -13,10 +13,9 @@ fetcher.configure({
     async (url, init, next) => {
       const token = getToken();
       if (token) {
-        init.headers = {
-          ...init.headers,
-          Authorization: `Bearer ${token}`,
-        };
+        const headers = new Headers(init.headers);
+        headers.set("Authorization", `Bearer ${token}`);
+        return next(url, { ...init, headers });
       }
       return next(url, init);
     },

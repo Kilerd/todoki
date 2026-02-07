@@ -3,8 +3,6 @@ import type { components } from "./schema";
 
 type TaskCreate = components["schemas"]["TaskCreate"];
 type TaskUpdate = components["schemas"]["TaskUpdate"];
-type TaskStatusUpdate = components["schemas"]["TaskStatusUpdate"];
-type TaskCommentCreate = components["schemas"]["TaskCommentCreate"];
 
 const getTasks = client.path("/api/tasks").method("get").create();
 const createTaskApi = client.path("/api/tasks").method("post").create();
