@@ -1,15 +1,13 @@
 import RouteList from "@/router/RouteList";
-import { Toaster } from './components/ui/toaster';
-import AuthProvider from './providers/AuthProvider';
+import { Toaster } from "./components/ui/toaster";
 
 function App() {
-
   return (
-      <AuthProvider>
-        <RouteList/>
-        <Toaster />
-      </AuthProvider>
-  )
+    <>
+      <RouteList />
+      <Toaster />
+    </>
+  );
 }
 
-export default App
+export default App;

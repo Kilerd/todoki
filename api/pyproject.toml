@@ -22,11 +22,17 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
 
-[tool.hatch.build.targets.wheel]
-packages = ["app"]
+[tool.pdm]
+distribution = true
+
+[tool.pdm.scripts]
+dev = "uvicorn app.main:app --reload --port 8201"
+test = "pytest"
+lint = "ruff check ."
+format = "ruff format ."
 
 [tool.ruff]
 line-length = 120

@@ -4,17 +4,15 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 
 interface Props {
-    id: string,
-    priority: number,
-    content: string,
-    group?: string,
-    task_type: "Todo" | "Stateful",
-    done: boolean,
-    archived: boolean,
-    current_state?: string,
-    states?: string[],
-    habit_id?: string,
-    habit_name?: string
+    id: string;
+    priority: number;
+    content: string;
+    group?: string;
+    task_type: "Todo" | "Stateful";
+    done: boolean;
+    archived: boolean;
+    current_state?: string | null;
+    states?: string[] | null;
 }
 
 export default function PreviewTaskItem(props: Props) {
@@ -39,7 +37,6 @@ export default function PreviewTaskItem(props: Props) {
                     {props.priority > 0 && <span className="text-red-600 font-bold pr-2">{"!".repeat(props.priority)}</span>}
                     {props.content}
                 </div>
-                {props.habit_id && <Badge variant="outline">{props.habit_name}</Badge>}
                 {props.archived && <Badge variant="outline">ARCHIVED</Badge>}
             </div>
 
