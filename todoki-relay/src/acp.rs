@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
 use agent_client_protocol::{
@@ -66,6 +67,7 @@ struct AcpEventSink {
     output_tx: mpsc::Sender<RelayToServer>,
     agent_id: String,
     session_id: String,
+    seq_counter: Arc<AtomicI64>,
 }
 
 impl AcpEventSink {
@@ -74,10 +76,13 @@ impl AcpEventSink {
         agent_id: String,
         session_id: String,
     ) -> Self {
+        // Initialize seq with current timestamp to maintain global ordering across sessions
+        let initial_seq = Utc::now().timestamp_nanos_opt().unwrap_or(0);
         Self {
             output_tx,
             agent_id,
             session_id,
+            seq_counter: Arc::new(AtomicI64::new(initial_seq)),
         }
     }
 
@@ -91,7 +96,7 @@ impl AcpEventSink {
     }
 
     async fn emit_raw(&self, stream: &str, message: String) {
-        let seq = Utc::now().timestamp_nanos_opt().unwrap_or(0);
+        let seq = self.seq_counter.fetch_add(1, Ordering::SeqCst);
         let ts = Utc::now().timestamp();
 
         let msg = RelayToServer::AgentOutput {
