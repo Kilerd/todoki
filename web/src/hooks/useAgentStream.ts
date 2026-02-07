@@ -39,6 +39,12 @@ interface HistoryEndMessage {
   last_id: number | null;
 }
 
+interface InputResultMessage {
+  type: "input_result";
+  success: boolean;
+  error: string | null;
+}
+
 interface ErrorMessage {
   type: "error";
   message: string;
@@ -48,6 +54,7 @@ type ServerMessage =
   | HistoryEventMessage
   | LiveEventMessage
   | HistoryEndMessage
+  | InputResultMessage
   | ErrorMessage;
 
 export interface UseAgentStreamOptions {
@@ -62,6 +69,7 @@ export interface UseAgentStreamResult {
   isLoadingHistory: boolean;
   error: string | null;
   reconnect: () => void;
+  sendInput: (input: string) => Promise<void>;
 }
 
 export function useAgentStream({
@@ -158,6 +166,12 @@ export function useAgentStream({
             setIsLoadingHistory(false);
             break;
 
+          case "input_result":
+            if (!msg.success && msg.error) {
+              setError(`Input failed: ${msg.error}`);
+            }
+            break;
+
           case "error":
             setError(msg.message);
             break;
@@ -193,6 +207,22 @@ export function useAgentStream({
     connect();
   }, [connect]);
 
+  const sendInput = useCallback(
+    async (input: string): Promise<void> => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        throw new Error("WebSocket not connected");
+      }
+
+      const message = JSON.stringify({
+        type: "send_input",
+        input,
+      });
+
+      wsRef.current.send(message);
+    },
+    []
+  );
+
   useEffect(() => {
     isMountedRef.current = true;
     connect();
@@ -217,6 +247,7 @@ export function useAgentStream({
     isLoadingHistory,
     error,
     reconnect,
+    sendInput,
   };
 }
 

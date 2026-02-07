@@ -4,11 +4,14 @@ use axum::response::IntoResponse;
 use futures_util::{SinkExt, StreamExt};
 use gotcha::axum::response::Response;
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::config::Settings;
+use crate::models::agent::SessionStatus;
 use crate::Broadcaster;
 use crate::Db;
+use crate::Relays;
 
 /// Query parameters for WebSocket authentication
 #[derive(Debug, Deserialize)]
@@ -18,16 +21,26 @@ pub struct WsAuthQuery {
     pub after_id: Option<i64>,
 }
 
-/// Message sent to client
+/// Message sent from client to server
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ClientToServer {
+    /// Send input to agent stdin
+    SendInput { input: String },
+}
+
+/// Message sent from server to client
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum ClientMessage {
+pub enum ServerToClient {
     /// Historical event from database
     HistoryEvent(AgentEventMessage),
     /// Real-time event from broadcaster
     LiveEvent(AgentEventMessage),
     /// End of history marker
     HistoryEnd { last_id: Option<i64> },
+    /// Response to client action
+    InputResult { success: bool, error: Option<String> },
     /// Error message
     Error { message: String },
 }
@@ -48,6 +61,7 @@ pub async fn ws_agent_stream(
     ws: WebSocketUpgrade,
     State(settings): State<Settings>,
     State(db): State<Db>,
+    State(relays): State<Relays>,
     State(broadcaster): State<Broadcaster>,
     Path(agent_id): Path<Uuid>,
     Query(query): Query<WsAuthQuery>,
@@ -64,7 +78,7 @@ pub async fn ws_agent_stream(
     }
 
     ws.on_upgrade(move |socket| {
-        handle_agent_stream(socket, db, broadcaster, agent_id, query.after_id)
+        handle_agent_stream(socket, db, relays, broadcaster, agent_id, query.after_id)
     })
     .into_response()
 }
@@ -72,11 +86,15 @@ pub async fn ws_agent_stream(
 async fn handle_agent_stream(
     socket: WebSocket,
     db: Db,
+    relays: Relays,
     broadcaster: Broadcaster,
     agent_id: Uuid,
     after_id: Option<i64>,
 ) {
     let (mut ws_tx, mut ws_rx) = socket.split();
+
+    // Channel for outbound messages (allows multiple tasks to send)
+    let (outbound_tx, mut outbound_rx) = mpsc::channel::<ServerToClient>(256);
 
     // Subscribe to live events first (before fetching history)
     let mut rx = broadcaster.subscribe(agent_id).await;
@@ -95,7 +113,7 @@ async fn handle_agent_stream(
             // Events are already in chronological order (ASC by id)
             for event in events {
                 last_id = Some(event.id);
-                let msg = ClientMessage::HistoryEvent(AgentEventMessage {
+                let msg = ServerToClient::HistoryEvent(AgentEventMessage {
                     id: event.id,
                     seq: event.seq,
                     ts: event.ts.to_rfc3339(),
@@ -110,7 +128,7 @@ async fn handle_agent_stream(
             }
         }
         Err(e) => {
-            let msg = ClientMessage::Error {
+            let msg = ServerToClient::Error {
                 message: format!("Failed to fetch history: {}", e),
             };
             if let Ok(json) = serde_json::to_string(&msg) {
@@ -121,7 +139,7 @@ async fn handle_agent_stream(
     }
 
     // Send history end marker
-    let msg = ClientMessage::HistoryEnd { last_id };
+    let msg = ServerToClient::HistoryEnd { last_id };
     if let Ok(json) = serde_json::to_string(&msg) {
         if ws_tx.send(Message::Text(json.into())).await.is_err() {
             return;
@@ -134,7 +152,19 @@ async fn handle_agent_stream(
         "client connected to agent stream"
     );
 
+    // Spawn task to send outbound messages
+    let outbound_handle = tokio::spawn(async move {
+        while let Some(msg) = outbound_rx.recv().await {
+            if let Ok(json) = serde_json::to_string(&msg) {
+                if ws_tx.send(Message::Text(json.into())).await.is_err() {
+                    break;
+                }
+            }
+        }
+    });
+
     // Spawn task to forward live events
+    let live_tx = outbound_tx.clone();
     let live_handle = tokio::spawn(async move {
         loop {
             match rx.recv().await {
@@ -146,17 +176,15 @@ async fn handle_agent_stream(
                         }
                     }
 
-                    let msg = ClientMessage::LiveEvent(AgentEventMessage {
+                    let msg = ServerToClient::LiveEvent(AgentEventMessage {
                         id: event.id,
                         seq: event.seq,
                         ts: event.ts,
                         stream: event.stream,
                         message: event.message,
                     });
-                    if let Ok(json) = serde_json::to_string(&msg) {
-                        if ws_tx.send(Message::Text(json.into())).await.is_err() {
-                            break;
-                        }
+                    if live_tx.send(msg).await.is_err() {
+                        break;
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
@@ -170,13 +198,34 @@ async fn handle_agent_stream(
         }
     });
 
-    // Wait for client disconnect
+    // Process inbound messages from client
     while let Some(msg) = ws_rx.next().await {
         match msg {
+            Ok(Message::Text(text)) => {
+                // Parse client message
+                match serde_json::from_str::<ClientToServer>(&text) {
+                    Ok(ClientToServer::SendInput { input }) => {
+                        let result = send_input_to_relay(&db, &relays, agent_id, &input).await;
+                        let response = match result {
+                            Ok(()) => ServerToClient::InputResult {
+                                success: true,
+                                error: None,
+                            },
+                            Err(e) => ServerToClient::InputResult {
+                                success: false,
+                                error: Some(e),
+                            },
+                        };
+                        let _ = outbound_tx.send(response).await;
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to parse client message");
+                    }
+                }
+            }
             Ok(Message::Close(_)) => break,
-            Ok(Message::Ping(data)) => {
+            Ok(Message::Ping(_)) => {
                 // Pong is handled automatically by axum
-                let _ = data;
             }
             Err(_) => break,
             _ => {}
@@ -184,5 +233,42 @@ async fn handle_agent_stream(
     }
 
     live_handle.abort();
+    outbound_handle.abort();
     tracing::info!(agent_id = %agent_id, "client disconnected from agent stream");
+}
+
+/// Send input to relay via RPC
+async fn send_input_to_relay(
+    db: &Db,
+    relays: &Relays,
+    agent_id: Uuid,
+    input: &str,
+) -> Result<(), String> {
+    // Get running session for this agent
+    let sessions = db
+        .get_agent_sessions(agent_id)
+        .await
+        .map_err(|e| format!("failed to get sessions: {}", e))?;
+
+    let running_session = sessions
+        .into_iter()
+        .find(|s| s.status_enum() == SessionStatus::Running)
+        .ok_or_else(|| "no running session".to_string())?;
+
+    let relay_id = running_session
+        .relay_id
+        .ok_or_else(|| "session has no relay".to_string())?;
+
+    // Call relay to send input
+    let params = serde_json::json!({
+        "session_id": running_session.id.to_string(),
+        "input": input,
+    });
+
+    relays
+        .call(&relay_id, "send-input", params)
+        .await
+        .map_err(|e| format!("relay call failed: {}", e))?;
+
+    Ok(())
 }

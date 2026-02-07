@@ -20,7 +20,6 @@ import {
   startAgent,
   stopAgent,
   deleteAgent,
-  sendInput,
 } from "../api/agents";
 import {
   useAgentStream,
@@ -142,7 +141,7 @@ function AgentOutput({
   agentId: string;
   isRunning: boolean;
 }) {
-  const { events, isConnected, isLoadingHistory, error, reconnect } =
+  const { events, isConnected, isLoadingHistory, error, reconnect, sendInput } =
     useAgentStream({
       agentId,
       enabled: true,
@@ -168,11 +167,11 @@ function AgentOutput({
   }, [events]);
 
   const handleSendInput = async () => {
-    if (!inputValue.trim() || isSending) return;
+    if (!inputValue.trim() || isSending || !isConnected) return;
 
     setIsSending(true);
     try {
-      await sendInput(agentId, inputValue + "\n");
+      await sendInput(inputValue + "\n");
       setInputValue("");
     } catch (e) {
       console.error("Failed to send input:", e);
