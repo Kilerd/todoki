@@ -1,13 +1,31 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from alembic import command
+from alembic.config import Config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.deps import AuthDep
 from app.routers import report, tasks
 
+
+def run_migrations() -> None:
+    alembic_cfg = Config("alembic.ini")
+    command.upgrade(alembic_cfg, "head")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    run_migrations()
+    yield
+
+
 app = FastAPI(
     title="Todoki API",
     description="Task Management API",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
