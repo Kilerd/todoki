@@ -50,6 +50,17 @@ function NavBar() {
           >
             Report
           </NavLink>
+
+          <NavLink
+            to="/agents"
+            className={({ isActive }) =>
+              `decoration-none ${
+                isActive ? "text-3xl text-gray-900" : " text-lg  text-gray-500"
+              }`
+            }
+          >
+            Agents
+          </NavLink>
         </div>
       </div>
       <Separator />

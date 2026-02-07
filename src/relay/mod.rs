@@ -1,6 +1,9 @@
+mod broadcaster;
 mod manager;
 
 use std::collections::HashMap;
+
+pub use broadcaster::{AgentBroadcaster, AgentStreamEvent};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

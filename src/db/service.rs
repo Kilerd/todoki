@@ -610,23 +610,25 @@ impl DatabaseService {
     // Agent Event operations
     // ========================================================================
 
-    /// Insert agent event
-    pub async fn insert_agent_event(&self, event: CreateAgentEvent) -> crate::Result<()> {
-        event
+    /// Insert agent event and return the inserted event with its id
+    pub async fn insert_agent_event(&self, event: CreateAgentEvent) -> crate::Result<AgentEvent> {
+        let id = event
             .insert::<AgentEvent>()
             .returning_pk(&*self.pool)
             .await
             .map_err(|e| crate::TodokiError::Database(e))?;
 
-        Ok(())
+        AgentEvent::fetch_one_by_pk(&id, &*self.pool)
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))
     }
 
-    /// Get agent events
+    /// Get agent events (ordered by database id for correct insertion order)
     pub async fn get_agent_events(
         &self,
         agent_id: Uuid,
         limit: i64,
-        before_seq: Option<i64>,
+        before_id: Option<i64>,
     ) -> crate::Result<Vec<AgentEvent>> {
         let conn = self
             .pool
@@ -634,13 +636,13 @@ impl DatabaseService {
             .await
             .map_err(|e| crate::TodokiError::Database(e))?;
 
-        let rows = if let Some(before) = before_seq {
+        let rows = if let Some(before) = before_id {
             conn.query(
                 r#"
                 SELECT id, agent_id, session_id, seq, ts, stream, message
                 FROM agent_events
-                WHERE agent_id = $1 AND seq < $2
-                ORDER BY seq DESC
+                WHERE agent_id = $1 AND id < $2
+                ORDER BY id DESC
                 LIMIT $3
                 "#,
                 &[&agent_id, &before, &limit],
@@ -652,7 +654,7 @@ impl DatabaseService {
                 SELECT id, agent_id, session_id, seq, ts, stream, message
                 FROM agent_events
                 WHERE agent_id = $1
-                ORDER BY seq DESC
+                ORDER BY id DESC
                 LIMIT $2
                 "#,
                 &[&agent_id, &limit],
@@ -673,8 +675,50 @@ impl DatabaseService {
                 message: row.get("message"),
             })
             .collect();
+        // Reverse to get chronological order (ASC by id)
         events.reverse();
         Ok(events)
+    }
+
+    /// Get agent events after a given id (for streaming)
+    pub async fn get_agent_events_after_id(
+        &self,
+        agent_id: Uuid,
+        after_id: i64,
+        limit: i64,
+    ) -> crate::Result<Vec<AgentEvent>> {
+        let conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        let rows = conn
+            .query(
+                r#"
+                SELECT id, agent_id, session_id, seq, ts, stream, message
+                FROM agent_events
+                WHERE agent_id = $1 AND id > $2
+                ORDER BY id ASC
+                LIMIT $3
+                "#,
+                &[&agent_id, &after_id, &limit],
+            )
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Ok(rows
+            .iter()
+            .map(|row| AgentEvent {
+                id: row.get("id"),
+                agent_id: row.get("agent_id"),
+                session_id: row.get("session_id"),
+                seq: row.get("seq"),
+                ts: row.get("ts"),
+                stream: row.get("stream"),
+                message: row.get("message"),
+            })
+            .collect())
     }
 
     /// Mark running sessions as exited on startup

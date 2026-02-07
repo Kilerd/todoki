@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Report
+         * @description GET /api/report - Get activity report
+         */
+        get: operations["get_report"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks": {
         parameters: {
             query?: never;
@@ -13,35 +33,15 @@ export interface paths {
         };
         /**
          * Get Tasks
-         * @description Get today's tasks (status='todo' and not archived).
+         * @description GET /api/tasks - Get today's tasks (todo, not archived)
          */
-        get: operations["get_tasks_api_tasks_get"];
+        get: operations["get_tasks"];
         put?: never;
         /**
          * Create Task
-         * @description Create a new task.
+         * @description POST /api/tasks - Create a new task
          */
-        post: operations["create_task_api_tasks_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks/inbox": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Inbox Tasks
-         * @description Get inbox tasks (todo, in-progress, in-review and not archived).
-         */
-        get: operations["get_inbox_tasks_api_tasks_inbox_get"];
-        put?: never;
-        post?: never;
+        post: operations["create_task"];
         delete?: never;
         options?: never;
         head?: never;
@@ -57,29 +57,9 @@ export interface paths {
         };
         /**
          * Get Backlog Tasks
-         * @description Get backlog tasks (status='backlog' and not archived).
+         * @description GET /api/tasks/backlog - Get backlog tasks
          */
-        get: operations["get_backlog_tasks_api_tasks_backlog_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks/in-progress": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get In Progress Tasks
-         * @description Get in-progress tasks (status='in-progress' or 'in-review' and not archived).
-         */
-        get: operations["get_in_progress_tasks_api_tasks_in_progress_get"];
+        get: operations["get_backlog_tasks"];
         put?: never;
         post?: never;
         delete?: never;
@@ -97,9 +77,9 @@ export interface paths {
         };
         /**
          * Get Done Tasks
-         * @description Get done tasks (status='done' and not archived).
+         * @description GET /api/tasks/done - Get done tasks
          */
-        get: operations["get_done_tasks_api_tasks_done_get"];
+        get: operations["get_done_tasks"];
         put?: never;
         post?: never;
         delete?: never;
@@ -117,9 +97,49 @@ export interface paths {
         };
         /**
          * Get Today Done Tasks
-         * @description Get tasks marked done today (not archived).
+         * @description GET /api/tasks/done/today - Get tasks marked done today
          */
-        get: operations["get_today_done_tasks_api_tasks_done_today_get"];
+        get: operations["get_today_done_tasks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/in-progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get In Progress Tasks
+         * @description GET /api/tasks/in-progress - Get in-progress tasks
+         */
+        get: operations["get_in_progress_tasks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Inbox Tasks
+         * @description GET /api/tasks/inbox - Get inbox tasks (todo, in-progress, in-review)
+         */
+        get: operations["get_inbox_tasks"];
         put?: never;
         post?: never;
         delete?: never;
@@ -137,40 +157,20 @@ export interface paths {
         };
         /**
          * Get Task
-         * @description Get task details by ID.
+         * @description GET /api/tasks/:task_id - Get task by ID
          */
-        get: operations["get_task_api_tasks__task_id__get"];
+        get: operations["get_task"];
         /**
          * Update Task
-         * @description Update task details.
+         * @description PUT /api/tasks/:task_id - Update task
          */
-        put: operations["update_task_api_tasks__task_id__put"];
+        put: operations["update_task"];
         post?: never;
         /**
          * Delete Task
-         * @description Delete a task.
+         * @description DELETE /api/tasks/:task_id - Delete task
          */
-        delete: operations["delete_task_api_tasks__task_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks/{task_id}/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Update Task Status
-         * @description Update task status (backlog, todo, in-progress, in-review, done).
-         */
-        post: operations["update_task_status_api_tasks__task_id__status_post"];
-        delete?: never;
+        delete: operations["delete_task"];
         options?: never;
         head?: never;
         patch?: never;
@@ -187,29 +187,9 @@ export interface paths {
         put?: never;
         /**
          * Archive Task
-         * @description Archive a task.
+         * @description POST /api/tasks/:task_id/archive - Archive task
          */
-        post: operations["archive_task_api_tasks__task_id__archive_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks/{task_id}/unarchive": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Unarchive Task
-         * @description Unarchive a task.
-         */
-        post: operations["unarchive_task_api_tasks__task_id__unarchive_post"];
+        post: operations["archive_task"];
         delete?: never;
         options?: never;
         head?: never;
@@ -227,49 +207,49 @@ export interface paths {
         put?: never;
         /**
          * Add Comment
-         * @description Add a comment to a task.
+         * @description POST /api/tasks/:task_id/comments - Add comment to task
          */
-        post: operations["add_comment_api_tasks__task_id__comments_post"];
+        post: operations["add_comment"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/report": {
+    "/api/tasks/{task_id}/status": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get Report
-         * @description Get task activity report for a given period (today/week/month).
-         */
-        get: operations["get_report_api_report_get"];
+        get?: never;
         put?: never;
-        post?: never;
+        /**
+         * Update Task Status
+         * @description POST /api/tasks/:task_id/status - Update task status
+         */
+        post: operations["update_task_status"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api": {
+    "/api/tasks/{task_id}/unarchive": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * Health Check
-         * @description Health check endpoint.
-         */
-        get: operations["health_check_api_get"];
+        get?: never;
         put?: never;
-        post?: never;
+        /**
+         * Unarchive Task
+         * @description POST /api/tasks/:task_id/unarchive - Unarchive task
+         */
+        post: operations["unarchive_task"];
         delete?: never;
         options?: never;
         head?: never;
@@ -279,175 +259,7 @@ export interface paths {
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: {
-        /** HTTPValidationError */
-        HTTPValidationError: {
-            /** Detail */
-            detail?: components["schemas"]["ValidationError"][];
-        };
-        /**
-         * ReportPeriod
-         * @enum {string}
-         */
-        ReportPeriod: "today" | "week" | "month";
-        /** ReportResponse */
-        ReportResponse: {
-            period: components["schemas"]["ReportPeriod"];
-            /** Created Count */
-            created_count: number;
-            /** Done Count */
-            done_count: number;
-            /** Archived Count */
-            archived_count: number;
-            /** State Changes Count */
-            state_changes_count: number;
-            /** Comments Count */
-            comments_count: number;
-        };
-        /** TaskCommentCreate */
-        TaskCommentCreate: {
-            /** Content */
-            content: string;
-        };
-        /** TaskCommentResponse */
-        TaskCommentResponse: {
-            /** Content */
-            content: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Task Id
-             * Format: uuid
-             */
-            task_id: string;
-            /**
-             * Create At
-             * Format: date-time
-             */
-            create_at: string;
-        };
-        /** TaskCreate */
-        TaskCreate: {
-            /**
-             * Priority
-             * @default 0
-             */
-            priority: number;
-            /** Content */
-            content: string;
-            /**
-             * Group
-             * @default default
-             */
-            group: string | null;
-            /** @default backlog */
-            status: components["schemas"]["TaskStatus"];
-        };
-        /** TaskEventResponse */
-        TaskEventResponse: {
-            event_type: components["schemas"]["TaskEventType"];
-            /**
-             * Datetime
-             * Format: date-time
-             */
-            datetime: string;
-            /** State */
-            state?: string | null;
-            /** From State */
-            from_state?: string | null;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Task Id
-             * Format: uuid
-             */
-            task_id: string;
-        };
-        /**
-         * TaskEventType
-         * @enum {string}
-         */
-        TaskEventType: "Create" | "StatusChange" | "Unarchived" | "Archived" | "CreateComment";
-        /** TaskResponse */
-        TaskResponse: {
-            /**
-             * Priority
-             * @default 0
-             */
-            priority: number;
-            /** Content */
-            content: string;
-            /**
-             * Group
-             * @default default
-             */
-            group: string;
-            /** @default backlog */
-            status: components["schemas"]["TaskStatus"];
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Create At
-             * Format: date-time
-             */
-            create_at: string;
-            /** Archived */
-            archived: boolean;
-            /**
-             * Events
-             * @default []
-             */
-            events: components["schemas"]["TaskEventResponse"][];
-            /**
-             * Comments
-             * @default []
-             */
-            comments: components["schemas"]["TaskCommentResponse"][];
-        };
-        /**
-         * TaskStatus
-         * @enum {string}
-         */
-        TaskStatus: "backlog" | "todo" | "in-progress" | "in-review" | "done";
-        /** TaskStatusUpdate */
-        TaskStatusUpdate: {
-            status: components["schemas"]["TaskStatus"];
-        };
-        /** TaskUpdate */
-        TaskUpdate: {
-            /** Priority */
-            priority: number;
-            /** Content */
-            content: string;
-            /**
-             * Group
-             * @default default
-             */
-            group: string | null;
-        };
-        /** ValidationError */
-        ValidationError: {
-            /** Location */
-            loc: (string | number)[];
-            /** Message */
-            msg: string;
-            /** Error Type */
-            type: string;
-            /** Input */
-            input?: unknown;
-            /** Context */
-            ctx?: Record<string, never>;
-        };
-    };
+    schemas: never;
     responses: never;
     parameters: never;
     requestBodies: never;
@@ -456,530 +268,688 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    get_tasks_api_tasks_get: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_task_api_tasks_post: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TaskCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_inbox_tasks_api_tasks_inbox_get: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_backlog_tasks_api_tasks_backlog_get: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_in_progress_tasks_api_tasks_in_progress_get: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_done_tasks_api_tasks_done_get: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_today_done_tasks_api_tasks_done_today_get: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_task_api_tasks__task_id__get: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path: {
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_task_api_tasks__task_id__put: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path: {
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TaskUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_task_api_tasks__task_id__delete: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path: {
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_task_status_api_tasks__task_id__status_post: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path: {
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TaskStatusUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    archive_task_api_tasks__task_id__archive_post: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path: {
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    unarchive_task_api_tasks__task_id__unarchive_post: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path: {
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    add_comment_api_tasks__task_id__comments_post: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path: {
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TaskCommentCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskCommentResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_report_api_report_get: {
+    get_report: {
         parameters: {
             query?: {
-                period?: components["schemas"]["ReportPeriod"];
+                period?: string | null;
             };
-            header: {
-                authorization: string;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReportResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    health_check_api_get: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
+            /** @description default return */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        [key: string]: string;
+                        archived_count: number;
+                        comments_count: number;
+                        created_count: number;
+                        done_count: number;
+                        /** @enum {string} */
+                        period: "Today" | "Week" | "Month";
+                        state_changes_count: number;
                     };
                 };
             };
-            /** @description Validation Error */
-            422: {
+        };
+    };
+    get_tasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": {
+                        archived: boolean;
+                        comments: {
+                            content: string;
+                            create_at: string;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        content: string;
+                        create_at: string;
+                        events: {
+                            datetime: string;
+                            event_type: string;
+                            from_state?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            state?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        group: string;
+                        /** Format: uuid */
+                        id: string;
+                        priority: number;
+                        status: string;
+                    }[];
+                };
+            };
+        };
+    };
+    create_task: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    content: string;
+                    group: string;
+                    priority: number;
+                    /** @enum {string} */
+                    status: "Backlog" | "Todo" | "InProgress" | "InReview" | "Done";
+                };
+            };
+        };
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        comments: {
+                            content: string;
+                            create_at: string;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        content: string;
+                        create_at: string;
+                        events: {
+                            datetime: string;
+                            event_type: string;
+                            from_state?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            state?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        group: string;
+                        /** Format: uuid */
+                        id: string;
+                        priority: number;
+                        status: string;
+                    };
+                };
+            };
+        };
+    };
+    get_backlog_tasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        comments: {
+                            content: string;
+                            create_at: string;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        content: string;
+                        create_at: string;
+                        events: {
+                            datetime: string;
+                            event_type: string;
+                            from_state?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            state?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        group: string;
+                        /** Format: uuid */
+                        id: string;
+                        priority: number;
+                        status: string;
+                    }[];
+                };
+            };
+        };
+    };
+    get_done_tasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        comments: {
+                            content: string;
+                            create_at: string;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        content: string;
+                        create_at: string;
+                        events: {
+                            datetime: string;
+                            event_type: string;
+                            from_state?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            state?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        group: string;
+                        /** Format: uuid */
+                        id: string;
+                        priority: number;
+                        status: string;
+                    }[];
+                };
+            };
+        };
+    };
+    get_today_done_tasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        comments: {
+                            content: string;
+                            create_at: string;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        content: string;
+                        create_at: string;
+                        events: {
+                            datetime: string;
+                            event_type: string;
+                            from_state?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            state?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        group: string;
+                        /** Format: uuid */
+                        id: string;
+                        priority: number;
+                        status: string;
+                    }[];
+                };
+            };
+        };
+    };
+    get_in_progress_tasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        comments: {
+                            content: string;
+                            create_at: string;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        content: string;
+                        create_at: string;
+                        events: {
+                            datetime: string;
+                            event_type: string;
+                            from_state?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            state?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        group: string;
+                        /** Format: uuid */
+                        id: string;
+                        priority: number;
+                        status: string;
+                    }[];
+                };
+            };
+        };
+    };
+    get_inbox_tasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        comments: {
+                            content: string;
+                            create_at: string;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        content: string;
+                        create_at: string;
+                        events: {
+                            datetime: string;
+                            event_type: string;
+                            from_state?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            state?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        group: string;
+                        /** Format: uuid */
+                        id: string;
+                        priority: number;
+                        status: string;
+                    }[];
+                };
+            };
+        };
+    };
+    get_task: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        comments: {
+                            content: string;
+                            create_at: string;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        content: string;
+                        create_at: string;
+                        events: {
+                            datetime: string;
+                            event_type: string;
+                            from_state?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            state?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        group: string;
+                        /** Format: uuid */
+                        id: string;
+                        priority: number;
+                        status: string;
+                    };
+                };
+            };
+        };
+    };
+    update_task: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    content: string;
+                    group: string;
+                    priority: number;
+                };
+            };
+        };
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        comments: {
+                            content: string;
+                            create_at: string;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        content: string;
+                        create_at: string;
+                        events: {
+                            datetime: string;
+                            event_type: string;
+                            from_state?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            state?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        group: string;
+                        /** Format: uuid */
+                        id: string;
+                        priority: number;
+                        status: string;
+                    };
+                };
+            };
+        };
+    };
+    delete_task: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    archive_task: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        comments: {
+                            content: string;
+                            create_at: string;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        content: string;
+                        create_at: string;
+                        events: {
+                            datetime: string;
+                            event_type: string;
+                            from_state?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            state?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        group: string;
+                        /** Format: uuid */
+                        id: string;
+                        priority: number;
+                        status: string;
+                    };
+                };
+            };
+        };
+    };
+    add_comment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    content: string;
+                };
+            };
+        };
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        content: string;
+                        create_at: string;
+                        /** Format: uuid */
+                        id: string;
+                        /** Format: uuid */
+                        task_id: string;
+                    };
+                };
+            };
+        };
+    };
+    update_task_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    status: "Backlog" | "Todo" | "InProgress" | "InReview" | "Done";
+                };
+            };
+        };
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        comments: {
+                            content: string;
+                            create_at: string;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        content: string;
+                        create_at: string;
+                        events: {
+                            datetime: string;
+                            event_type: string;
+                            from_state?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            state?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        group: string;
+                        /** Format: uuid */
+                        id: string;
+                        priority: number;
+                        status: string;
+                    };
+                };
+            };
+        };
+    };
+    unarchive_task: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        comments: {
+                            content: string;
+                            create_at: string;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        content: string;
+                        create_at: string;
+                        events: {
+                            datetime: string;
+                            event_type: string;
+                            from_state?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            state?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        group: string;
+                        /** Format: uuid */
+                        id: string;
+                        priority: number;
+                        status: string;
+                    };
                 };
             };
         };

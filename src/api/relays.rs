@@ -11,7 +11,8 @@ use uuid::Uuid;
 use crate::config::Settings;
 use crate::models::agent::{CreateAgentEvent, OutputStream};
 use crate::models::{AgentStatus, SessionStatus};
-use crate::relay::{RelayInfo, RelayToServer, ServerToRelay};
+use crate::relay::{AgentStreamEvent, RelayInfo, RelayToServer, ServerToRelay};
+use crate::Broadcaster;
 use crate::Db;
 use crate::Relays;
 
@@ -27,6 +28,7 @@ pub async fn ws_relay(
     State(settings): State<Settings>,
     State(db): State<Db>,
     State(relays): State<Relays>,
+    State(broadcaster): State<Broadcaster>,
     Query(query): Query<WsAuthQuery>,
 ) -> Response {
     dbg!("settings.relay_token", &settings.relay_token);
@@ -42,11 +44,11 @@ pub async fn ws_relay(
         return crate::api::error::ApiError::unauthorized().into_response();
     }
 
-    ws.on_upgrade(move |socket| handle_relay_connection(socket, db, relays))
+    ws.on_upgrade(move |socket| handle_relay_connection(socket, db, relays, broadcaster))
         .into_response()
 }
 
-async fn handle_relay_connection(socket: WebSocket, db: Db, relays: Relays) {
+async fn handle_relay_connection(socket: WebSocket, db: Db, relays: Relays, broadcaster: Broadcaster) {
     let (mut ws_tx, mut ws_rx) = socket.split();
 
     // Channel for outbound messages to relay
@@ -127,7 +129,7 @@ async fn handle_relay_connection(socket: WebSocket, db: Db, relays: Relays) {
                 session_id,
                 stream,
                 seq,
-                ts: _,
+                ts,
                 message,
             } => {
                 tracing::debug!(
@@ -155,17 +157,34 @@ async fn handle_relay_connection(socket: WebSocket, db: Db, relays: Relays) {
                 };
 
                 // Create event
-                let event = CreateAgentEvent::new(
+                let create_event = CreateAgentEvent::new(
                     agent_uuid,
                     session_uuid,
                     seq,
                     OutputStream::from_str(&stream),
-                    message,
+                    message.clone(),
                 );
 
-                // Store event in database
-                if let Err(e) = db.insert_agent_event(event).await {
-                    tracing::error!(error = %e, "failed to insert agent event");
+                // Store event in database and get the inserted event with id
+                match db.insert_agent_event(create_event).await {
+                    Ok(event) => {
+                        // Broadcast to subscribers with database id
+                        let stream_event = AgentStreamEvent {
+                            agent_id: agent_uuid,
+                            session_id: session_uuid,
+                            id: event.id,
+                            seq,
+                            ts: chrono::DateTime::from_timestamp(ts / 1_000_000_000, (ts % 1_000_000_000) as u32)
+                                .map(|dt| dt.to_rfc3339())
+                                .unwrap_or_default(),
+                            stream: stream.clone(),
+                            message,
+                        };
+                        broadcaster.broadcast(stream_event).await;
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "failed to insert agent event");
+                    }
                 }
             }
 
@@ -276,7 +295,7 @@ async fn handle_relay_connection(socket: WebSocket, db: Db, relays: Relays) {
                 let seq = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
 
                 // Store as special event type for clients to poll
-                let event = CreateAgentEvent::new(
+                let create_event = CreateAgentEvent::new(
                     agent_uuid,
                     session_uuid,
                     seq,
@@ -284,7 +303,7 @@ async fn handle_relay_connection(socket: WebSocket, db: Db, relays: Relays) {
                     event_data.to_string(),
                 );
 
-                if let Err(e) = db.insert_agent_event(event).await {
+                if let Err(e) = db.insert_agent_event(create_event).await {
                     tracing::error!(error = %e, "failed to insert permission request event");
                 }
 

@@ -16,11 +16,11 @@ use serde_json::json;
 use thiserror::Error;
 use tracing::{error, info};
 
-use crate::api::{agents, relays, report, tasks};
+use crate::api::{agent_stream, agents, relays, report, tasks};
 use crate::auth::auth_middleware;
 use crate::config::Settings;
 use crate::db::DatabaseService;
-use crate::relay::RelayManager;
+use crate::relay::{AgentBroadcaster, RelayManager};
 
 // ============================================================================
 // Database wrapper
@@ -44,6 +44,18 @@ pub struct Relays(pub Arc<RelayManager>);
 
 impl Deref for Relays {
     type Target = Arc<RelayManager>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Broadcaster wrapper for state extraction
+#[derive(Clone)]
+pub struct Broadcaster(pub Arc<AgentBroadcaster>);
+
+impl Deref for Broadcaster {
+    type Target = AgentBroadcaster;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -100,6 +112,7 @@ pub struct AppState {
     pub db: Db,
     pub settings: Settings,
     pub relays: Arc<RelayManager>,
+    pub broadcaster: Arc<AgentBroadcaster>,
 }
 
 impl Default for AppState {
@@ -126,6 +139,13 @@ impl FromRef<gotcha::GotchaContext<AppState, Settings>> for Settings {
 impl FromRef<gotcha::GotchaContext<AppState, Settings>> for Relays {
     fn from_ref(ctx: &gotcha::GotchaContext<AppState, Settings>) -> Self {
         Relays(ctx.state.relays.clone())
+    }
+}
+
+// Allow extracting Broadcaster from GotchaContext
+impl FromRef<gotcha::GotchaContext<AppState, Settings>> for Broadcaster {
+    fn from_ref(ctx: &gotcha::GotchaContext<AppState, Settings>) -> Self {
+        Broadcaster(ctx.state.broadcaster.clone())
     }
 }
 
@@ -165,15 +185,17 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let db = Db(db_service);
     let relay_manager = Arc::new(RelayManager::new());
+    let broadcaster = Arc::new(AgentBroadcaster::new());
 
     let app_settings = settings.application.clone();
     let app_state = AppState {
         db: db.clone(),
         settings: app_settings.clone(),
         relays: relay_manager.clone(),
+        broadcaster: broadcaster.clone(),
     };
 
-    info!("Relay manager initialized");
+    info!("Relay manager and broadcaster initialized");
 
     let addr = format!("{}:{}", &settings.basic.host, &settings.basic.port);
     info!("Starting server on http://{}", addr);
@@ -215,6 +237,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .get("/ws/relays", relays::ws_relay)
         .get("/api/relays", relays::list_relays)
         .get("/api/relays/:relay_id", relays::get_relay)
+        // Agent stream WebSocket (for frontend real-time updates)
+        .get("/ws/agents/:agent_id/stream", agent_stream::ws_agent_stream)
         .layer(gotcha::axum::middleware::from_fn_with_state(
             app_settings,
             auth_middleware,
