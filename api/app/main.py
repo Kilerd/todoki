@@ -10,6 +10,10 @@ from app.deps import AuthDep
 from app.routers import report, tasks
 
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+
 def run_migrations() -> None:
     alembic_cfg = Config("alembic.ini")
     command.upgrade(alembic_cfg, "head")
@@ -17,7 +21,9 @@ def run_migrations() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    run_migrations()
+    loop = asyncio.get_running_loop()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        await loop.run_in_executor(executor, run_migrations)
     yield
 
 
