@@ -21,7 +21,8 @@ CREATE TABLE task_events (
     task_id    UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
     event_type TEXT NOT NULL,
     datetime   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    state      TEXT
+    state      TEXT,
+    from_state TEXT
 );
 
 CREATE TABLE task_comments (

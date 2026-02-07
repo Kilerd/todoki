@@ -42,8 +42,14 @@ function formatEvent(event: TaskEventResponse): string {
   switch (event.event_type) {
     case "Create":
       return "Created";
-    case "StatusChange":
-      return `→ ${STATUS_CONFIG[event.state ?? ""]?.label ?? event.state}`;
+    case "StatusChange": {
+      const fromLabel = STATUS_CONFIG[event.from_state ?? ""]?.label ?? event.from_state;
+      const toLabel = STATUS_CONFIG[event.state ?? ""]?.label ?? event.state;
+      if (fromLabel && toLabel) {
+        return `${fromLabel} → ${toLabel}`;
+      }
+      return `→ ${toLabel}`;
+    }
     case "Archived":
       return "Archived";
     case "Unarchived":

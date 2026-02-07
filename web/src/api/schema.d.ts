@@ -28,6 +28,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Inbox Tasks
+         * @description Get inbox tasks (todo, in-progress, in-review and not archived).
+         */
+        get: operations["get_inbox_tasks_api_tasks_inbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/backlog": {
         parameters: {
             query?: never;
@@ -80,6 +100,26 @@ export interface paths {
          * @description Get done tasks (status='done' and not archived).
          */
         get: operations["get_done_tasks_api_tasks_done_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/done/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Today Done Tasks
+         * @description Get tasks marked done today (not archived).
+         */
+        get: operations["get_today_done_tasks_api_tasks_done_today_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -316,6 +356,8 @@ export interface components {
             datetime: string;
             /** State */
             state?: string | null;
+            /** From State */
+            from_state?: string | null;
             /**
              * Id
              * Format: uuid
@@ -413,14 +455,6 @@ export interface components {
     pathItems: never;
 }
 export type $defs = Record<string, never>;
-
-export type TaskResponse = components["schemas"]["TaskResponse"];
-export type TaskEventResponse = components["schemas"]["TaskEventResponse"];
-export type TaskCreate = components["schemas"]["TaskCreate"];
-export type TaskUpdate = components["schemas"]["TaskUpdate"];
-export type TaskStatus = components["schemas"]["TaskStatus"];
-export type TaskEventType = components["schemas"]["TaskEventType"];
-
 export interface operations {
     get_tasks_api_tasks_get: {
         parameters: {
@@ -475,6 +509,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_inbox_tasks_api_tasks_inbox_get: {
+        parameters: {
+            query?: never;
+            header: {
+                authorization: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -551,6 +616,37 @@ export interface operations {
         };
     };
     get_done_tasks_api_tasks_done_get: {
+        parameters: {
+            query?: never;
+            header: {
+                authorization: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_today_done_tasks_api_tasks_done_today_get: {
         parameters: {
             query?: never;
             header: {

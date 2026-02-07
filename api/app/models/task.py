@@ -39,6 +39,7 @@ class TaskEventBase(SQLModel):
     event_type: TaskEventType
     datetime: datetime
     state: str | None = None
+    from_state: str | None = None
 
 
 class TaskEvent(TaskEventBase, table=True):

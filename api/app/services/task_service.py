@@ -153,6 +153,7 @@ def update_task(db: Session, task_id: UUID, payload: TaskUpdate) -> Task:
 def update_task_status(db: Session, task_id: UUID, payload: TaskStatusUpdate) -> Task:
     task = get_task_by_id(db, task_id)
 
+    old_status = task.status
     new_status = payload.status
     task.status = new_status
 
@@ -161,6 +162,7 @@ def update_task_status(db: Session, task_id: UUID, payload: TaskStatusUpdate) ->
         event_type=TaskEventType.STATUS_CHANGE,
         datetime=datetime.now(UTC),
         state=new_status,
+        from_state=old_status,
     )
     db.add(event)
 

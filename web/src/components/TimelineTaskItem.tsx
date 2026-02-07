@@ -42,8 +42,14 @@ const valueConverter = (event: TaskEventBadgeProps) => {
   switch (event.event_type) {
     case "Create":
       return "Created";
-    case "StatusChange":
-      return `Status: ${STATUS_LABELS[event.state ?? ""] ?? event.state}`;
+    case "StatusChange": {
+      const fromLabel = STATUS_LABELS[event.from_state ?? ""] ?? event.from_state;
+      const toLabel = STATUS_LABELS[event.state ?? ""] ?? event.state;
+      if (fromLabel && toLabel) {
+        return `${fromLabel} → ${toLabel}`;
+      }
+      return `→ ${toLabel}`;
+    }
     case "Archived":
       return "Archived";
     case "Unarchived":
