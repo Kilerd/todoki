@@ -1,26 +1,38 @@
-import { useState } from "react";
 import { deleteTask, unarchiveTask } from "../hooks/useTasks";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import { RotateCcw, Trash2 } from "lucide-react";
 import type { TaskResponse } from "../api/schema";
+import { cn } from "@/lib/utils";
 
 type Props = TaskResponse;
 
-export default function ArchivedTaskItem(props: Props) {
-  const [checked] = useState(props.done);
+const STATUS_LABELS: Record<string, string> = {
+  backlog: "Backlog",
+  todo: "Todo",
+  "in-progress": "In Progress",
+  "in-review": "In Review",
+  done: "Done",
+};
 
+const STATUS_COLORS: Record<string, string> = {
+  backlog: "bg-gray-100 text-gray-700",
+  todo: "bg-blue-100 text-blue-700",
+  "in-progress": "bg-yellow-100 text-yellow-700",
+  "in-review": "bg-purple-100 text-purple-700",
+  done: "bg-green-100 text-green-700",
+};
+
+export default function ArchivedTaskItem(props: Props) {
   return (
     <div className="flex items-center justify-between p-2 rounded-md text-gray-600 hover:bg-gray-100 group">
       <div className="flex items-center gap-2">
         <span className="text-gray-500">{props.group}</span>
-        {props.task_type === "Todo" && <Checkbox disabled checked={checked} />}
-        {props.task_type === "Stateful" && (
-          <Badge variant="secondary">{props.current_state}</Badge>
-        )}
+        <span className={cn("px-2 py-0.5 rounded text-xs opacity-60", STATUS_COLORS[props.status])}>
+          {STATUS_LABELS[props.status]}
+        </span>
 
-        <div className="leading-7">
+        <div className="leading-7 line-through">
           {props.priority > 0 && (
             <span className="text-red-600 font-bold pr-2">
               {"!".repeat(props.priority)}
@@ -28,6 +40,7 @@ export default function ArchivedTaskItem(props: Props) {
           )}
           {props.content}
         </div>
+        <Badge variant="outline">ARCHIVED</Badge>
       </div>
       <div className="hidden group-hover:flex items-center gap-2">
         <Button

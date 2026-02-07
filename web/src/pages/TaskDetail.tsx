@@ -17,22 +17,28 @@ import TaskItemDetail from "../components/TaskItemDetail";
 import { useTask, addComment } from "../hooks/useTasks";
 import type { TaskEventResponse } from "../api/schema";
 
+const STATUS_LABELS: Record<string, string> = {
+  backlog: "Backlog",
+  todo: "Todo",
+  "in-progress": "In Progress",
+  "in-review": "In Review",
+  done: "Done",
+};
+
 export const eventTypeConverter = (event: TaskEventResponse) => {
   switch (event.event_type) {
     case "Create":
-      return "创建";
-    case "Done":
-      return "已完成";
-    case "Open":
-      return "打开";
+      return "Created";
+    case "StatusChange":
+      return `Status changed to: ${STATUS_LABELS[event.state ?? ""] ?? event.state}`;
     case "Archived":
-      return "归档";
+      return "Archived";
     case "Unarchived":
-      return "从 归档 状态恢复";
-    case "UpdateState":
-      return `更新状态至: ${event.state}`;
+      return "Unarchived";
     case "CreateComment":
-      return "新增备注";
+      return "Comment added";
+    default:
+      return event.event_type;
   }
 };
 
@@ -45,8 +51,8 @@ export default function TaskDetail() {
   const onSubmit = async () => {
     await addComment(id!, comment);
     toast({
-      title: "提交备注成功",
-      description: "提交备注成功",
+      title: "Comment submitted",
+      description: "Comment submitted successfully",
     });
     setComment("");
     refresh();
@@ -87,7 +93,7 @@ export default function TaskDetail() {
 
               <Card>
                 <CardHeader>
-                  <p className="text-sm text-muted-foreground">新备注</p>
+                  <p className="text-sm text-muted-foreground">New Comment</p>
                 </CardHeader>
                 <CardContent>
                   <Textarea
@@ -98,7 +104,7 @@ export default function TaskDetail() {
                 </CardContent>
                 <CardFooter className="flex justify-end">
                   <Button disabled={comment.trim() === ""} onClick={onSubmit}>
-                    提交
+                    Submit
                   </Button>
                 </CardFooter>
               </Card>

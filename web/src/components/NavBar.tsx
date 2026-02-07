@@ -1,14 +1,17 @@
 import { NavLink } from "react-router-dom";
-import { filter } from "lodash";
 import { Separator } from "@/components/ui/separator";
-import { useTasks } from "../hooks/useTasks";
+import { useTasks, useBacklogTasks } from "../hooks/useTasks";
 
 function NavBar() {
   const { tasks } = useTasks();
+  const { tasks: backlogTasks } = useBacklogTasks();
 
-  const todoTasksNumber = filter(
-    tasks,
-    (item) => item.archived === false && item.done === false
+  const todoTasksNumber = tasks.filter(
+    (item) => item.archived === false && item.status === "todo"
+  ).length;
+
+  const backlogTasksNumber = backlogTasks.filter(
+    (item) => item.archived === false
   ).length;
 
   return (
@@ -23,7 +26,18 @@ function NavBar() {
               }`
             }
           >
-            {todoTasksNumber > 0 ? `今日待办(${todoTasksNumber})` : "今日待办"}
+            {todoTasksNumber > 0 ? `Today (${todoTasksNumber})` : "Today"}
+          </NavLink>
+
+          <NavLink
+            to="/backlog"
+            className={({ isActive }) =>
+              `decoration-none ${
+                isActive ? "text-3xl text-gray-900" : " text-lg  text-gray-500"
+              }`
+            }
+          >
+            {backlogTasksNumber > 0 ? `Backlog (${backlogTasksNumber})` : "Backlog"}
           </NavLink>
 
           <NavLink
@@ -34,7 +48,7 @@ function NavBar() {
               }`
             }
           >
-            时间线
+            Timeline
           </NavLink>
         </div>
       </div>

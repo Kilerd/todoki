@@ -3,23 +3,32 @@ from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import Column, ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlmodel import Field, Relationship, SQLModel
 
 
-class TaskType(StrEnum):
-    TODO = "Todo"
-    STATEFUL = "Stateful"
+class TaskStatus(StrEnum):
+    BACKLOG = "backlog"
+    TODO = "todo"
+    IN_PROGRESS = "in-progress"
+    IN_REVIEW = "in-review"
+    DONE = "done"
+
+
+TASK_STATUS_ORDER = [
+    TaskStatus.BACKLOG,
+    TaskStatus.TODO,
+    TaskStatus.IN_PROGRESS,
+    TaskStatus.IN_REVIEW,
+    TaskStatus.DONE,
+]
 
 
 class TaskEventType(StrEnum):
     CREATE = "Create"
-    DONE = "Done"
-    OPEN = "Open"
+    STATUS_CHANGE = "StatusChange"
     UNARCHIVED = "Unarchived"
     ARCHIVED = "Archived"
-    UPDATE_STATE = "UpdateState"
     CREATE_COMMENT = "CreateComment"
 
 
@@ -84,9 +93,7 @@ class TaskBase(SQLModel):
     priority: int = Field(default=0)
     content: str = Field(sa_column=Column(Text, nullable=False))
     group: str = Field(default="default", max_length=255)
-    task_type: TaskType = Field(default=TaskType.TODO)
-    current_state: str | None = Field(default=None, max_length=255)
-    states: list[str] | None = Field(default=None, sa_column=Column(ARRAY(String), nullable=True))
+    status: TaskStatus = Field(default=TaskStatus.BACKLOG, sa_column=Column(String(50), nullable=False))
 
 
 class Task(TaskBase, table=True):
@@ -94,7 +101,6 @@ class Task(TaskBase, table=True):
 
     id: UUID = Field(default_factory=uuid4, sa_column=Column(PG_UUID(as_uuid=True), primary_key=True))
     create_at: datetime
-    done: bool = Field(default=False)
     archived: bool = Field(default=False)
 
     events: list[TaskEvent] = Relationship(
@@ -111,25 +117,22 @@ class TaskCreate(SQLModel):
     priority: int = Field(default=0)
     content: str
     group: str | None = Field(default="default")
-    task_type: TaskType = Field(default=TaskType.TODO)
-    states: list[str] | None = None
+    status: TaskStatus = Field(default=TaskStatus.BACKLOG)
 
 
 class TaskUpdate(SQLModel):
     priority: int
     content: str
     group: str | None = Field(default="default")
-    states: list[str] | None = None
 
 
 class TaskStatusUpdate(SQLModel):
-    status: str
+    status: TaskStatus
 
 
 class TaskResponse(TaskBase):
     id: UUID
     create_at: datetime
-    done: bool
     archived: bool
     events: list[TaskEventResponse] = []
     comments: list[TaskCommentResponse] = []

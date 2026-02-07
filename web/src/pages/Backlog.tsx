@@ -6,17 +6,15 @@ import {
 } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useOs } from "@mantine/hooks";
 import { orderBy } from "lodash";
-import { Archive, ArrowRight, Eye } from "lucide-react";
+import { ArrowRight, Eye } from "lucide-react";
 import { useMemo, useState } from "react";
-import ArchivedTaskItem from "../components/ArchivedTaskItem";
 import NavBar from "../components/NavBar";
 import PreviewTaskItem from "../components/PreviewTaskItem";
 import TaskItem from "../components/TaskItem";
-import { useTasks, createTask } from "../hooks/useTasks";
+import { useBacklogTasks, createTask } from "../hooks/useTasks";
 import { parseTask } from "../utils/taskParser";
 
 function Kbd({ children }: { children: React.ReactNode }) {
@@ -27,38 +25,22 @@ function Kbd({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Today() {
+function Backlog() {
   const os = useOs();
-  const { tasks, isLoading } = useTasks();
+  const { tasks, isLoading } = useBacklogTasks();
   const [newTaskText, setNewTaskText] = useState("");
 
   const parsedTask = useMemo(() => parseTask(newTaskText), [newTaskText]);
 
-  const todoTasks = useMemo(() => {
-    return tasks.filter((item) => item.archived === false && item.status === "todo");
-  }, [tasks]);
-
-  const inProgressTasks = useMemo(() => {
-    return tasks.filter(
-      (item) =>
-        item.archived === false &&
-        (item.status === "in-progress" || item.status === "in-review")
-    );
-  }, [tasks]);
-
-  const doneTasks = useMemo(() => {
-    return tasks.filter((item) => item.archived === false && item.status === "done");
-  }, [tasks]);
-
-  const archivedTasks = useMemo(() => {
-    return tasks.filter((item) => item.archived === true);
+  const backlogTasks = useMemo(() => {
+    return tasks.filter((item) => item.archived === false);
   }, [tasks]);
 
   const handleNewTask = async () => {
     await createTask({
       ...parsedTask,
       group: parsedTask.group ?? null,
-      status: "todo",
+      status: "backlog",
     });
     setNewTaskText("");
   };
@@ -78,7 +60,7 @@ function Today() {
           <Input
             value={newTaskText}
             onChange={(e) => setNewTaskText(e.target.value)}
-            placeholder="Add a new task to today"
+            placeholder="Add a new task to backlog"
             onKeyDown={handleKeyDown}
           />
           <Button
@@ -106,7 +88,7 @@ function Today() {
                       {...parsedTask}
                       id={"previewTask"}
                       archived={false}
-                      status="todo"
+                      status="backlog"
                     />
                   )}
                 </AccordionContent>
@@ -137,79 +119,21 @@ function Today() {
           <Skeleton className="h-9 w-full" />
         </div>
       ) : (
-        <>
-          <div className="space-y-2 mt-4">
-            {orderBy(todoTasks, ["priority", "create_at"], ["desc", "asc"]).map(
-              (task) => (
-                <TaskItem key={task.id} {...task}></TaskItem>
-              )
-            )}
-          </div>
-
-          {inProgressTasks.length > 0 && (
-            <>
-              <Separator className="my-4" />
-              <div className="text-sm text-gray-500 mb-2">In Progress</div>
-              <div className="space-y-2">
-                {orderBy(inProgressTasks, ["priority", "create_at"], ["desc", "asc"]).map(
-                  (task) => (
-                    <TaskItem key={task.id} {...task}></TaskItem>
-                  )
-                )}
-              </div>
-            </>
+        <div className="space-y-2 mt-4">
+          {orderBy(backlogTasks, ["priority", "create_at"], ["desc", "asc"]).map(
+            (task) => (
+              <TaskItem key={task.id} {...task}></TaskItem>
+            )
           )}
-
-          {doneTasks.length > 0 && (
-            <>
-              <Separator className="my-4" />
-              <Accordion type="single" collapsible>
-                <AccordionItem value="done">
-                  <AccordionTrigger>
-                    <div className="flex items-center gap-2 text-gray-500">
-                      Done ({doneTasks.length})
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent>
-                    <div className="space-y-2">
-                      {orderBy(doneTasks, ["priority", "create_at"], ["desc", "asc"]).map(
-                        (task) => (
-                          <TaskItem key={task.id} {...task}></TaskItem>
-                        )
-                      )}
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            </>
+          {backlogTasks.length === 0 && (
+            <div className="text-center text-gray-500 py-8">
+              No tasks in backlog
+            </div>
           )}
-
-          {archivedTasks.length > 0 && (
-            <>
-              <Separator className="my-4" />
-              <Accordion type="single" collapsible>
-                <AccordionItem value="archived">
-                  <AccordionTrigger>
-                    <div className="flex items-center gap-2">
-                      <Archive className="h-5 w-5" />
-                      Archived Tasks
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent>
-                    <div>
-                      {archivedTasks.map((task) => (
-                        <ArchivedTaskItem key={task.id} {...task}></ArchivedTaskItem>
-                      ))}
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            </>
-          )}
-        </>
+        </div>
       )}
     </div>
   );
 }
 
-export default Today;
+export default Backlog;

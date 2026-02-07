@@ -6,26 +6,13 @@ import { useMemo, useState } from "react";
 import PreviewTaskItem from "../components/PreviewTaskItem";
 import { updateTask } from "../hooks/useTasks";
 import { parseTask } from "../utils/taskParser";
+import type { TaskResponse } from "../api/schema";
 
-interface Props {
-    id: string,
-    priority: number,
-    content: string,
-    group: string,
-    task_type: "Todo" | "Stateful",
-    create_at: string,
-    events: any[],
-    done: boolean,
-    archived: boolean,
-    current_state: string,
-    states: string[],
-    habit_id?: string,
-    habit_name?: string
-}
+type Props = TaskResponse;
 
 export default function TaskItemEditModal({ onOpenChange, innerProps: props }: DialogProps & { innerProps: Props }) {
     const { toast } = useToast();
-    const originalContent = (props.priority > 0 ? `${"!".repeat(props.priority)} ` : "") + props.content + (props.states ? ` [[${props.states.join(">")}]]` : "") + (props.group !== "default" ? ` +${props.group}` : "")
+    const originalContent = (props.priority > 0 ? `${"!".repeat(props.priority)} ` : "") + props.content + (props.group !== "default" ? ` +${props.group}` : "")
 
     const [newTaskText, setNewTaskText] = useState(originalContent);
 
@@ -36,11 +23,10 @@ export default function TaskItemEditModal({ onOpenChange, innerProps: props }: D
             priority: parsedTask.priority,
             content: parsedTask.content,
             group: parsedTask.group ?? null,
-            states: parsedTask.states,
         });
         toast({
-            title: "更改成功",
-            description: "更改成功"
+            title: "Updated",
+            description: "Task updated successfully"
         });
         onOpenChange?.(false);
     }
@@ -48,12 +34,11 @@ export default function TaskItemEditModal({ onOpenChange, innerProps: props }: D
     return (
         <div className="flex flex-col space-y-4">
             <Input value={newTaskText} onChange={e => setNewTaskText(e.target.value)} />
-            
-            <PreviewTaskItem {...parsedTask} 
-                id={"previewTask"} 
-                done={false}
+
+            <PreviewTaskItem {...parsedTask}
+                id={"previewTask"}
                 archived={false}
-                current_state={parsedTask.states?.[0]} 
+                status={props.status}
             />
 
             <div className="flex justify-end space-x-2">
@@ -62,13 +47,13 @@ export default function TaskItemEditModal({ onOpenChange, innerProps: props }: D
                     disabled={originalContent === newTaskText}
                     onClick={() => setNewTaskText(originalContent)}
                 >
-                    重置
+                    Reset
                 </Button>
                 <Button
                     disabled={originalContent === newTaskText}
                     onClick={handleSubmitClick}
                 >
-                    提交更改
+                    Submit
                 </Button>
             </div>
         </div>

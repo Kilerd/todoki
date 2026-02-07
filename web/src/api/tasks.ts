@@ -1,5 +1,6 @@
 import client from "./client";
-import type { components } from "./schema";
+import type { components, TaskStatus } from "./schema";
+import { getToken } from "@/lib/auth";
 
 type TaskCreate = components["schemas"]["TaskCreate"];
 type TaskUpdate = components["schemas"]["TaskUpdate"];
@@ -19,6 +20,16 @@ export async function fetchTasks() {
   return response.data;
 }
 
+export async function fetchBacklogTasks() {
+  const token = getToken();
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/api/tasks/backlog`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  return response.json();
+}
+
 export async function fetchTask(taskId: string) {
   const response = await getTask({ task_id: taskId });
   return response.data;
@@ -34,7 +45,7 @@ export async function updateTask(taskId: string, task: TaskUpdate) {
   return response.data;
 }
 
-export async function updateTaskStatus(taskId: string, status: string) {
+export async function updateTaskStatus(taskId: string, status: TaskStatus) {
   const response = await updateTaskStatusApi({ task_id: taskId, status });
   return response.data;
 }

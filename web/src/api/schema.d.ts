@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * Get Tasks
-         * @description Get today's tasks (not done/archived + today's activity).
+         * @description Get today's tasks (status='todo' and not archived).
          */
         get: operations["get_tasks_api_tasks_get"];
         put?: never;
@@ -22,6 +22,66 @@ export interface paths {
          * @description Create a new task.
          */
         post: operations["create_task_api_tasks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/backlog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Backlog Tasks
+         * @description Get backlog tasks (status='backlog' and not archived).
+         */
+        get: operations["get_backlog_tasks_api_tasks_backlog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/in-progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get In Progress Tasks
+         * @description Get in-progress tasks (status='in-progress' or 'in-review' and not archived).
+         */
+        get: operations["get_in_progress_tasks_api_tasks_in_progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Done Tasks
+         * @description Get done tasks (status='done' and not archived).
+         */
+        get: operations["get_done_tasks_api_tasks_done_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -67,7 +127,7 @@ export interface paths {
         put?: never;
         /**
          * Update Task Status
-         * @description Update task status (Done/Open for Todo, state name for Stateful).
+         * @description Update task status (backlog, todo, in-progress, in-review, done).
          */
         post: operations["update_task_status_api_tasks__task_id__status_post"];
         delete?: never;
@@ -211,6 +271,8 @@ export interface components {
         };
         /** TaskCommentResponse */
         TaskCommentResponse: {
+            /** Content */
+            content: string;
             /**
              * Id
              * Format: uuid
@@ -226,8 +288,6 @@ export interface components {
              * Format: date-time
              */
             create_at: string;
-            /** Content */
-            content: string;
         };
         /** TaskCreate */
         TaskCreate: {
@@ -243,13 +303,19 @@ export interface components {
              * @default default
              */
             group: string | null;
-            /** @default Todo */
-            task_type: components["schemas"]["TaskType"];
-            /** States */
-            states?: string[] | null;
+            /** @default backlog */
+            status: components["schemas"]["TaskStatus"];
         };
         /** TaskEventResponse */
         TaskEventResponse: {
+            event_type: components["schemas"]["TaskEventType"];
+            /**
+             * Datetime
+             * Format: date-time
+             */
+            datetime: string;
+            /** State */
+            state?: string | null;
             /**
              * Id
              * Format: uuid
@@ -260,47 +326,40 @@ export interface components {
              * Format: uuid
              */
             task_id: string;
-            event_type: components["schemas"]["TaskEventType"];
-            /**
-             * Datetime
-             * Format: date-time
-             */
-            datetime: string;
-            /** State */
-            state?: string | null;
         };
         /**
          * TaskEventType
          * @enum {string}
          */
-        TaskEventType: "Create" | "Done" | "Open" | "Unarchived" | "Archived" | "UpdateState" | "CreateComment";
+        TaskEventType: "Create" | "StatusChange" | "Unarchived" | "Archived" | "CreateComment";
         /** TaskResponse */
         TaskResponse: {
+            /**
+             * Priority
+             * @default 0
+             */
+            priority: number;
+            /** Content */
+            content: string;
+            /**
+             * Group
+             * @default default
+             */
+            group: string;
+            /** @default backlog */
+            status: components["schemas"]["TaskStatus"];
             /**
              * Id
              * Format: uuid
              */
             id: string;
-            /** Priority */
-            priority: number;
-            /** Content */
-            content: string;
-            /** Group */
-            group: string;
-            task_type: components["schemas"]["TaskType"];
             /**
              * Create At
              * Format: date-time
              */
             create_at: string;
-            /** Done */
-            done: boolean;
             /** Archived */
             archived: boolean;
-            /** Current State */
-            current_state?: string | null;
-            /** States */
-            states?: string[] | null;
             /**
              * Events
              * @default []
@@ -312,16 +371,15 @@ export interface components {
              */
             comments: components["schemas"]["TaskCommentResponse"][];
         };
-        /** TaskStatusUpdate */
-        TaskStatusUpdate: {
-            /** Status */
-            status: string;
-        };
         /**
-         * TaskType
+         * TaskStatus
          * @enum {string}
          */
-        TaskType: "Todo" | "Stateful";
+        TaskStatus: "backlog" | "todo" | "in-progress" | "in-review" | "done";
+        /** TaskStatusUpdate */
+        TaskStatusUpdate: {
+            status: components["schemas"]["TaskStatus"];
+        };
         /** TaskUpdate */
         TaskUpdate: {
             /** Priority */
@@ -333,8 +391,6 @@ export interface components {
              * @default default
              */
             group: string | null;
-            /** States */
-            states?: string[] | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -357,6 +413,14 @@ export interface components {
     pathItems: never;
 }
 export type $defs = Record<string, never>;
+
+export type TaskResponse = components["schemas"]["TaskResponse"];
+export type TaskEventResponse = components["schemas"]["TaskEventResponse"];
+export type TaskCreate = components["schemas"]["TaskCreate"];
+export type TaskUpdate = components["schemas"]["TaskUpdate"];
+export type TaskStatus = components["schemas"]["TaskStatus"];
+export type TaskEventType = components["schemas"]["TaskEventType"];
+
 export interface operations {
     get_tasks_api_tasks_get: {
         parameters: {
@@ -411,6 +475,99 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_backlog_tasks_api_tasks_backlog_get: {
+        parameters: {
+            query?: never;
+            header: {
+                authorization: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_in_progress_tasks_api_tasks_in_progress_get: {
+        parameters: {
+            query?: never;
+            header: {
+                authorization: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_done_tasks_api_tasks_done_get: {
+        parameters: {
+            query?: never;
+            header: {
+                authorization: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskResponse"][];
                 };
             };
             /** @description Validation Error */

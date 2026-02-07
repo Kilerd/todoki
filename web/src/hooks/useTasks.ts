@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 import * as api from "../api/tasks";
-import type { TaskResponse } from "../api/schema";
+import type { TaskResponse, TaskStatus } from "../api/schema";
 
 // Simple global state for tasks to enable refresh across components
 let globalTasks: TaskResponse[] = [];
+let globalBacklogTasks: TaskResponse[] = [];
 let globalListeners: Set<() => void> = new Set();
+let globalBacklogListeners: Set<() => void> = new Set();
 
 function notifyListeners() {
   globalListeners.forEach((listener) => listener());
+}
+
+function notifyBacklogListeners() {
+  globalBacklogListeners.forEach((listener) => listener());
 }
 
 export function useTasks() {
@@ -42,6 +48,38 @@ export function useTasks() {
   return { tasks, isLoading, refresh };
 }
 
+export function useBacklogTasks() {
+  const [tasks, setTasks] = useState<TaskResponse[]>(globalBacklogTasks);
+  const [isLoading, setIsLoading] = useState(globalBacklogTasks.length === 0);
+
+  const refresh = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await api.fetchBacklogTasks();
+      globalBacklogTasks = data;
+      setTasks(data);
+      notifyBacklogListeners();
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const listener = () => setTasks(globalBacklogTasks);
+    globalBacklogListeners.add(listener);
+
+    if (globalBacklogTasks.length === 0) {
+      refresh();
+    }
+
+    return () => {
+      globalBacklogListeners.delete(listener);
+    };
+  }, [refresh]);
+
+  return { tasks, isLoading, refresh };
+}
+
 export function useTask(taskId: string) {
   const [task, setTask] = useState<TaskResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -63,20 +101,27 @@ export function useTask(taskId: string) {
   return { task, isLoading, refresh };
 }
 
+async function refreshAllTasks() {
+  const [todayData, backlogData] = await Promise.all([
+    api.fetchTasks(),
+    api.fetchBacklogTasks(),
+  ]);
+  globalTasks = todayData;
+  globalBacklogTasks = backlogData;
+  notifyListeners();
+  notifyBacklogListeners();
+}
+
 // Re-export API functions with auto-refresh
 export async function createTask(task: Parameters<typeof api.createTask>[0]) {
   const result = await api.createTask(task);
-  const data = await api.fetchTasks();
-  globalTasks = data;
-  notifyListeners();
+  await refreshAllTasks();
   return result;
 }
 
-export async function updateTaskStatus(taskId: string, status: string) {
+export async function updateTaskStatus(taskId: string, status: TaskStatus) {
   const result = await api.updateTaskStatus(taskId, status);
-  const data = await api.fetchTasks();
-  globalTasks = data;
-  notifyListeners();
+  await refreshAllTasks();
   return result;
 }
 
@@ -85,39 +130,29 @@ export async function updateTask(
   task: Parameters<typeof api.updateTask>[1]
 ) {
   const result = await api.updateTask(taskId, task);
-  const data = await api.fetchTasks();
-  globalTasks = data;
-  notifyListeners();
+  await refreshAllTasks();
   return result;
 }
 
 export async function archiveTask(taskId: string) {
   const result = await api.archiveTask(taskId);
-  const data = await api.fetchTasks();
-  globalTasks = data;
-  notifyListeners();
+  await refreshAllTasks();
   return result;
 }
 
 export async function unarchiveTask(taskId: string) {
   const result = await api.unarchiveTask(taskId);
-  const data = await api.fetchTasks();
-  globalTasks = data;
-  notifyListeners();
+  await refreshAllTasks();
   return result;
 }
 
 export async function deleteTask(taskId: string) {
   await api.deleteTask(taskId);
-  const data = await api.fetchTasks();
-  globalTasks = data;
-  notifyListeners();
+  await refreshAllTasks();
 }
 
 export async function addComment(taskId: string, content: string) {
   const result = await api.addComment(taskId, content);
-  const data = await api.fetchTasks();
-  globalTasks = data;
-  notifyListeners();
+  await refreshAllTasks();
   return result;
 }

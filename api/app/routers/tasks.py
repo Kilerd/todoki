@@ -18,8 +18,29 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 @router.get("", response_model=list[TaskResponse])
 def get_tasks(_: AuthDep, db: DbSession) -> list[TaskResponse]:
-    """Get today's tasks (not done/archived + today's activity)."""
+    """Get today's tasks (status='todo' and not archived)."""
     tasks = task_service.get_today_tasks(db)
+    return [TaskResponse.model_validate(t) for t in tasks]
+
+
+@router.get("/backlog", response_model=list[TaskResponse])
+def get_backlog_tasks(_: AuthDep, db: DbSession) -> list[TaskResponse]:
+    """Get backlog tasks (status='backlog' and not archived)."""
+    tasks = task_service.get_backlog_tasks(db)
+    return [TaskResponse.model_validate(t) for t in tasks]
+
+
+@router.get("/in-progress", response_model=list[TaskResponse])
+def get_in_progress_tasks(_: AuthDep, db: DbSession) -> list[TaskResponse]:
+    """Get in-progress tasks (status='in-progress' or 'in-review' and not archived)."""
+    tasks = task_service.get_in_progress_tasks(db)
+    return [TaskResponse.model_validate(t) for t in tasks]
+
+
+@router.get("/done", response_model=list[TaskResponse])
+def get_done_tasks(_: AuthDep, db: DbSession) -> list[TaskResponse]:
+    """Get done tasks (status='done' and not archived)."""
+    tasks = task_service.get_done_tasks(db)
     return [TaskResponse.model_validate(t) for t in tasks]
 
 
@@ -46,7 +67,7 @@ def update_task(_: AuthDep, db: DbSession, task_id: UUID, payload: TaskUpdate) -
 
 @router.post("/{task_id}/status", response_model=TaskResponse)
 def update_task_status(_: AuthDep, db: DbSession, task_id: UUID, payload: TaskStatusUpdate) -> TaskResponse:
-    """Update task status (Done/Open for Todo, state name for Stateful)."""
+    """Update task status (backlog, todo, in-progress, in-review, done)."""
     task = task_service.update_task_status(db, task_id, payload)
     return TaskResponse.model_validate(task)
 
