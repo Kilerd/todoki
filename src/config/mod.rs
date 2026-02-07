@@ -7,6 +7,9 @@ use std::env;
 pub struct Settings {
     pub database_url: String,
     pub user_token: String,
+    /// Token for relay authentication (can be same as user_token or separate)
+    #[serde(default)]
+    pub relay_token: String,
 }
 
 impl Settings {

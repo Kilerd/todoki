@@ -1,10 +1,15 @@
 use crate::models::{
+    agent::{
+        Agent, AgentEvent, AgentSession, AgentStatus, CreateAgent, CreateAgentEvent,
+        CreateAgentSession, SessionStatus,
+    },
     report::{ReportPeriod, ReportResponse},
     task::{
         CreateTask, CreateTaskComment, CreateTaskEvent, Task, TaskComment, TaskEvent,
         TaskResponse, TaskStatus,
     },
 };
+use chrono::Utc;
 use conservator::{Creatable, Domain, Executor, Migrator, PooledConnection};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -399,5 +404,309 @@ impl DatabaseService {
             state_changes_count: row.get::<_, Option<i64>>("state_changes_count").unwrap_or(0),
             comments_count: row.get::<_, Option<i64>>("comments_count").unwrap_or(0),
         })
+    }
+
+    // ========================================================================
+    // Agent operations
+    // ========================================================================
+
+    /// Create a new agent
+    pub async fn create_agent(&self, create: CreateAgent) -> crate::Result<Agent> {
+        let agent_id = create
+            .insert::<Agent>()
+            .returning_pk(&*self.pool)
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Agent::fetch_one_by_pk(&agent_id, &*self.pool)
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))
+    }
+
+    /// List all agents
+    pub async fn list_agents(&self) -> crate::Result<Vec<Agent>> {
+        Agent::fetch_all(&*self.pool)
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))
+    }
+
+    /// Get agent by ID
+    pub async fn get_agent(&self, agent_id: Uuid) -> crate::Result<Option<Agent>> {
+        let conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        let row = conn
+            .query_opt(
+                r#"
+                SELECT id, name, workdir, command, args, execution_mode, relay_id, status, created_at, updated_at
+                FROM agents
+                WHERE id = $1
+                "#,
+                &[&agent_id],
+            )
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Ok(row.map(|r| Agent {
+            id: r.get("id"),
+            name: r.get("name"),
+            workdir: r.get("workdir"),
+            command: r.get("command"),
+            args: r.get("args"),
+            execution_mode: r.get("execution_mode"),
+            relay_id: r.get("relay_id"),
+            status: r.get("status"),
+            created_at: r.get("created_at"),
+            updated_at: r.get("updated_at"),
+        }))
+    }
+
+    /// Update agent status
+    pub async fn update_agent_status(
+        &self,
+        agent_id: Uuid,
+        status: AgentStatus,
+    ) -> crate::Result<()> {
+        let mut agent = Agent::fetch_one_by_pk(&agent_id, &*self.pool)
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        agent.status = status.as_str().to_string();
+        agent.updated_at = Utc::now();
+        agent
+            .save(&*self.pool)
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Ok(())
+    }
+
+    /// Delete agent
+    pub async fn delete_agent(&self, agent_id: Uuid) -> crate::Result<()> {
+        Agent::delete_by_pk(&agent_id, &*self.pool)
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // Agent Session operations
+    // ========================================================================
+
+    /// Create a new agent session
+    pub async fn create_agent_session(
+        &self,
+        agent_id: Uuid,
+        relay_id: Option<&str>,
+    ) -> crate::Result<AgentSession> {
+        let create = CreateAgentSession {
+            agent_id,
+            relay_id: relay_id.map(|s| s.to_string()),
+        };
+
+        let session_id = create
+            .insert::<AgentSession>()
+            .returning_pk(&*self.pool)
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        AgentSession::fetch_one_by_pk(&session_id, &*self.pool)
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))
+    }
+
+    /// Update session status
+    pub async fn update_session_status(
+        &self,
+        session_id: Uuid,
+        status: SessionStatus,
+    ) -> crate::Result<()> {
+        let mut session = AgentSession::fetch_one_by_pk(&session_id, &*self.pool)
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        session.status = status.as_str().to_string();
+        if status != SessionStatus::Running {
+            session.ended_at = Some(Utc::now());
+        }
+
+        session
+            .save(&*self.pool)
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Ok(())
+    }
+
+    /// Get a single session by ID
+    pub async fn get_agent_session(&self, session_id: Uuid) -> crate::Result<Option<AgentSession>> {
+        let conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        let row = conn
+            .query_opt(
+                r#"
+                SELECT id, agent_id, relay_id, status, started_at, ended_at
+                FROM agent_sessions
+                WHERE id = $1
+                "#,
+                &[&session_id],
+            )
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Ok(row.map(|r| AgentSession {
+            id: r.get("id"),
+            agent_id: r.get("agent_id"),
+            relay_id: r.get("relay_id"),
+            status: r.get("status"),
+            started_at: r.get("started_at"),
+            ended_at: r.get("ended_at"),
+        }))
+    }
+
+    /// Get sessions for an agent
+    pub async fn get_agent_sessions(&self, agent_id: Uuid) -> crate::Result<Vec<AgentSession>> {
+        let conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        let rows = conn
+            .query(
+                r#"
+                SELECT id, agent_id, relay_id, status, started_at, ended_at
+                FROM agent_sessions
+                WHERE agent_id = $1
+                ORDER BY started_at DESC
+                "#,
+                &[&agent_id],
+            )
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Ok(rows
+            .iter()
+            .map(|row| AgentSession {
+                id: row.get("id"),
+                agent_id: row.get("agent_id"),
+                relay_id: row.get("relay_id"),
+                status: row.get("status"),
+                started_at: row.get("started_at"),
+                ended_at: row.get("ended_at"),
+            })
+            .collect())
+    }
+
+    // ========================================================================
+    // Agent Event operations
+    // ========================================================================
+
+    /// Insert agent event
+    pub async fn insert_agent_event(&self, event: CreateAgentEvent) -> crate::Result<()> {
+        event
+            .insert::<AgentEvent>()
+            .returning_pk(&*self.pool)
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Ok(())
+    }
+
+    /// Get agent events
+    pub async fn get_agent_events(
+        &self,
+        agent_id: Uuid,
+        limit: i64,
+        before_seq: Option<i64>,
+    ) -> crate::Result<Vec<AgentEvent>> {
+        let conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        let rows = if let Some(before) = before_seq {
+            conn.query(
+                r#"
+                SELECT id, agent_id, session_id, seq, ts, stream, message
+                FROM agent_events
+                WHERE agent_id = $1 AND seq < $2
+                ORDER BY seq DESC
+                LIMIT $3
+                "#,
+                &[&agent_id, &before, &limit],
+            )
+            .await
+        } else {
+            conn.query(
+                r#"
+                SELECT id, agent_id, session_id, seq, ts, stream, message
+                FROM agent_events
+                WHERE agent_id = $1
+                ORDER BY seq DESC
+                LIMIT $2
+                "#,
+                &[&agent_id, &limit],
+            )
+            .await
+        }
+        .map_err(|e| crate::TodokiError::Database(e))?;
+
+        let mut events: Vec<AgentEvent> = rows
+            .iter()
+            .map(|row| AgentEvent {
+                id: row.get("id"),
+                agent_id: row.get("agent_id"),
+                session_id: row.get("session_id"),
+                seq: row.get("seq"),
+                ts: row.get("ts"),
+                stream: row.get("stream"),
+                message: row.get("message"),
+            })
+            .collect();
+        events.reverse();
+        Ok(events)
+    }
+
+    /// Mark running sessions as exited on startup
+    pub async fn mark_sessions_exited_on_startup(&self) -> crate::Result<()> {
+        let conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        conn.execute(
+            r#"
+            UPDATE agent_sessions
+            SET status = 'exited', ended_at = NOW()
+            WHERE status = 'running'
+            "#,
+            &[],
+        )
+        .await
+        .map_err(|e| crate::TodokiError::Database(e))?;
+
+        conn.execute(
+            r#"
+            UPDATE agents
+            SET status = 'exited', updated_at = NOW()
+            WHERE status = 'running'
+            "#,
+            &[],
+        )
+        .await
+        .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Ok(())
     }
 }

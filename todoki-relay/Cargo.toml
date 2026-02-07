@@ -1,0 +1,49 @@
+[package]
+name = "todoki-relay"
+version = "0.1.0"
+edition = "2021"
+description = "Remote agent relay for todoki"
+
+[[bin]]
+name = "todoki-relay"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# WebSocket
+tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+futures-util = "0.3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Configuration
+toml = "0.8"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# UUID
+uuid = { version = "1", features = ["v4"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# URL parsing
+url = "2"
+
+# Hostname
+hostname = "0.4"
+
+# ACP protocol for Claude Code
+agent-client-protocol = { version = "0.9.3", features = ["unstable"] }
+async-trait = "0.1"
+tokio-util = { version = "0.7", features = ["compat"] }

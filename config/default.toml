@@ -5,3 +5,4 @@ port = 8201
 [application]
 database_url = "postgres://cafu:cafu@localhost/todoki"
 user_token = "change-me-in-production"
+relay_token = "change-me-in-production"
