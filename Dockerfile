@@ -33,23 +33,23 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy the binary from builder
-COPY --from=builder /app/target/release/manti /app/manti
+COPY --from=builder /app/target/release/todoki /app/todoki
 
 # Copy migrations
 COPY --from=builder /app/migrations /app/migrations
 COPY --from=builder /app/config /app/config
 
 # Create non-root user
-RUN useradd -m -u 1001 manti && chown -R manti:manti /app
-USER manti
+RUN useradd -m -u 1001 todoki && chown -R todoki:todoki /app
+USER todoki
 
 # Expose port
 EXPOSE 8080
 
 # Set environment variables
 ENV RUST_LOG=info
-ENV MANTI_SERVER_HOST=0.0.0.0
-ENV MANTI_SERVER_PORT=8080
+ENV TODOKI_SERVER_HOST=0.0.0.0
+ENV TODOKI_SERVER_PORT=8080
 
 # Run the application
-CMD ["./manti"]
+CMD ["./todoki"]
