@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.83-slim as builder
+FROM rust:1.91-slim as builder
 
 # Install required dependencies
 RUN apt-get update && apt-get install -y \
