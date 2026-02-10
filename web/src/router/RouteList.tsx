@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import Agents from "../pages/Agents";
 import Inbox from "../pages/Inbox";
 import Later from "../pages/Later";
+import Projects from "../pages/Projects";
 import Report from "../pages/Report";
 import TaskDetail from "../pages/TaskDetail";
 import NotFoundTitle from "../pages/NotFound";
@@ -14,6 +15,7 @@ function RouteList() {
       <Route path="/inbox" element={<Inbox />} />
       <Route path="/inbox/:id" element={<TaskDetail />} />
       <Route path="/later" element={<Later />} />
+      <Route path="/projects" element={<Projects />} />
       <Route path="/report" element={<Report />} />
       <Route path="/agents" element={<Agents />} />
       <Route path="*" element={<NotFoundTitle />} />

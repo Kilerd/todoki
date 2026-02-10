@@ -11,6 +11,14 @@ use crate::models::{
 };
 use crate::Db;
 
+async fn tasks_to_responses(db: &Db, tasks: Vec<(crate::models::Task, crate::models::Project)>) -> crate::Result<Vec<TaskResponse>> {
+    let mut responses = Vec::with_capacity(tasks.len());
+    for (task, project) in tasks {
+        responses.push(db.get_task_response(task, project).await?);
+    }
+    Ok(responses)
+}
+
 /// GET /api/tasks - Get today's tasks (todo, not archived)
 #[gotcha::api]
 pub async fn get_tasks(
@@ -20,10 +28,7 @@ pub async fn get_tasks(
     auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
     let tasks = db.get_today_tasks().await?;
-    let mut responses = Vec::with_capacity(tasks.len());
-    for task in tasks {
-        responses.push(db.get_task_response(task).await?);
-    }
+    let responses = tasks_to_responses(&db, tasks).await?;
     Ok(Json(responses))
 }
 
@@ -36,10 +41,7 @@ pub async fn get_inbox_tasks(
     auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
     let tasks = db.get_inbox_tasks().await?;
-    let mut responses = Vec::with_capacity(tasks.len());
-    for task in tasks {
-        responses.push(db.get_task_response(task).await?);
-    }
+    let responses = tasks_to_responses(&db, tasks).await?;
     Ok(Json(responses))
 }
 
@@ -52,10 +54,7 @@ pub async fn get_backlog_tasks(
     auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
     let tasks = db.get_backlog_tasks().await?;
-    let mut responses = Vec::with_capacity(tasks.len());
-    for task in tasks {
-        responses.push(db.get_task_response(task).await?);
-    }
+    let responses = tasks_to_responses(&db, tasks).await?;
     Ok(Json(responses))
 }
 
@@ -68,10 +67,7 @@ pub async fn get_in_progress_tasks(
     auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
     let tasks = db.get_in_progress_tasks().await?;
-    let mut responses = Vec::with_capacity(tasks.len());
-    for task in tasks {
-        responses.push(db.get_task_response(task).await?);
-    }
+    let responses = tasks_to_responses(&db, tasks).await?;
     Ok(Json(responses))
 }
 
@@ -84,10 +80,7 @@ pub async fn get_done_tasks(
     auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
     let tasks = db.get_done_tasks().await?;
-    let mut responses = Vec::with_capacity(tasks.len());
-    for task in tasks {
-        responses.push(db.get_task_response(task).await?);
-    }
+    let responses = tasks_to_responses(&db, tasks).await?;
     Ok(Json(responses))
 }
 
@@ -100,10 +93,7 @@ pub async fn get_today_done_tasks(
     auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
     let tasks = db.get_today_done_tasks().await?;
-    let mut responses = Vec::with_capacity(tasks.len());
-    for task in tasks {
-        responses.push(db.get_task_response(task).await?);
-    }
+    let responses = tasks_to_responses(&db, tasks).await?;
     Ok(Json(responses))
 }
 
@@ -120,11 +110,11 @@ pub async fn create_task(
         payload.content,
         payload.status,
         payload.priority,
-        payload.group,
+        payload.project_id,
     );
 
-    let task = db.create_task(create_task).await?;
-    let response = db.get_task_response(task).await?;
+    let (task, project) = db.create_task(create_task).await?;
+    let response = db.get_task_response(task, project).await?;
     Ok(Json(response))
 }
 
@@ -137,12 +127,12 @@ pub async fn get_task(
 ) -> Result<Json<TaskResponse>, ApiError> {
     auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
-    let task = db
-        .get_task_by_id(task_id)
+    let (task, project) = db
+        .get_task_with_project(task_id)
         .await?
         .ok_or_else(|| ApiError::not_found(format!("Task {} not found", task_id)))?;
 
-    let response = db.get_task_response(task).await?;
+    let response = db.get_task_response(task, project).await?;
     Ok(Json(response))
 }
 
@@ -156,11 +146,11 @@ pub async fn update_task(
 ) -> Result<Json<TaskResponse>, ApiError> {
     auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
-    let task = db
-        .update_task(task_id, payload.priority, payload.content, payload.group)
+    let (task, project) = db
+        .update_task(task_id, payload.priority, payload.content, payload.project_id)
         .await?;
 
-    let response = db.get_task_response(task).await?;
+    let response = db.get_task_response(task, project).await?;
     Ok(Json(response))
 }
 
@@ -174,8 +164,8 @@ pub async fn update_task_status(
 ) -> Result<Json<TaskResponse>, ApiError> {
     auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
-    let task = db.update_task_status(task_id, payload.status).await?;
-    let response = db.get_task_response(task).await?;
+    let (task, project) = db.update_task_status(task_id, payload.status).await?;
+    let response = db.get_task_response(task, project).await?;
     Ok(Json(response))
 }
 
@@ -188,8 +178,8 @@ pub async fn archive_task(
 ) -> Result<Json<TaskResponse>, ApiError> {
     auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
-    let task = db.archive_task(task_id).await?;
-    let response = db.get_task_response(task).await?;
+    let (task, project) = db.archive_task(task_id).await?;
+    let response = db.get_task_response(task, project).await?;
     Ok(Json(response))
 }
 
@@ -202,8 +192,8 @@ pub async fn unarchive_task(
 ) -> Result<Json<TaskResponse>, ApiError> {
     auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
-    let task = db.unarchive_task(task_id).await?;
-    let response = db.get_task_response(task).await?;
+    let (task, project) = db.unarchive_task(task_id).await?;
+    let response = db.get_task_response(task, project).await?;
     Ok(Json(response))
 }
 

@@ -1,4 +1,10 @@
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -9,7 +15,10 @@ import { useMemo, useState } from "react";
 import NavBar from "../components/NavBar";
 import TaskItem from "../components/TaskItem";
 import { useTasks, useTodayDoneTasks, createTask } from "../hooks/useTasks";
+import { getProjectByName } from "../hooks/useProjects";
+import ProjectSelectModal from "../modals/ProjectSelectModal";
 import { parseTask } from "../utils/taskParser";
+import type { Project } from "../api/types";
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
@@ -65,6 +74,12 @@ function Inbox() {
   const { tasks: todayDoneTasks } = useTodayDoneTasks();
   const [newTaskText, setNewTaskText] = useState("");
   const [showDone, setShowDone] = useState(false);
+  const [showProjectModal, setShowProjectModal] = useState(false);
+  const [pendingTaskData, setPendingTaskData] = useState<{
+    content: string;
+    priority: number;
+    suggestedName?: string;
+  } | null>(null);
 
   const parsedTask = useMemo(() => parseTask(newTaskText), [newTaskText]);
 
@@ -80,12 +95,50 @@ function Inbox() {
 
   const handleNewTask = async () => {
     if (newTaskText.trim() === "") return;
+
+    // If user typed +tag, try to find or create that project
+    if (parsedTask.group) {
+      const existingProject = await getProjectByName(parsedTask.group);
+      if (existingProject) {
+        // Project exists, create task directly
+        await createTask({
+          content: parsedTask.content,
+          priority: parsedTask.priority,
+          project_id: existingProject.id,
+          status: "todo",
+        });
+        setNewTaskText("");
+      } else {
+        // Project doesn't exist, show modal to confirm creation
+        setPendingTaskData({
+          content: parsedTask.content,
+          priority: parsedTask.priority,
+          suggestedName: parsedTask.group,
+        });
+        setShowProjectModal(true);
+      }
+    } else {
+      // No +tag specified, show project selection modal
+      setPendingTaskData({
+        content: parsedTask.content,
+        priority: parsedTask.priority,
+      });
+      setShowProjectModal(true);
+    }
+  };
+
+  const handleProjectSelect = async (project: Project) => {
+    if (!pendingTaskData) return;
+
     await createTask({
-      ...parsedTask,
-      group: parsedTask.group ?? null,
+      content: pendingTaskData.content,
+      priority: pendingTaskData.priority,
+      project_id: project.id,
       status: "todo",
     });
     setNewTaskText("");
+    setPendingTaskData(null);
+    setShowProjectModal(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -229,6 +282,25 @@ function Inbox() {
           </div>
         )}
       </div>
+
+      {/* Project Selection Modal */}
+      <Dialog open={showProjectModal} onOpenChange={(open) => {
+        setShowProjectModal(open);
+        if (!open) setPendingTaskData(null);
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Select Project</DialogTitle>
+          </DialogHeader>
+          <ProjectSelectModal
+            open={showProjectModal}
+            onOpenChange={setShowProjectModal}
+            mode="select-or-create"
+            suggestedName={pendingTaskData?.suggestedName}
+            onSelect={handleProjectSelect}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

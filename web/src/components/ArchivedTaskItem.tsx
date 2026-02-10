@@ -2,7 +2,7 @@ import { deleteTask, unarchiveTask } from "../hooks/useTasks";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RotateCcw, Trash2 } from "lucide-react";
-import type { TaskResponse } from "../api/schema";
+import type { TaskResponse } from "../api/types";
 import { cn } from "@/lib/utils";
 
 type Props = TaskResponse;
@@ -27,7 +27,13 @@ export default function ArchivedTaskItem(props: Props) {
   return (
     <div className="flex items-center justify-between p-2 rounded-md text-gray-600 hover:bg-gray-100 group">
       <div className="flex items-center gap-2">
-        <span className="text-gray-500">{props.group}</span>
+        <span className="text-gray-500 flex items-center gap-1.5">
+          <div
+            className="w-2 h-2 rounded-full"
+            style={{ backgroundColor: props.project?.color ?? "#6B7280" }}
+          />
+          {props.project?.name ?? "Inbox"}
+        </span>
         <span className={cn("px-2 py-0.5 rounded text-xs opacity-60", STATUS_COLORS[props.status])}>
           {STATUS_LABELS[props.status]}
         </span>

@@ -16,7 +16,7 @@ use serde_json::json;
 use thiserror::Error;
 use tracing::{error, info};
 
-use crate::api::{agent_stream, agents, relays, report, tasks};
+use crate::api::{agent_stream, agents, projects, relays, report, tasks};
 use crate::auth::auth_middleware;
 use crate::config::Settings;
 use crate::db::DatabaseService;
@@ -220,6 +220,13 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .post("/api/tasks/:task_id/unarchive", tasks::unarchive_task)
         .delete("/api/tasks/:task_id", tasks::delete_task)
         .post("/api/tasks/:task_id/comments", tasks::add_comment)
+        // Project routes
+        .get("/api/projects", projects::list_projects)
+        .post("/api/projects", projects::create_project)
+        .get("/api/projects/by-name/:name", projects::get_project_by_name)
+        .get("/api/projects/:project_id", projects::get_project)
+        .put("/api/projects/:project_id", projects::update_project)
+        .delete("/api/projects/:project_id", projects::delete_project)
         // Report route
         .get("/api/report", report::get_report)
         // Agent routes

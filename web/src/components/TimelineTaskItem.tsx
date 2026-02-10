@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import dayjs, { Dayjs } from "dayjs";
 import { Archive, ChevronDown, Edit, RotateCcw, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
-import type { TaskResponse, TaskEventResponse, TaskStatus } from "../api/schema";
+import type { TaskResponse, TaskEvent, TaskStatus } from "../api/types";
 import {
   archiveTask,
   deleteTask,
@@ -36,7 +36,7 @@ const STATUS_COLORS: Record<string, string> = {
   done: "bg-green-100 text-green-700",
 };
 
-type TaskEventBadgeProps = TaskEventResponse;
+type TaskEventBadgeProps = TaskEvent;
 
 const valueConverter = (event: TaskEventBadgeProps) => {
   switch (event.event_type) {
@@ -82,7 +82,7 @@ export default function TimelineTaskItem(props: Props) {
     // TODO: Replace with your modal implementation
   };
 
-  let day_events: TaskEventResponse[] = [];
+  let day_events: TaskEvent[] = [];
   if (props.grouped_day !== undefined) {
     day_events = props.events
       .filter(
@@ -99,7 +99,13 @@ export default function TimelineTaskItem(props: Props) {
     <div>
       <div className="flex items-center justify-between p-2 rounded-sm hover:bg-gray-100 group">
         <div className="flex items-center gap-2">
-          <span className="text-gray-500 min-w-[5vh]">{props.group}</span>
+          <span className="text-gray-500 min-w-[5vh] flex items-center gap-1.5">
+            <div
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: props.project?.color ?? "#6B7280" }}
+            />
+            {props.project?.name ?? "Inbox"}
+          </span>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

@@ -4,6 +4,78 @@
  */
 
 export interface paths {
+    "/api/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Projects
+         * @description GET /api/projects - List all projects
+         */
+        get: operations["list_projects"];
+        put?: never;
+        /**
+         * Create Project
+         * @description POST /api/projects - Create a new project
+         */
+        post: operations["create_project"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/by-name/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Project By Name
+         * @description GET /api/projects/by-name/:name - Get project by name
+         */
+        get: operations["get_project_by_name"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Project
+         * @description GET /api/projects/:project_id - Get project by ID
+         */
+        get: operations["get_project"];
+        /**
+         * Update Project
+         * @description PUT /api/projects/:project_id - Update project
+         */
+        put: operations["update_project"];
+        post?: never;
+        /**
+         * Delete Project
+         * @description DELETE /api/projects/:project_id - Delete project
+         */
+        delete: operations["delete_project"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/report": {
         parameters: {
             query?: never;
@@ -268,6 +340,198 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_projects: {
+        parameters: {
+            query: {
+                include_archived: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        color: string;
+                        created_at: string;
+                        description?: string | null;
+                        /** Format: uuid */
+                        id: string;
+                        name: string;
+                        updated_at: string;
+                    }[];
+                };
+            };
+        };
+    };
+    create_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    color?: string | null;
+                    description?: string | null;
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        color: string;
+                        created_at: string;
+                        description?: string | null;
+                        /** Format: uuid */
+                        id: string;
+                        name: string;
+                        updated_at: string;
+                    };
+                };
+            };
+        };
+    };
+    get_project_by_name: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        color: string;
+                        created_at: string;
+                        description?: string | null;
+                        /** Format: uuid */
+                        id: string;
+                        name: string;
+                        updated_at: string;
+                    } | null;
+                };
+            };
+        };
+    };
+    get_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        color: string;
+                        created_at: string;
+                        description?: string | null;
+                        /** Format: uuid */
+                        id: string;
+                        name: string;
+                        updated_at: string;
+                    };
+                };
+            };
+        };
+    };
+    update_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    archived?: boolean | null;
+                    color?: string | null;
+                    description?: string | null;
+                    name?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        color: string;
+                        created_at: string;
+                        description?: string | null;
+                        /** Format: uuid */
+                        id: string;
+                        name: string;
+                        updated_at: string;
+                    };
+                };
+            };
+        };
+    };
+    delete_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
     get_report: {
         parameters: {
             query?: {
@@ -291,7 +555,7 @@ export interface operations {
                         created_count: number;
                         done_count: number;
                         /** @enum {string} */
-                        period: "Today" | "Week" | "Month";
+                        period: "today" | "week" | "month";
                         state_changes_count: number;
                     };
                 };
@@ -335,10 +599,19 @@ export interface operations {
                             /** Format: uuid */
                             task_id: string;
                         }[];
-                        group: string;
                         /** Format: uuid */
                         id: string;
                         priority: number;
+                        project: {
+                            archived: boolean;
+                            color: string;
+                            created_at: string;
+                            description?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            updated_at: string;
+                        };
                         status: string;
                     }[];
                 };
@@ -356,10 +629,11 @@ export interface operations {
             content: {
                 "application/json": {
                     content: string;
-                    group: string;
                     priority: number;
+                    /** Format: uuid */
+                    project_id: string;
                     /** @enum {string} */
-                    status: "Backlog" | "Todo" | "InProgress" | "InReview" | "Done";
+                    status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                 };
             };
         };
@@ -392,10 +666,19 @@ export interface operations {
                             /** Format: uuid */
                             task_id: string;
                         }[];
-                        group: string;
                         /** Format: uuid */
                         id: string;
                         priority: number;
+                        project: {
+                            archived: boolean;
+                            color: string;
+                            created_at: string;
+                            description?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            updated_at: string;
+                        };
                         status: string;
                     };
                 };
@@ -439,10 +722,19 @@ export interface operations {
                             /** Format: uuid */
                             task_id: string;
                         }[];
-                        group: string;
                         /** Format: uuid */
                         id: string;
                         priority: number;
+                        project: {
+                            archived: boolean;
+                            color: string;
+                            created_at: string;
+                            description?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            updated_at: string;
+                        };
                         status: string;
                     }[];
                 };
@@ -486,10 +778,19 @@ export interface operations {
                             /** Format: uuid */
                             task_id: string;
                         }[];
-                        group: string;
                         /** Format: uuid */
                         id: string;
                         priority: number;
+                        project: {
+                            archived: boolean;
+                            color: string;
+                            created_at: string;
+                            description?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            updated_at: string;
+                        };
                         status: string;
                     }[];
                 };
@@ -533,10 +834,19 @@ export interface operations {
                             /** Format: uuid */
                             task_id: string;
                         }[];
-                        group: string;
                         /** Format: uuid */
                         id: string;
                         priority: number;
+                        project: {
+                            archived: boolean;
+                            color: string;
+                            created_at: string;
+                            description?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            updated_at: string;
+                        };
                         status: string;
                     }[];
                 };
@@ -580,10 +890,19 @@ export interface operations {
                             /** Format: uuid */
                             task_id: string;
                         }[];
-                        group: string;
                         /** Format: uuid */
                         id: string;
                         priority: number;
+                        project: {
+                            archived: boolean;
+                            color: string;
+                            created_at: string;
+                            description?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            updated_at: string;
+                        };
                         status: string;
                     }[];
                 };
@@ -627,10 +946,19 @@ export interface operations {
                             /** Format: uuid */
                             task_id: string;
                         }[];
-                        group: string;
                         /** Format: uuid */
                         id: string;
                         priority: number;
+                        project: {
+                            archived: boolean;
+                            color: string;
+                            created_at: string;
+                            description?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            updated_at: string;
+                        };
                         status: string;
                     }[];
                 };
@@ -676,10 +1004,19 @@ export interface operations {
                             /** Format: uuid */
                             task_id: string;
                         }[];
-                        group: string;
                         /** Format: uuid */
                         id: string;
                         priority: number;
+                        project: {
+                            archived: boolean;
+                            color: string;
+                            created_at: string;
+                            description?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            updated_at: string;
+                        };
                         status: string;
                     };
                 };
@@ -699,8 +1036,9 @@ export interface operations {
             content: {
                 "application/json": {
                     content: string;
-                    group: string;
                     priority: number;
+                    /** Format: uuid */
+                    project_id: string;
                 };
             };
         };
@@ -733,10 +1071,19 @@ export interface operations {
                             /** Format: uuid */
                             task_id: string;
                         }[];
-                        group: string;
                         /** Format: uuid */
                         id: string;
                         priority: number;
+                        project: {
+                            archived: boolean;
+                            color: string;
+                            created_at: string;
+                            description?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            updated_at: string;
+                        };
                         status: string;
                     };
                 };
@@ -804,10 +1151,19 @@ export interface operations {
                             /** Format: uuid */
                             task_id: string;
                         }[];
-                        group: string;
                         /** Format: uuid */
                         id: string;
                         priority: number;
+                        project: {
+                            archived: boolean;
+                            color: string;
+                            created_at: string;
+                            description?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            updated_at: string;
+                        };
                         status: string;
                     };
                 };
@@ -862,7 +1218,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @enum {string} */
-                    status: "Backlog" | "Todo" | "InProgress" | "InReview" | "Done";
+                    status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                 };
             };
         };
@@ -895,10 +1251,19 @@ export interface operations {
                             /** Format: uuid */
                             task_id: string;
                         }[];
-                        group: string;
                         /** Format: uuid */
                         id: string;
                         priority: number;
+                        project: {
+                            archived: boolean;
+                            color: string;
+                            created_at: string;
+                            description?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            updated_at: string;
+                        };
                         status: string;
                     };
                 };
@@ -944,10 +1309,19 @@ export interface operations {
                             /** Format: uuid */
                             task_id: string;
                         }[];
-                        group: string;
                         /** Format: uuid */
                         id: string;
                         priority: number;
+                        project: {
+                            archived: boolean;
+                            color: string;
+                            created_at: string;
+                            description?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            updated_at: string;
+                        };
                         status: string;
                     };
                 };

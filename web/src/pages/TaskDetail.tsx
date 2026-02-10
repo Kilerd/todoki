@@ -25,7 +25,7 @@ import {
   unarchiveTask,
   deleteTask,
 } from "../hooks/useTasks";
-import type { TaskEventResponse, TaskStatus } from "../api/schema";
+import type { TaskEvent, TaskStatus } from "../api/types";
 
 const STATUS_CONFIG: Record<
   string,
@@ -38,7 +38,7 @@ const STATUS_CONFIG: Record<
   done: { label: "Done", color: "bg-teal-50 text-teal-600" },
 };
 
-function formatEvent(event: TaskEventResponse): string {
+function formatEvent(event: TaskEvent): string {
   switch (event.event_type) {
     case "Create":
       return "Created";
@@ -133,7 +133,7 @@ export default function TaskDetail() {
 
       {/* Task Header */}
       <div className="space-y-4">
-        {/* Status & Group badges */}
+        {/* Status & Project badges */}
         <div className="flex items-center gap-2">
           <span
             className={cn(
@@ -143,9 +143,13 @@ export default function TaskDetail() {
           >
             {statusConfig.label}
           </span>
-          {task.group && (
-            <Badge variant="outline" className="text-xs text-slate-500">
-              {task.group}
+          {task.project && (
+            <Badge variant="outline" className="text-xs text-slate-500 flex items-center gap-1.5">
+              <div
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: task.project.color }}
+              />
+              {task.project.name}
             </Badge>
           )}
           {task.archived && (

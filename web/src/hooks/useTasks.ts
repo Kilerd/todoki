@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import * as api from "../api/tasks";
-import type { TaskResponse, TaskStatus } from "../api/schema";
+import type { TaskResponse, TaskStatus } from "../api/types";
 
 // Simple global state for tasks to enable refresh across components
 let globalTasks: TaskResponse[] = [];
@@ -23,7 +23,7 @@ export function useTasks() {
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await api.fetchInboxTasks();
+      const { data } = await api.fetchInboxTasks({});
       globalTasks = data;
       setTasks(data);
       notifyListeners();
@@ -55,7 +55,7 @@ export function useBacklogTasks() {
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await api.fetchBacklogTasks();
+      const { data } = await api.fetchBacklogTasks({});
       globalBacklogTasks = data;
       setTasks(data);
       notifyBacklogListeners();
@@ -87,7 +87,7 @@ export function useTask(taskId: string) {
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await api.fetchTask(taskId);
+      const { data } = await api.fetchTask({ task_id: taskId });
       setTask(data);
     } finally {
       setIsLoading(false);
@@ -115,7 +115,7 @@ export function useTodayDoneTasks() {
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await api.fetchTodayDoneTasks();
+      const { data } = await api.fetchTodayDoneTasks({});
       globalTodayDoneTasks = data;
       setTasks(data);
       notifyTodayDoneListeners();
@@ -139,60 +139,71 @@ export function useTodayDoneTasks() {
 }
 
 async function refreshAllTasks() {
-  const [inboxData, backlogData, todayDoneData] = await Promise.all([
-    api.fetchInboxTasks(),
-    api.fetchBacklogTasks(),
-    api.fetchTodayDoneTasks(),
+  const [inboxRes, backlogRes, todayDoneRes] = await Promise.all([
+    api.fetchInboxTasks({}),
+    api.fetchBacklogTasks({}),
+    api.fetchTodayDoneTasks({}),
   ]);
-  globalTasks = inboxData;
-  globalBacklogTasks = backlogData;
-  globalTodayDoneTasks = todayDoneData;
+  globalTasks = inboxRes.data;
+  globalBacklogTasks = backlogRes.data;
+  globalTodayDoneTasks = todayDoneRes.data;
   notifyListeners();
   notifyBacklogListeners();
   notifyTodayDoneListeners();
 }
 
 // Re-export API functions with auto-refresh
-export async function createTask(task: Parameters<typeof api.createTask>[0]) {
-  const result = await api.createTask(task);
+export async function createTask(task: {
+  content: string;
+  priority: number;
+  project_id: string;
+  status: TaskStatus;
+}) {
+  const { data } = await api.createTask(task);
   await refreshAllTasks();
-  return result;
+  return data;
 }
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus) {
-  const result = await api.updateTaskStatus(taskId, status);
+  const { data } = await api.updateTaskStatus({
+    task_id: taskId,
+    status,
+  });
   await refreshAllTasks();
-  return result;
+  return data;
 }
 
 export async function updateTask(
   taskId: string,
-  task: Parameters<typeof api.updateTask>[1]
+  task: { content: string; priority: number; project_id: string }
 ) {
-  const result = await api.updateTask(taskId, task);
+  const { data } = await api.updateTask({
+    task_id: taskId,
+    ...task,
+  });
   await refreshAllTasks();
-  return result;
+  return data;
 }
 
 export async function archiveTask(taskId: string) {
-  const result = await api.archiveTask(taskId);
+  const { data } = await api.archiveTask({ task_id: taskId });
   await refreshAllTasks();
-  return result;
+  return data;
 }
 
 export async function unarchiveTask(taskId: string) {
-  const result = await api.unarchiveTask(taskId);
+  const { data } = await api.unarchiveTask({ task_id: taskId });
   await refreshAllTasks();
-  return result;
+  return data;
 }
 
 export async function deleteTask(taskId: string) {
-  await api.deleteTask(taskId);
+  await api.deleteTask({ task_id: taskId });
   await refreshAllTasks();
 }
 
 export async function addComment(taskId: string, content: string) {
-  const result = await api.addComment(taskId, content);
+  const { data } = await api.addComment({ task_id: taskId, content });
   await refreshAllTasks();
-  return result;
+  return data;
 }

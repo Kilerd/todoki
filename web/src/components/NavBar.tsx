@@ -41,6 +41,17 @@ function NavBar() {
           </NavLink>
 
           <NavLink
+            to="/projects"
+            className={({ isActive }) =>
+              `decoration-none ${
+                isActive ? "text-3xl text-gray-900" : " text-lg  text-gray-500"
+              }`
+            }
+          >
+            Projects
+          </NavLink>
+
+          <NavLink
             to="/report"
             className={({ isActive }) =>
               `decoration-none ${

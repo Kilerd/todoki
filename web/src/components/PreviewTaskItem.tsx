@@ -1,11 +1,13 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import type { Project } from "@/api/types";
 
 interface Props {
     id: string;
     priority: number;
     content: string;
-    group?: string;
+    project?: Project | null;
+    projectName?: string;
     archived: boolean;
     status: string;
 }
@@ -27,13 +29,20 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function PreviewTaskItem(props: Props) {
-    const group = props.group ?? "default";
+    const projectName = props.project?.name ?? props.projectName ?? "Inbox";
+    const projectColor = props.project?.color ?? "#6B7280";
     const isDone = props.status === "done";
 
     return (
         <div className="flex items-center justify-between p-2 rounded-md hover:bg-gray-100 group">
             <div className="flex items-center gap-2">
-                <span className="text-gray-500 min-w-[5vh]">{group}</span>
+                <div className="flex items-center gap-1.5 min-w-[5vh]">
+                    <div
+                        className="w-2 h-2 rounded-full"
+                        style={{ backgroundColor: projectColor }}
+                    />
+                    <span className="text-gray-500 text-sm">{projectName}</span>
+                </div>
                 <span className={cn("px-2 py-0.5 rounded text-xs", STATUS_COLORS[props.status])}>
                     {STATUS_LABELS[props.status]}
                 </span>

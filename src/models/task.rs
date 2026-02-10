@@ -4,6 +4,8 @@ use gotcha::Schematic;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::project::ProjectResponse;
+
 // ============================================================================
 // Task Status
 // ============================================================================
@@ -83,7 +85,7 @@ pub struct Task {
     pub id: Uuid,
     pub priority: i32,
     pub content: String,
-    pub group: String,
+    pub project_id: Uuid,
     pub status: String,
     pub create_at: DateTime<Utc>,
     pub archived: bool,
@@ -93,18 +95,18 @@ pub struct Task {
 pub struct CreateTask {
     pub priority: i32,
     pub content: String,
-    pub group: String,
+    pub project_id: Uuid,
     pub status: String,
     pub create_at: DateTime<Utc>,
     pub archived: bool,
 }
 
 impl CreateTask {
-    pub fn new(content: String, status: TaskStatus, priority: i32, group: String) -> Self {
+    pub fn new(content: String, status: TaskStatus, priority: i32, project_id: Uuid) -> Self {
         Self {
             priority,
             content,
-            group,
+            project_id,
             status: status.as_str().to_string(),
             create_at: Utc::now(),
             archived: false,
@@ -271,7 +273,7 @@ pub struct TaskResponse {
     pub id: Uuid,
     pub priority: i32,
     pub content: String,
-    pub group: String,
+    pub project: ProjectResponse,
     pub status: String,
     pub create_at: DateTime<Utc>,
     pub archived: bool,
@@ -280,12 +282,17 @@ pub struct TaskResponse {
 }
 
 impl TaskResponse {
-    pub fn from_task(task: Task, events: Vec<TaskEvent>, comments: Vec<TaskComment>) -> Self {
+    pub fn from_task(
+        task: Task,
+        project: ProjectResponse,
+        events: Vec<TaskEvent>,
+        comments: Vec<TaskComment>,
+    ) -> Self {
         Self {
             id: task.id,
             priority: task.priority,
             content: task.content,
-            group: task.group,
+            project,
             status: task.status,
             create_at: task.create_at,
             archived: task.archived,
@@ -300,22 +307,16 @@ pub struct TaskCreateRequest {
     #[serde(default)]
     pub priority: i32,
     pub content: String,
-    #[serde(default = "default_group")]
-    pub group: String,
+    pub project_id: Uuid,
     #[serde(default)]
     pub status: TaskStatus,
-}
-
-fn default_group() -> String {
-    "default".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize, Schematic)]
 pub struct TaskUpdateRequest {
     pub priority: i32,
     pub content: String,
-    #[serde(default = "default_group")]
-    pub group: String,
+    pub project_id: Uuid,
 }
 
 #[derive(Debug, Clone, Deserialize, Schematic)]

@@ -27,7 +27,7 @@ import {
   deleteTask,
   updateTaskStatus,
 } from "../hooks/useTasks";
-import type { TaskResponse, TaskStatus } from "../api/schema";
+import type { TaskResponse, TaskStatus } from "../api/types";
 
 type Props = TaskResponse;
 
@@ -89,13 +89,17 @@ export default function TaskItem(props: Props) {
             )}
           </div>
 
-          {props.group && (
-            <div className="mt-1">
+          {props.project && (
+            <div className="mt-1 flex items-center gap-1.5">
+              <div
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: props.project.color }}
+              />
               <Badge
                 variant="outline"
                 className="text-[10px] text-slate-400 border-slate-200 font-normal"
               >
-                {props.group}
+                {props.project.name}
               </Badge>
             </div>
           )}

@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import NavBar from "../components/NavBar";
-import type { TaskResponse, TaskEventResponse } from "../api/schema";
+import type { TaskResponse, TaskEvent } from "../api/types";
 import { useTasks, useTodayDoneTasks } from "../hooks/useTasks";
 import { fetchReport } from "../api/tasks";
 
@@ -58,12 +58,12 @@ function StatItem({
 
 interface TaskActivity {
   task: TaskResponse;
-  events: TaskEventResponse[];
+  events: TaskEvent[];
   summary: string;
   lastEventTime: string;
 }
 
-function summarizeTaskActivity(events: TaskEventResponse[]): string {
+function summarizeTaskActivity(events: TaskEvent[]): string {
   const sorted = sortBy(events, (e) => e.datetime);
   const parts: string[] = [];
 
@@ -111,8 +111,8 @@ function useReport() {
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await fetchReport("today");
-      setReport(data);
+      const { data } = await fetchReport({ period: "today" });
+      setReport(data as ReportSummary);
     } finally {
       setIsLoading(false);
     }
@@ -142,7 +142,7 @@ export default function Report() {
     });
 
     // Get today's events grouped by task
-    const taskEventsMap: Record<string, { task: TaskResponse; events: TaskEventResponse[] }> = {};
+    const taskEventsMap: Record<string, { task: TaskResponse; events: TaskEvent[] }> = {};
 
     allTasks.forEach((task) => {
       const todayEvents = task.events.filter(
@@ -166,8 +166,8 @@ export default function Report() {
       }
     );
 
-    // Group by task group
-    const byGroup = groupBy(taskActivities, (a) => a.task.group || "default");
+    // Group by task project
+    const byGroup = groupBy(taskActivities, (a) => a.task.project?.name || "Inbox");
     return sortBy(Object.keys(byGroup)).map((groupName) => ({
       groupName,
       activities: sortBy(byGroup[groupName], (a) => a.lastEventTime).reverse(),
