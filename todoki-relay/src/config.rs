@@ -3,6 +3,37 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+/// Relay role for task routing
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum RelayRole {
+    #[default]
+    General,
+    Business,
+    Coding,
+    Qa,
+}
+
+impl RelayRole {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RelayRole::General => "general",
+            RelayRole::Business => "business",
+            RelayRole::Coding => "coding",
+            RelayRole::Qa => "qa",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "business" => RelayRole::Business,
+            "coding" => RelayRole::Coding,
+            "qa" => RelayRole::Qa,
+            _ => RelayRole::General,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RelayConfig {
     #[serde(default)]
@@ -23,6 +54,9 @@ pub struct ServerConfig {
 pub struct RelaySettings {
     /// Relay name (default: hostname)
     pub name: Option<String>,
+    /// Relay role for task routing
+    #[serde(default)]
+    pub role: RelayRole,
     /// Allowed working directories
     #[serde(default)]
     pub safe_paths: Vec<String>,
@@ -58,6 +92,9 @@ impl RelayConfig {
         }
         if let Ok(paths) = std::env::var("TODOKI_SAFE_PATHS") {
             config.relay.safe_paths = paths.split(',').map(|s| s.trim().to_string()).collect();
+        }
+        if let Ok(role) = std::env::var("TODOKI_RELAY_ROLE") {
+            config.relay.role = RelayRole::from_str(&role);
         }
 
         Ok(config)
@@ -102,5 +139,10 @@ impl RelayConfig {
     /// Get labels
     pub fn labels(&self) -> &HashMap<String, String> {
         &self.relay.labels
+    }
+
+    /// Get relay role
+    pub fn role(&self) -> RelayRole {
+        self.relay.role
     }
 }

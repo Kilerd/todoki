@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::config::RelayRole;
+
 /// Messages from Relay to Server
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -12,6 +14,8 @@ pub enum RelayToServer {
         /// Stable relay ID (hash of machine id)
         relay_id: String,
         name: String,
+        #[serde(default)]
+        role: RelayRole,
         safe_paths: Vec<String>,
         #[serde(default)]
         labels: HashMap<String, String>,

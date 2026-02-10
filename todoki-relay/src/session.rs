@@ -35,6 +35,14 @@ impl SessionManager {
 
     /// Spawn a new session
     pub async fn spawn(&self, params: SpawnSessionParams) -> anyhow::Result<SpawnSessionResult> {
+        // Single-task mode: only one session at a time
+        {
+            let sessions = self.sessions.lock().await;
+            if !sessions.is_empty() {
+                anyhow::bail!("relay busy: already running session");
+            }
+        }
+
         tracing::debug!(
             session_id = %params.session_id,
             agent_id = %params.agent_id,

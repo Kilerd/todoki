@@ -441,7 +441,7 @@ impl DatabaseService {
         let row = conn
             .query_opt(
                 r#"
-                SELECT id, name, workdir, command, args, execution_mode, relay_id, status, created_at, updated_at
+                SELECT id, name, workdir, command, args, execution_mode, role, relay_id, status, created_at, updated_at
                 FROM agents
                 WHERE id = $1
                 "#,
@@ -457,6 +457,7 @@ impl DatabaseService {
             command: r.get("command"),
             args: r.get("args"),
             execution_mode: r.get("execution_mode"),
+            role: r.get("role"),
             relay_id: r.get("relay_id"),
             status: r.get("status"),
             created_at: r.get("created_at"),

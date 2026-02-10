@@ -115,6 +115,7 @@ impl Relay {
         let register_msg = RelayToServer::Register {
             relay_id: self.relay_id.clone(),
             name: self.config.relay_name(),
+            role: self.config.role(),
             safe_paths: self.config.safe_paths().to_vec(),
             labels: self.config.labels().clone(),
         };

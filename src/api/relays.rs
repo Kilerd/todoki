@@ -107,11 +107,12 @@ async fn handle_relay_connection(socket: WebSocket, db: Db, relays: Relays, broa
             RelayToServer::Register {
                 relay_id: provided_relay_id,
                 name,
+                role,
                 safe_paths,
                 labels,
             } => {
                 let id = relays
-                    .register(provided_relay_id, name.clone(), safe_paths, labels, outbound_tx.clone())
+                    .register(provided_relay_id, name.clone(), role, safe_paths, labels, outbound_tx.clone())
                     .await;
                 relay_id = Some(id.clone());
 

@@ -10,10 +10,10 @@ use uuid::Uuid;
 use crate::api::error::ApiError;
 use crate::auth::AuthContext;
 use crate::models::agent::{
-    AgentEventResponse, AgentResponse, AgentSessionResponse, AgentStatus, CreateAgent,
+    AgentEventResponse, AgentResponse, AgentRole, AgentSessionResponse, AgentStatus, CreateAgent,
     ExecutionMode, SessionStatus,
 };
-use crate::relay::PermissionOutcome;
+use crate::relay::{PermissionOutcome, RelayRole};
 use crate::Db;
 use crate::Relays;
 
@@ -71,6 +71,8 @@ pub struct CreateAgentRequest {
     pub args: Vec<String>,
     #[serde(default)]
     pub execution_mode: ExecutionMode,
+    #[serde(default)]
+    pub role: AgentRole,
     pub relay_id: Option<String>,
     /// If true, automatically start the agent after creation
     #[serde(default)]
@@ -98,6 +100,7 @@ pub async fn create_agent(
 
     let auto_start = req.auto_start;
     let execution_mode = req.execution_mode;
+    let role = req.role;
 
     let create = CreateAgent::new(
         req.name,
@@ -105,6 +108,7 @@ pub async fn create_agent(
         req.command,
         req.args,
         execution_mode,
+        role,
         req.relay_id,
     );
 
@@ -161,6 +165,16 @@ use crate::db::DatabaseService;
 use crate::models::agent::{Agent, AgentSession};
 use crate::relay::RelayManager;
 
+/// Convert AgentRole to RelayRole for relay selection
+fn agent_role_to_relay_role(role: AgentRole) -> RelayRole {
+    match role {
+        AgentRole::General => RelayRole::General,
+        AgentRole::Business => RelayRole::Business,
+        AgentRole::Coding => RelayRole::Coding,
+        AgentRole::Qa => RelayRole::Qa,
+    }
+}
+
 async fn start_agent_internal(
     db: &DatabaseService,
     relays: &RelayManager,
@@ -172,11 +186,14 @@ async fn start_agent_internal(
         anyhow::bail!("local execution not implemented");
     }
 
-    // Select relay
+    // Convert agent role to relay role for selection
+    let required_role = Some(agent_role_to_relay_role(agent.role_enum()));
+
+    // Select relay based on role and availability
     let relay_id = relays
-        .select_relay(agent.relay_id.as_deref())
+        .select_relay(agent.relay_id.as_deref(), required_role)
         .await
-        .ok_or_else(|| anyhow::anyhow!("no relay available"))?;
+        .ok_or_else(|| anyhow::anyhow!("no idle relay available for role {:?}", agent.role_enum()))?;
 
     // Create session
     let session = db.create_agent_session(agent_id, Some(&relay_id)).await?;

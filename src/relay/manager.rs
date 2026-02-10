@@ -6,7 +6,7 @@ use serde_json::Value;
 use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
 use uuid::Uuid;
 
-use super::{PermissionOutcome, RelayInfo, RpcResponse, RpcResult, ServerToRelay};
+use super::{PermissionOutcome, RelayInfo, RelayRole, RpcResponse, RpcResult, ServerToRelay};
 
 /// Pending permission request info
 #[derive(Clone)]
@@ -29,6 +29,7 @@ pub struct RelayManager {
 pub struct RelayConnection {
     pub relay_id: String,
     pub name: String,
+    pub role: RelayRole,
     pub safe_paths: Vec<String>,
     pub labels: HashMap<String, String>,
     pub tx: mpsc::Sender<ServerToRelay>,
@@ -51,6 +52,7 @@ impl RelayManager {
         &self,
         relay_id: String,
         name: String,
+        role: RelayRole,
         safe_paths: Vec<String>,
         labels: HashMap<String, String>,
         tx: mpsc::Sender<ServerToRelay>,
@@ -73,6 +75,7 @@ impl RelayManager {
         let connection = RelayConnection {
             relay_id: relay_id.clone(),
             name: name.clone(),
+            role,
             safe_paths,
             labels,
             tx,
@@ -81,7 +84,7 @@ impl RelayManager {
         };
 
         relays.insert(relay_id.clone(), connection);
-        tracing::info!(relay_id = %relay_id, name = %name, "relay registered");
+        tracing::info!(relay_id = %relay_id, name = %name, role = ?role, "relay registered");
 
         relay_id
     }
@@ -217,19 +220,41 @@ impl RelayManager {
         }
     }
 
-    /// Select an available relay
-    pub async fn select_relay(&self, preferred_id: Option<&str>) -> Option<String> {
+    /// Select an available relay based on role and availability
+    /// - If preferred_id is specified and the relay is idle, use it
+    /// - Otherwise, find an idle relay that matches the required_role (or is General)
+    pub async fn select_relay(
+        &self,
+        preferred_id: Option<&str>,
+        required_role: Option<RelayRole>,
+    ) -> Option<String> {
         let relays = self.relays.read().await;
 
-        // If preferred relay is specified and connected, use it
+        // Helper to check if relay matches role requirement
+        let role_matches = |conn: &RelayConnection, required: Option<RelayRole>| -> bool {
+            match required {
+                None => true, // No role requirement, any relay works
+                Some(req) => conn.role == req || conn.role == RelayRole::General,
+            }
+        };
+
+        // Helper to check if relay is idle (single-task mode)
+        let is_idle = |conn: &RelayConnection| -> bool { conn.active_sessions.is_empty() };
+
+        // If preferred relay is specified, check if it's available
         if let Some(id) = preferred_id {
-            if relays.contains_key(id) {
-                return Some(id.to_string());
+            if let Some(conn) = relays.get(id) {
+                if is_idle(conn) && role_matches(conn, required_role) {
+                    return Some(id.to_string());
+                }
             }
         }
 
-        // Otherwise pick any connected relay (simple strategy)
-        relays.keys().next().cloned()
+        // Find first idle relay that matches the role
+        relays
+            .values()
+            .find(|conn| is_idle(conn) && role_matches(conn, required_role))
+            .map(|conn| conn.relay_id.clone())
     }
 
     /// Add active session to relay
@@ -256,6 +281,7 @@ impl RelayManager {
             .map(|conn| RelayInfo {
                 relay_id: conn.relay_id.clone(),
                 name: conn.name.clone(),
+                role: conn.role,
                 safe_paths: conn.safe_paths.clone(),
                 labels: conn.labels.clone(),
                 connected_at: conn.connected_at,
@@ -270,6 +296,7 @@ impl RelayManager {
         relays.get(relay_id).map(|conn| RelayInfo {
             relay_id: conn.relay_id.clone(),
             name: conn.name.clone(),
+            role: conn.role,
             safe_paths: conn.safe_paths.clone(),
             labels: conn.labels.clone(),
             connected_at: conn.connected_at,
@@ -362,5 +389,138 @@ impl RelayManager {
 impl Default for RelayManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_select_relay_by_role() {
+        let manager = RelayManager::new();
+        let (tx, _rx) = mpsc::channel(1);
+
+        // Register a coding relay
+        manager
+            .register(
+                "coding-1".to_string(),
+                "Coding Relay".to_string(),
+                RelayRole::Coding,
+                vec![],
+                HashMap::new(),
+                tx.clone(),
+            )
+            .await;
+
+        // Register a general relay
+        manager
+            .register(
+                "general-1".to_string(),
+                "General Relay".to_string(),
+                RelayRole::General,
+                vec![],
+                HashMap::new(),
+                tx.clone(),
+            )
+            .await;
+
+        // Select coding relay - should match coding-1 or general-1 (both work)
+        let selected = manager
+            .select_relay(None, Some(RelayRole::Coding))
+            .await;
+        assert!(
+            selected == Some("coding-1".to_string()) || selected == Some("general-1".to_string()),
+            "Expected coding-1 or general-1, got {:?}",
+            selected
+        );
+
+        // Select business relay - should match general-1 (General accepts any)
+        let selected = manager
+            .select_relay(None, Some(RelayRole::Business))
+            .await;
+        assert_eq!(selected, Some("general-1".to_string()));
+
+        // Select without role - should match any idle relay
+        let selected = manager.select_relay(None, None).await;
+        assert!(selected.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_select_relay_idle_only() {
+        let manager = RelayManager::new();
+        let (tx, _rx) = mpsc::channel(1);
+
+        // Register a coding relay
+        manager
+            .register(
+                "coding-1".to_string(),
+                "Coding Relay".to_string(),
+                RelayRole::Coding,
+                vec![],
+                HashMap::new(),
+                tx.clone(),
+            )
+            .await;
+
+        // Mark it as busy
+        manager.add_active_session("coding-1", "session-1").await;
+
+        // Try to select - should fail (no idle relay)
+        let selected = manager
+            .select_relay(None, Some(RelayRole::Coding))
+            .await;
+        assert_eq!(selected, None);
+
+        // Remove active session
+        manager.remove_active_session("coding-1", "session-1").await;
+
+        // Now selection should succeed
+        let selected = manager
+            .select_relay(None, Some(RelayRole::Coding))
+            .await;
+        assert_eq!(selected, Some("coding-1".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_select_relay_preferred_id() {
+        let manager = RelayManager::new();
+        let (tx, _rx) = mpsc::channel(1);
+
+        // Register two coding relays
+        manager
+            .register(
+                "coding-1".to_string(),
+                "Coding Relay 1".to_string(),
+                RelayRole::Coding,
+                vec![],
+                HashMap::new(),
+                tx.clone(),
+            )
+            .await;
+
+        manager
+            .register(
+                "coding-2".to_string(),
+                "Coding Relay 2".to_string(),
+                RelayRole::Coding,
+                vec![],
+                HashMap::new(),
+                tx.clone(),
+            )
+            .await;
+
+        // Select with preferred ID
+        let selected = manager
+            .select_relay(Some("coding-2"), Some(RelayRole::Coding))
+            .await;
+        assert_eq!(selected, Some("coding-2".to_string()));
+
+        // Mark preferred as busy, should fall back to other
+        manager.add_active_session("coding-2", "session-1").await;
+        let selected = manager
+            .select_relay(Some("coding-2"), Some(RelayRole::Coding))
+            .await;
+        assert_eq!(selected, Some("coding-1".to_string()));
     }
 }

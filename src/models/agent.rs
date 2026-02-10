@@ -138,6 +138,40 @@ impl OutputStream {
 }
 
 // ============================================================================
+// Agent Role
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentRole {
+    #[default]
+    General,
+    Business,
+    Coding,
+    Qa,
+}
+
+impl AgentRole {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AgentRole::General => "general",
+            AgentRole::Business => "business",
+            AgentRole::Coding => "coding",
+            AgentRole::Qa => "qa",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "business" => AgentRole::Business,
+            "coding" => AgentRole::Coding,
+            "qa" => AgentRole::Qa,
+            _ => AgentRole::General,
+        }
+    }
+}
+
+// ============================================================================
 // Agent (Database Model)
 // ============================================================================
 
@@ -151,6 +185,7 @@ pub struct Agent {
     pub command: String,
     pub args: String,              // JSON string: ["arg1", "arg2"]
     pub execution_mode: String,    // "local" or "remote"
+    pub role: String,              // "general", "business", "coding", "qa"
     pub relay_id: Option<String>,
     pub status: String,            // "created", "running", etc.
     pub created_at: DateTime<Utc>,
@@ -166,6 +201,10 @@ impl Agent {
         ExecutionMode::from_str(&self.execution_mode)
     }
 
+    pub fn role_enum(&self) -> AgentRole {
+        AgentRole::from_str(&self.role)
+    }
+
     pub fn status_enum(&self) -> AgentStatus {
         AgentStatus::from_str(&self.status)
     }
@@ -178,6 +217,7 @@ pub struct CreateAgent {
     pub command: String,
     pub args: String,
     pub execution_mode: String,
+    pub role: String,
     pub relay_id: Option<String>,
 }
 
@@ -188,6 +228,7 @@ impl CreateAgent {
         command: String,
         args: Vec<String>,
         execution_mode: ExecutionMode,
+        role: AgentRole,
         relay_id: Option<String>,
     ) -> Self {
         Self {
@@ -196,6 +237,7 @@ impl CreateAgent {
             command,
             args: serde_json::to_string(&args).unwrap_or_else(|_| "[]".to_string()),
             execution_mode: execution_mode.as_str().to_string(),
+            role: role.as_str().to_string(),
             relay_id,
         }
     }
@@ -291,6 +333,7 @@ pub struct AgentResponse {
     pub command: String,
     pub args: Vec<String>,
     pub execution_mode: ExecutionMode,
+    pub role: AgentRole,
     pub relay_id: Option<String>,
     pub status: AgentStatus,
     pub created_at: DateTime<Utc>,
@@ -306,6 +349,7 @@ impl From<Agent> for AgentResponse {
             command: a.command.clone(),
             args: a.args_vec(),
             execution_mode: a.execution_mode_enum(),
+            role: a.role_enum(),
             relay_id: a.relay_id.clone(),
             status: a.status_enum(),
             created_at: a.created_at,

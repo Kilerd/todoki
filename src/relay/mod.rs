@@ -10,6 +10,37 @@ use serde_json::Value;
 
 pub use manager::RelayManager;
 
+/// Relay role for task routing
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum RelayRole {
+    #[default]
+    General,
+    Business,
+    Coding,
+    Qa,
+}
+
+impl RelayRole {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RelayRole::General => "general",
+            RelayRole::Business => "business",
+            RelayRole::Coding => "coding",
+            RelayRole::Qa => "qa",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "business" => RelayRole::Business,
+            "coding" => RelayRole::Coding,
+            "qa" => RelayRole::Qa,
+            _ => RelayRole::General,
+        }
+    }
+}
+
 // ============================================================================
 // Protocol: Relay -> Server
 // ============================================================================
@@ -22,6 +53,8 @@ pub enum RelayToServer {
         /// Stable relay ID (e.g. hash of machine id)
         relay_id: String,
         name: String,
+        #[serde(default)]
+        role: RelayRole,
         safe_paths: Vec<String>,
         #[serde(default)]
         labels: HashMap<String, String>,
@@ -148,6 +181,7 @@ impl From<RpcResult> for RpcResponse {
 pub struct RelayInfo {
     pub relay_id: String,
     pub name: String,
+    pub role: RelayRole,
     pub safe_paths: Vec<String>,
     pub labels: HashMap<String, String>,
     pub connected_at: i64,
