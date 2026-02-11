@@ -8,6 +8,9 @@ use uuid::Uuid;
 
 use super::{PermissionOutcome, RelayInfo, RelayRole, RpcResponse, RpcResult, ServerToRelay};
 
+/// A set of project UUIDs for efficient lookup
+pub type ProjectSet = HashSet<Uuid>;
+
 /// Pending permission request info
 #[derive(Clone)]
 struct PendingPermission {
@@ -32,6 +35,7 @@ pub struct RelayConnection {
     pub role: RelayRole,
     pub safe_paths: Vec<String>,
     pub labels: HashMap<String, String>,
+    pub projects: ProjectSet,
     pub tx: mpsc::Sender<ServerToRelay>,
     pub connected_at: i64,
     pub active_sessions: HashSet<String>,
@@ -55,6 +59,7 @@ impl RelayManager {
         role: RelayRole,
         safe_paths: Vec<String>,
         labels: HashMap<String, String>,
+        projects: Vec<Uuid>,
         tx: mpsc::Sender<ServerToRelay>,
     ) -> String {
         let mut relays = self.relays.write().await;
@@ -72,19 +77,28 @@ impl RelayManager {
             HashSet::new()
         };
 
+        let projects_set: ProjectSet = projects.iter().copied().collect();
+
         let connection = RelayConnection {
             relay_id: relay_id.clone(),
             name: name.clone(),
             role,
             safe_paths,
             labels,
+            projects: projects_set,
             tx,
             connected_at: Utc::now().timestamp(),
             active_sessions: previous_sessions,
         };
 
         relays.insert(relay_id.clone(), connection);
-        tracing::info!(relay_id = %relay_id, name = %name, role = ?role, "relay registered");
+        tracing::info!(
+            relay_id = %relay_id,
+            name = %name,
+            role = ?role,
+            projects_count = projects.len(),
+            "relay registered"
+        );
 
         relay_id
     }
@@ -220,13 +234,15 @@ impl RelayManager {
         }
     }
 
-    /// Select an available relay based on role and availability
+    /// Select an available relay based on role, project and availability
     /// - If preferred_id is specified and the relay is idle, use it
     /// - Otherwise, find an idle relay that matches the required_role (or is General)
+    ///   and the required_project (or has no project restrictions)
     pub async fn select_relay(
         &self,
         preferred_id: Option<&str>,
         required_role: Option<RelayRole>,
+        required_project: Option<Uuid>,
     ) -> Option<String> {
         let relays = self.relays.read().await;
 
@@ -238,23 +254,33 @@ impl RelayManager {
             }
         };
 
+        // Helper to check if relay matches project requirement
+        // A relay with empty projects accepts all projects (universal mode)
+        let project_matches = |conn: &RelayConnection, required: Option<Uuid>| -> bool {
+            match required {
+                None => true, // No project requirement, any relay works
+                Some(project_id) => conn.projects.is_empty() || conn.projects.contains(&project_id),
+            }
+        };
+
         // Helper to check if relay is idle (single-task mode)
         let is_idle = |conn: &RelayConnection| -> bool { conn.active_sessions.is_empty() };
+
+        // Combined check
+        let matches_all =
+            |conn: &RelayConnection| -> bool { is_idle(conn) && role_matches(conn, required_role) && project_matches(conn, required_project) };
 
         // If preferred relay is specified, check if it's available
         if let Some(id) = preferred_id {
             if let Some(conn) = relays.get(id) {
-                if is_idle(conn) && role_matches(conn, required_role) {
+                if matches_all(conn) {
                     return Some(id.to_string());
                 }
             }
         }
 
-        // Find first idle relay that matches the role
-        relays
-            .values()
-            .find(|conn| is_idle(conn) && role_matches(conn, required_role))
-            .map(|conn| conn.relay_id.clone())
+        // Find first idle relay that matches all requirements
+        relays.values().find(|conn| matches_all(conn)).map(|conn| conn.relay_id.clone())
     }
 
     /// Add active session to relay
@@ -284,6 +310,7 @@ impl RelayManager {
                 role: conn.role,
                 safe_paths: conn.safe_paths.clone(),
                 labels: conn.labels.clone(),
+                projects: conn.projects.iter().copied().collect(),
                 connected_at: conn.connected_at,
                 active_session_count: conn.active_sessions.len(),
             })
@@ -299,6 +326,7 @@ impl RelayManager {
             role: conn.role,
             safe_paths: conn.safe_paths.clone(),
             labels: conn.labels.clone(),
+            projects: conn.projects.iter().copied().collect(),
             connected_at: conn.connected_at,
             active_session_count: conn.active_sessions.len(),
         })
@@ -409,6 +437,7 @@ mod tests {
                 RelayRole::Coding,
                 vec![],
                 HashMap::new(),
+                vec![],
                 tx.clone(),
             )
             .await;
@@ -421,13 +450,14 @@ mod tests {
                 RelayRole::General,
                 vec![],
                 HashMap::new(),
+                vec![],
                 tx.clone(),
             )
             .await;
 
         // Select coding relay - should match coding-1 or general-1 (both work)
         let selected = manager
-            .select_relay(None, Some(RelayRole::Coding))
+            .select_relay(None, Some(RelayRole::Coding), None)
             .await;
         assert!(
             selected == Some("coding-1".to_string()) || selected == Some("general-1".to_string()),
@@ -437,12 +467,12 @@ mod tests {
 
         // Select business relay - should match general-1 (General accepts any)
         let selected = manager
-            .select_relay(None, Some(RelayRole::Business))
+            .select_relay(None, Some(RelayRole::Business), None)
             .await;
         assert_eq!(selected, Some("general-1".to_string()));
 
         // Select without role - should match any idle relay
-        let selected = manager.select_relay(None, None).await;
+        let selected = manager.select_relay(None, None, None).await;
         assert!(selected.is_some());
     }
 
@@ -459,6 +489,7 @@ mod tests {
                 RelayRole::Coding,
                 vec![],
                 HashMap::new(),
+                vec![],
                 tx.clone(),
             )
             .await;
@@ -468,7 +499,7 @@ mod tests {
 
         // Try to select - should fail (no idle relay)
         let selected = manager
-            .select_relay(None, Some(RelayRole::Coding))
+            .select_relay(None, Some(RelayRole::Coding), None)
             .await;
         assert_eq!(selected, None);
 
@@ -477,7 +508,7 @@ mod tests {
 
         // Now selection should succeed
         let selected = manager
-            .select_relay(None, Some(RelayRole::Coding))
+            .select_relay(None, Some(RelayRole::Coding), None)
             .await;
         assert_eq!(selected, Some("coding-1".to_string()));
     }
@@ -495,6 +526,7 @@ mod tests {
                 RelayRole::Coding,
                 vec![],
                 HashMap::new(),
+                vec![],
                 tx.clone(),
             )
             .await;
@@ -506,21 +538,91 @@ mod tests {
                 RelayRole::Coding,
                 vec![],
                 HashMap::new(),
+                vec![],
                 tx.clone(),
             )
             .await;
 
         // Select with preferred ID
         let selected = manager
-            .select_relay(Some("coding-2"), Some(RelayRole::Coding))
+            .select_relay(Some("coding-2"), Some(RelayRole::Coding), None)
             .await;
         assert_eq!(selected, Some("coding-2".to_string()));
 
         // Mark preferred as busy, should fall back to other
         manager.add_active_session("coding-2", "session-1").await;
         let selected = manager
-            .select_relay(Some("coding-2"), Some(RelayRole::Coding))
+            .select_relay(Some("coding-2"), Some(RelayRole::Coding), None)
             .await;
         assert_eq!(selected, Some("coding-1".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_select_relay_by_project() {
+        let manager = RelayManager::new();
+        let (tx, _rx) = mpsc::channel(1);
+
+        let project_a = Uuid::new_v4();
+        let project_b = Uuid::new_v4();
+
+        // Register a relay bound to project_a
+        manager
+            .register(
+                "relay-a".to_string(),
+                "Relay A".to_string(),
+                RelayRole::General,
+                vec![],
+                HashMap::new(),
+                vec![project_a],
+                tx.clone(),
+            )
+            .await;
+
+        // Register a universal relay (empty projects)
+        manager
+            .register(
+                "relay-universal".to_string(),
+                "Universal Relay".to_string(),
+                RelayRole::General,
+                vec![],
+                HashMap::new(),
+                vec![],
+                tx.clone(),
+            )
+            .await;
+
+        // Select for project_a - relay-a should match
+        let selected = manager
+            .select_relay(None, None, Some(project_a))
+            .await;
+        assert!(
+            selected == Some("relay-a".to_string()) || selected == Some("relay-universal".to_string()),
+            "Expected relay-a or relay-universal for project_a, got {:?}",
+            selected
+        );
+
+        // Mark relay-a as busy
+        manager.add_active_session("relay-a", "session-1").await;
+
+        // Now only relay-universal should match for project_a
+        let selected = manager
+            .select_relay(None, None, Some(project_a))
+            .await;
+        assert_eq!(selected, Some("relay-universal".to_string()));
+
+        // Select for project_b - only relay-universal should match (relay-a is bound to project_a)
+        let selected = manager
+            .select_relay(None, None, Some(project_b))
+            .await;
+        assert_eq!(selected, Some("relay-universal".to_string()));
+
+        // Mark relay-universal as busy
+        manager.add_active_session("relay-universal", "session-2").await;
+
+        // Now no relay should match for project_b
+        let selected = manager
+            .select_relay(None, None, Some(project_b))
+            .await;
+        assert_eq!(selected, None);
     }
 }

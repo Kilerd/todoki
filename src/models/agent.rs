@@ -186,6 +186,7 @@ pub struct Agent {
     pub args: String,              // JSON string: ["arg1", "arg2"]
     pub execution_mode: String,    // "local" or "remote"
     pub role: String,              // "general", "business", "coding", "qa"
+    pub project_id: Uuid,          // Project this agent belongs to
     pub relay_id: Option<String>,
     pub status: String,            // "created", "running", etc.
     pub created_at: DateTime<Utc>,
@@ -218,6 +219,7 @@ pub struct CreateAgent {
     pub args: String,
     pub execution_mode: String,
     pub role: String,
+    pub project_id: Uuid,
     pub relay_id: Option<String>,
 }
 
@@ -229,6 +231,7 @@ impl CreateAgent {
         args: Vec<String>,
         execution_mode: ExecutionMode,
         role: AgentRole,
+        project_id: Uuid,
         relay_id: Option<String>,
     ) -> Self {
         Self {
@@ -238,6 +241,7 @@ impl CreateAgent {
             args: serde_json::to_string(&args).unwrap_or_else(|_| "[]".to_string()),
             execution_mode: execution_mode.as_str().to_string(),
             role: role.as_str().to_string(),
+            project_id,
             relay_id,
         }
     }
@@ -334,6 +338,7 @@ pub struct AgentResponse {
     pub args: Vec<String>,
     pub execution_mode: ExecutionMode,
     pub role: AgentRole,
+    pub project_id: Uuid,
     pub relay_id: Option<String>,
     pub status: AgentStatus,
     pub created_at: DateTime<Utc>,
@@ -350,6 +355,7 @@ impl From<Agent> for AgentResponse {
             args: a.args_vec(),
             execution_mode: a.execution_mode_enum(),
             role: a.role_enum(),
+            project_id: a.project_id,
             relay_id: a.relay_id.clone(),
             status: a.status_enum(),
             created_at: a.created_at,

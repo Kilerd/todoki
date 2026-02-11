@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// Relay role for task routing
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -63,6 +64,9 @@ pub struct RelaySettings {
     /// Labels for relay selection
     #[serde(default)]
     pub labels: HashMap<String, String>,
+    /// Project IDs this relay is bound to (empty = accept all projects)
+    #[serde(default)]
+    pub projects: Vec<Uuid>,
 }
 
 impl Default for RelayConfig {
@@ -95,6 +99,12 @@ impl RelayConfig {
         }
         if let Ok(role) = std::env::var("TODOKI_RELAY_ROLE") {
             config.relay.role = RelayRole::from_str(&role);
+        }
+        if let Ok(projects) = std::env::var("TODOKI_RELAY_PROJECTS") {
+            config.relay.projects = projects
+                .split(',')
+                .filter_map(|s| Uuid::parse_str(s.trim()).ok())
+                .collect();
         }
 
         Ok(config)
@@ -144,5 +154,10 @@ impl RelayConfig {
     /// Get relay role
     pub fn role(&self) -> RelayRole {
         self.relay.role
+    }
+
+    /// Get project IDs this relay is bound to (empty = accept all)
+    pub fn projects(&self) -> &[Uuid] {
+        &self.relay.projects
     }
 }

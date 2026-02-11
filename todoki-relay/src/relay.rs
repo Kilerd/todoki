@@ -118,6 +118,7 @@ impl Relay {
             role: self.config.role(),
             safe_paths: self.config.safe_paths().to_vec(),
             labels: self.config.labels().clone(),
+            projects: self.config.projects().to_vec(),
         };
         let msg_text = match serde_json::to_string(&register_msg) {
             Ok(t) => t,

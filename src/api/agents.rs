@@ -73,6 +73,7 @@ pub struct CreateAgentRequest {
     pub execution_mode: ExecutionMode,
     #[serde(default)]
     pub role: AgentRole,
+    pub project_id: Uuid,
     pub relay_id: Option<String>,
     /// If true, automatically start the agent after creation
     #[serde(default)]
@@ -101,6 +102,7 @@ pub async fn create_agent(
     let auto_start = req.auto_start;
     let execution_mode = req.execution_mode;
     let role = req.role;
+    let project_id = req.project_id;
 
     let create = CreateAgent::new(
         req.name,
@@ -109,6 +111,7 @@ pub async fn create_agent(
         req.args,
         execution_mode,
         role,
+        project_id,
         req.relay_id,
     );
 
@@ -188,12 +191,19 @@ async fn start_agent_internal(
 
     // Convert agent role to relay role for selection
     let required_role = Some(agent_role_to_relay_role(agent.role_enum()));
+    let required_project = Some(agent.project_id);
 
-    // Select relay based on role and availability
+    // Select relay based on role, project and availability
     let relay_id = relays
-        .select_relay(agent.relay_id.as_deref(), required_role)
+        .select_relay(agent.relay_id.as_deref(), required_role, required_project)
         .await
-        .ok_or_else(|| anyhow::anyhow!("no idle relay available for role {:?}", agent.role_enum()))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "no idle relay available for role {:?} and project {}",
+                agent.role_enum(),
+                agent.project_id
+            )
+        })?;
 
     // Create session
     let session = db.create_agent_session(agent_id, Some(&relay_id)).await?;

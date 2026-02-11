@@ -7,6 +7,7 @@ pub use broadcaster::{AgentBroadcaster, AgentStreamEvent};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 
 pub use manager::RelayManager;
 
@@ -58,6 +59,9 @@ pub enum RelayToServer {
         safe_paths: Vec<String>,
         #[serde(default)]
         labels: HashMap<String, String>,
+        /// Project IDs this relay is bound to (empty = accept all)
+        #[serde(default)]
+        projects: Vec<Uuid>,
     },
 
     /// RPC response
@@ -184,6 +188,7 @@ pub struct RelayInfo {
     pub role: RelayRole,
     pub safe_paths: Vec<String>,
     pub labels: HashMap<String, String>,
+    pub projects: Vec<Uuid>,
     pub connected_at: i64,
     pub active_session_count: usize,
 }

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::config::RelayRole;
 
@@ -19,6 +20,9 @@ pub enum RelayToServer {
         safe_paths: Vec<String>,
         #[serde(default)]
         labels: HashMap<String, String>,
+        /// Project IDs this relay is bound to (empty = accept all)
+        #[serde(default)]
+        projects: Vec<Uuid>,
     },
 
     /// RPC response
