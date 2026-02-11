@@ -55,3 +55,4 @@ hex = "0.4"
 agent-client-protocol = { version = "0.9.3", features = ["unstable"] }
 async-trait = "0.1"
 tokio-util = { version = "0.7", features = ["compat"] }
+openssl = { version = "0.10", features = ["vendored"] }
