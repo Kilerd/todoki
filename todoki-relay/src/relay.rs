@@ -83,21 +83,14 @@ impl Relay {
         buffer_tx: mpsc::Sender<RelayToServer>,
         mut buffer_rx: mpsc::Receiver<RelayToServer>,
     ) -> ConnectionResult {
-        let url = match self.config.server_url() {
-            Ok(u) => u,
-            Err(e) => return ConnectionResult::FatalError(e.into()),
-        };
+        let url = self.config.server_url();
         tracing::info!(url = %url, "connecting to server");
 
-        // Add token to URL if configured
-        let connect_url = if let Some(token) = &self.config.server.token {
-            if url.contains('?') {
-                format!("{}&token={}", url, token)
-            } else {
-                format!("{}?token={}", url, token)
-            }
+        // Add token to URL
+        let connect_url = if url.contains('?') {
+            format!("{}&token={}", url, self.config.token)
         } else {
-            url.clone()
+            format!("{}?token={}", url, self.config.token)
         };
 
         let (ws_stream, _) = match connect_async(&connect_url).await {

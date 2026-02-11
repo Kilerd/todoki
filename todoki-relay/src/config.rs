@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use clap::{Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Relay role for task routing
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum RelayRole {
     #[default]
@@ -24,19 +25,55 @@ impl RelayRole {
             RelayRole::Qa => "qa",
         }
     }
-
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "business" => RelayRole::Business,
-            "coding" => RelayRole::Coding,
-            "qa" => RelayRole::Qa,
-            _ => RelayRole::General,
-        }
-    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RelayConfig {
+/// Todoki relay agent
+#[derive(Debug, Clone, Parser)]
+#[command(name = "todoki-relay", version, about = "Remote agent relay for todoki")]
+pub struct Args {
+    /// WebSocket URL to connect to (e.g., wss://example.com/ws/relays)
+    #[arg(env = "TODOKI_SERVER_URL")]
+    pub url: String,
+
+    /// Authentication token
+    #[arg(env = "TODOKI_RELAY_TOKEN")]
+    pub token: String,
+
+    /// Relay name (default: hostname)
+    #[arg(short, long, env = "TODOKI_RELAY_NAME")]
+    pub name: Option<String>,
+
+    /// Relay role for task routing
+    #[arg(short, long, env = "TODOKI_RELAY_ROLE", default_value = "general")]
+    pub role: RelayRole,
+
+    /// Allowed working directories (comma-separated)
+    #[arg(short, long, env = "TODOKI_SAFE_PATHS", value_delimiter = ',')]
+    pub safe_paths: Vec<String>,
+
+    /// Project IDs this relay is bound to (comma-separated UUIDs, empty = accept all)
+    #[arg(short, long, env = "TODOKI_RELAY_PROJECTS", value_delimiter = ',')]
+    pub projects: Vec<Uuid>,
+
+    /// Labels for relay selection (format: key=value, can be repeated)
+    #[arg(short, long, env = "TODOKI_RELAY_LABELS", value_parser = parse_label)]
+    pub labels: Vec<(String, String)>,
+
+    /// Path to config file
+    #[arg(short, long, env = "TODOKI_CONFIG", default_value = "~/.todoki-relay/config.toml")]
+    pub config: PathBuf,
+}
+
+fn parse_label(s: &str) -> Result<(String, String), String> {
+    let pos = s
+        .find('=')
+        .ok_or_else(|| format!("invalid label format: {s}, expected key=value"))?;
+    Ok((s[..pos].to_string(), s[pos + 1..].to_string()))
+}
+
+/// File-based configuration (lower priority than CLI/env)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FileConfig {
     #[serde(default)]
     pub server: ServerConfig,
     #[serde(default)]
@@ -45,119 +82,136 @@ pub struct RelayConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ServerConfig {
-    /// WebSocket URL to connect to (e.g., wss://example.com/ws/relays)
     pub url: Option<String>,
-    /// Authentication token
     pub token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RelaySettings {
-    /// Relay name (default: hostname)
     pub name: Option<String>,
-    /// Relay role for task routing
     #[serde(default)]
     pub role: RelayRole,
-    /// Allowed working directories
     #[serde(default)]
     pub safe_paths: Vec<String>,
-    /// Labels for relay selection
     #[serde(default)]
     pub labels: HashMap<String, String>,
-    /// Project IDs this relay is bound to (empty = accept all projects)
     #[serde(default)]
     pub projects: Vec<Uuid>,
 }
 
-impl Default for RelayConfig {
-    fn default() -> Self {
-        Self {
-            server: ServerConfig::default(),
-            relay: RelaySettings::default(),
-        }
-    }
+/// Merged configuration from CLI, env, and file
+#[derive(Debug, Clone)]
+pub struct RelayConfig {
+    pub url: String,
+    pub token: String,
+    pub name: Option<String>,
+    pub role: RelayRole,
+    pub safe_paths: Vec<String>,
+    pub labels: HashMap<String, String>,
+    pub projects: Vec<Uuid>,
 }
 
 impl RelayConfig {
-    /// Load config from file and environment variables
-    /// Environment variables take precedence over file config
+    /// Load config by merging CLI args, env vars, and config file
+    /// Priority: CLI > env > file
     pub fn load() -> anyhow::Result<Self> {
-        let mut config = Self::load_from_file().unwrap_or_default();
+        let args = Args::parse();
 
-        // Override with environment variables
-        if let Ok(url) = std::env::var("TODOKI_SERVER_URL") {
-            config.server.url = Some(url);
-        }
-        if let Ok(token) = std::env::var("TODOKI_RELAY_TOKEN") {
-            config.server.token = Some(token);
-        }
-        if let Ok(name) = std::env::var("TODOKI_RELAY_NAME") {
-            config.relay.name = Some(name);
-        }
-        if let Ok(paths) = std::env::var("TODOKI_SAFE_PATHS") {
-            config.relay.safe_paths = paths.split(',').map(|s| s.trim().to_string()).collect();
-        }
-        if let Ok(role) = std::env::var("TODOKI_RELAY_ROLE") {
-            config.relay.role = RelayRole::from_str(&role);
-        }
-        if let Ok(projects) = std::env::var("TODOKI_RELAY_PROJECTS") {
-            config.relay.projects = projects
-                .split(',')
-                .filter_map(|s| Uuid::parse_str(s.trim()).ok())
-                .collect();
+        // Expand ~ in config path
+        let config_path = expand_tilde(&args.config);
+
+        // Load file config (optional)
+        let file_config = if config_path.exists() {
+            let content = std::fs::read_to_string(&config_path)?;
+            toml::from_str(&content)?
+        } else {
+            FileConfig::default()
+        };
+
+        // Merge: CLI/env takes precedence over file
+        let name = args.name.or(file_config.relay.name);
+
+        // For role, CLI default is "general", so we only use file if CLI wasn't explicitly set
+        // Since clap doesn't distinguish "default" vs "explicitly set", we use file as fallback only if role is General
+        let role = if args.role != RelayRole::General {
+            args.role
+        } else if file_config.relay.role != RelayRole::General {
+            file_config.relay.role
+        } else {
+            RelayRole::General
+        };
+
+        // For vec fields, use CLI if non-empty, otherwise file
+        let safe_paths = if !args.safe_paths.is_empty() {
+            args.safe_paths
+        } else {
+            file_config.relay.safe_paths
+        };
+
+        let projects = if !args.projects.is_empty() {
+            args.projects
+        } else {
+            file_config.relay.projects
+        };
+
+        // Merge labels: file first, then CLI overwrites
+        let mut labels = file_config.relay.labels;
+        for (k, v) in args.labels {
+            labels.insert(k, v);
         }
 
-        Ok(config)
+        Ok(Self {
+            url: args.url,
+            token: args.token,
+            name,
+            role,
+            safe_paths,
+            labels,
+            projects,
+        })
     }
 
-    fn load_from_file() -> anyhow::Result<Self> {
-        let path = Self::config_path();
-        if !path.exists() {
-            return Ok(Self::default());
-        }
-        let content = std::fs::read_to_string(&path)?;
-        let config: RelayConfig = toml::from_str(&content)?;
-        Ok(config)
-    }
-
-    fn config_path() -> PathBuf {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(home).join(".todoki-relay/config.toml")
-    }
-
-    /// Get server URL, with fallback
-    pub fn server_url(&self) -> anyhow::Result<String> {
-        self.server
-            .url
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("server URL not configured"))
+    /// Get server URL
+    pub fn server_url(&self) -> &str {
+        &self.url
     }
 
     /// Get relay name, with fallback to hostname
     pub fn relay_name(&self) -> String {
-        self.relay
-            .name
-            .clone()
-            .unwrap_or_else(|| hostname::get().map(|h| h.to_string_lossy().to_string()).unwrap_or_else(|_| "relay".to_string()))
+        self.name.clone().unwrap_or_else(|| {
+            hostname::get()
+                .map(|h| h.to_string_lossy().to_string())
+                .unwrap_or_else(|_| "relay".to_string())
+        })
     }
 
     /// Get safe paths
     pub fn safe_paths(&self) -> &[String] {
-        &self.relay.safe_paths
+        &self.safe_paths
     }
 
     /// Get labels
     pub fn labels(&self) -> &HashMap<String, String> {
-        &self.relay.labels
+        &self.labels
     }
 
     /// Get relay role
     pub fn role(&self) -> RelayRole {
-        self.relay.role
+        self.role
     }
 
     /// Get project IDs this relay is bound to (empty = accept all)
     pub fn projects(&self) -> &[Uuid] {
-        &self.relay.projects
+        &self.projects
     }
+}
+
+fn expand_tilde(path: &PathBuf) -> PathBuf {
+    let path_str = path.to_string_lossy();
+    if path_str.starts_with("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(home).join(&path_str[2..]);
+        }
+    }
+    path.clone()
 }

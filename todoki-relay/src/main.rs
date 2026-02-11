@@ -20,16 +20,11 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!(
         name = %config.relay_name(),
+        role = %config.role().as_str(),
         safe_paths = ?config.safe_paths(),
+        projects = ?config.projects(),
         "todoki-relay starting"
     );
-
-    // Validate required config
-    if config.server.url.is_none() {
-        anyhow::bail!(
-            "server URL not configured. Set TODOKI_SERVER_URL or configure in ~/.todoki-relay/config.toml"
-        );
-    }
 
     // Run relay with reconnection logic
     loop {
