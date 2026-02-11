@@ -62,6 +62,9 @@ pub enum RelayToServer {
         /// Project IDs this relay is bound to (empty = accept all)
         #[serde(default)]
         projects: Vec<Uuid>,
+        /// Setup script to run before each session
+        #[serde(default)]
+        setup_script: Option<String>,
     },
 
     /// RPC response
@@ -189,6 +192,7 @@ pub struct RelayInfo {
     pub safe_paths: Vec<String>,
     pub labels: HashMap<String, String>,
     pub projects: Vec<Uuid>,
+    pub setup_script: Option<String>,
     pub connected_at: i64,
     pub active_session_count: usize,
 }

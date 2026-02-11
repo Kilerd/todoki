@@ -1403,8 +1403,6 @@ export interface operations {
                 "application/json": {
                     /** @description Optionally specify a relay ID to use */
                     relay_id?: string | null;
-                    /** @description Optional setup script to run before the agent command */
-                    setup_script?: string | null;
                 };
             };
         };

@@ -23,6 +23,9 @@ pub enum RelayToServer {
         /// Project IDs this relay is bound to (empty = accept all)
         #[serde(default)]
         projects: Vec<Uuid>,
+        /// Setup script to run before each session
+        #[serde(default)]
+        setup_script: Option<String>,
     },
 
     /// RPC response

@@ -59,6 +59,10 @@ pub struct Args {
     #[arg(short, long, env = "TODOKI_RELAY_LABELS", value_parser = parse_label)]
     pub labels: Vec<(String, String)>,
 
+    /// Path to setup script file to run before each session
+    #[arg(long, env = "TODOKI_SETUP_SCRIPT_FILE")]
+    pub setup_script_file: Option<PathBuf>,
+
     /// Path to config file
     #[arg(short, long, env = "TODOKI_CONFIG", default_value = "~/.todoki-relay/config.toml")]
     pub config: PathBuf,
@@ -97,6 +101,8 @@ pub struct RelaySettings {
     pub labels: HashMap<String, String>,
     #[serde(default)]
     pub projects: Vec<Uuid>,
+    /// Path to setup script file to run before each session
+    pub setup_script_file: Option<PathBuf>,
 }
 
 /// Merged configuration from CLI, env, and file
@@ -109,6 +115,7 @@ pub struct RelayConfig {
     pub safe_paths: Vec<String>,
     pub labels: HashMap<String, String>,
     pub projects: Vec<Uuid>,
+    pub setup_script: Option<String>,
 }
 
 impl RelayConfig {
@@ -160,6 +167,23 @@ impl RelayConfig {
             labels.insert(k, v);
         }
 
+        // CLI setup_script_file takes precedence over file config
+        let setup_script_file = args
+            .setup_script_file
+            .or(file_config.relay.setup_script_file);
+        let setup_script = if let Some(path) = setup_script_file {
+            let expanded = expand_tilde(&path);
+            match std::fs::read_to_string(&expanded) {
+                Ok(content) => Some(content),
+                Err(e) => {
+                    tracing::warn!(path = ?expanded, error = %e, "failed to read setup script file");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         Ok(Self {
             url: args.url,
             token: args.token,
@@ -168,6 +192,7 @@ impl RelayConfig {
             safe_paths,
             labels,
             projects,
+            setup_script,
         })
     }
 
@@ -203,6 +228,11 @@ impl RelayConfig {
     /// Get project IDs this relay is bound to (empty = accept all)
     pub fn projects(&self) -> &[Uuid] {
         &self.projects
+    }
+
+    /// Get setup script content (if configured)
+    pub fn setup_script(&self) -> Option<&str> {
+        self.setup_script.as_deref()
     }
 }
 

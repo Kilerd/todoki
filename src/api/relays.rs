@@ -111,9 +111,10 @@ async fn handle_relay_connection(socket: WebSocket, db: Db, relays: Relays, broa
                 safe_paths,
                 labels,
                 projects,
+                setup_script,
             } => {
                 let id = relays
-                    .register(provided_relay_id, name.clone(), role, safe_paths, labels, projects, outbound_tx.clone())
+                    .register(provided_relay_id, name.clone(), role, safe_paths, labels, projects, setup_script, outbound_tx.clone())
                     .await;
                 relay_id = Some(id.clone());
 

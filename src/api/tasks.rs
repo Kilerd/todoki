@@ -241,8 +241,6 @@ pub async fn add_comment(
 pub struct ExecuteTaskRequest {
     /// Optionally specify a relay ID to use
     pub relay_id: Option<String>,
-    /// Optional setup script to run before the agent command
-    pub setup_script: Option<String>,
 }
 
 #[derive(Debug, Serialize, Schematic)]
@@ -379,14 +377,14 @@ pub async fn execute_task(
         .add_active_session(&relay_id, &session.id.to_string())
         .await;
 
-    // 11. Call relay to spawn session (with optional setup_script)
+    // 11. Call relay to spawn session (with relay's setup_script if configured)
     let spawn_params = serde_json::json!({
         "agent_id": agent.id.to_string(),
         "session_id": session.id.to_string(),
         "workdir": workdir,
         "command": agent.command,
         "args": agent.args_vec(),
-        "setup_script": payload.setup_script,
+        "setup_script": relay_info.setup_script,
     });
 
     if let Err(e) = relays.call(&relay_id, "spawn-session", spawn_params).await {

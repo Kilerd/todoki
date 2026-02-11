@@ -36,6 +36,7 @@ pub struct RelayConnection {
     pub safe_paths: Vec<String>,
     pub labels: HashMap<String, String>,
     pub projects: ProjectSet,
+    pub setup_script: Option<String>,
     pub tx: mpsc::Sender<ServerToRelay>,
     pub connected_at: i64,
     pub active_sessions: HashSet<String>,
@@ -60,6 +61,7 @@ impl RelayManager {
         safe_paths: Vec<String>,
         labels: HashMap<String, String>,
         projects: Vec<Uuid>,
+        setup_script: Option<String>,
         tx: mpsc::Sender<ServerToRelay>,
     ) -> String {
         let mut relays = self.relays.write().await;
@@ -86,6 +88,7 @@ impl RelayManager {
             safe_paths,
             labels,
             projects: projects_set,
+            setup_script,
             tx,
             connected_at: Utc::now().timestamp(),
             active_sessions: previous_sessions,
@@ -311,6 +314,7 @@ impl RelayManager {
                 safe_paths: conn.safe_paths.clone(),
                 labels: conn.labels.clone(),
                 projects: conn.projects.iter().copied().collect(),
+                setup_script: conn.setup_script.clone(),
                 connected_at: conn.connected_at,
                 active_session_count: conn.active_sessions.len(),
             })
@@ -327,6 +331,7 @@ impl RelayManager {
             safe_paths: conn.safe_paths.clone(),
             labels: conn.labels.clone(),
             projects: conn.projects.iter().copied().collect(),
+            setup_script: conn.setup_script.clone(),
             connected_at: conn.connected_at,
             active_session_count: conn.active_sessions.len(),
         })
@@ -438,6 +443,7 @@ mod tests {
                 vec![],
                 HashMap::new(),
                 vec![],
+                None,
                 tx.clone(),
             )
             .await;
@@ -451,6 +457,7 @@ mod tests {
                 vec![],
                 HashMap::new(),
                 vec![],
+                None,
                 tx.clone(),
             )
             .await;
@@ -490,6 +497,7 @@ mod tests {
                 vec![],
                 HashMap::new(),
                 vec![],
+                None,
                 tx.clone(),
             )
             .await;
@@ -527,6 +535,7 @@ mod tests {
                 vec![],
                 HashMap::new(),
                 vec![],
+                None,
                 tx.clone(),
             )
             .await;
@@ -539,6 +548,7 @@ mod tests {
                 vec![],
                 HashMap::new(),
                 vec![],
+                None,
                 tx.clone(),
             )
             .await;
@@ -574,6 +584,7 @@ mod tests {
                 vec![],
                 HashMap::new(),
                 vec![project_a],
+                None,
                 tx.clone(),
             )
             .await;
@@ -587,6 +598,7 @@ mod tests {
                 vec![],
                 HashMap::new(),
                 vec![],
+                None,
                 tx.clone(),
             )
             .await;
