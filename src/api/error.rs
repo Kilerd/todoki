@@ -36,6 +36,13 @@ impl ApiError {
             message: msg.into(),
         }
     }
+
+    pub fn bad_request(msg: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            message: msg.into(),
+        }
+    }
 }
 
 impl IntoResponse for ApiError {

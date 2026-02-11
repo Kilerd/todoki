@@ -90,6 +90,10 @@ pub async fn update_project(
             payload.description,
             payload.color,
             payload.archived,
+            payload.general_template,
+            payload.business_template,
+            payload.coding_template,
+            payload.qa_template,
         )
         .await?;
 

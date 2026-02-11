@@ -110,3 +110,4 @@ export async function respondPermission(
     body: JSON.stringify({ request_id: requestId, ...outcome }),
   });
 }
+

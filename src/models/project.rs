@@ -19,6 +19,11 @@ pub struct Project {
     pub archived: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    // Execution templates for different agent roles
+    pub general_template: Option<String>,
+    pub business_template: Option<String>,
+    pub coding_template: Option<String>,
+    pub qa_template: Option<String>,
 }
 
 #[derive(Debug, Clone, Creatable)]
@@ -29,6 +34,10 @@ pub struct CreateProject {
     pub archived: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub general_template: Option<String>,
+    pub business_template: Option<String>,
+    pub coding_template: Option<String>,
+    pub qa_template: Option<String>,
 }
 
 impl CreateProject {
@@ -41,6 +50,10 @@ impl CreateProject {
             archived: false,
             created_at: now,
             updated_at: now,
+            general_template: None,
+            business_template: None,
+            coding_template: None,
+            qa_template: None,
         }
     }
 }
@@ -58,6 +71,14 @@ pub struct ProjectResponse {
     pub archived: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub general_template: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub business_template: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coding_template: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qa_template: Option<String>,
 }
 
 impl From<Project> for ProjectResponse {
@@ -70,6 +91,10 @@ impl From<Project> for ProjectResponse {
             archived: p.archived,
             created_at: p.created_at,
             updated_at: p.updated_at,
+            general_template: p.general_template,
+            business_template: p.business_template,
+            coding_template: p.coding_template,
+            qa_template: p.qa_template,
         }
     }
 }
@@ -87,4 +112,8 @@ pub struct ProjectUpdateRequest {
     pub description: Option<String>,
     pub color: Option<String>,
     pub archived: Option<bool>,
+    pub general_template: Option<String>,
+    pub business_template: Option<String>,
+    pub coding_template: Option<String>,
+    pub qa_template: Option<String>,
 }

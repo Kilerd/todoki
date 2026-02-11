@@ -68,13 +68,46 @@ impl SessionManager {
             command = %params.command,
             workdir = %workdir,
             args = ?params.args,
+            setup_script = ?params.setup_script,
             "spawning child process"
         );
 
+        // Run setup script if provided
+        if let Some(setup_script) = &params.setup_script {
+            let setup_path = format!("{}/.todoki-setup-{}.sh", workdir, params.session_id);
+            tracing::debug!(setup_path = %setup_path, "writing setup script");
+
+            if let Err(e) = std::fs::write(&setup_path, setup_script) {
+                anyhow::bail!("failed to write setup script: {}", e);
+            }
+
+            let status = Command::new("bash")
+                .arg(&setup_path)
+                .current_dir(&workdir)
+                .envs(std::env::vars())
+                .status()
+                .await;
+
+            // Clean up script file
+            let _ = std::fs::remove_file(&setup_path);
+
+            match status {
+                Ok(s) if s.success() => {
+                    tracing::debug!("setup script completed successfully");
+                }
+                Ok(s) => {
+                    anyhow::bail!("setup script failed with exit code: {:?}", s.code());
+                }
+                Err(e) => {
+                    anyhow::bail!("failed to run setup script: {}", e);
+                }
+            }
+        }
+
         let mut command = Command::new(&params.command);
         command
-            .current_dir(&workdir)
             .args(&params.args)
+            .current_dir(&workdir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

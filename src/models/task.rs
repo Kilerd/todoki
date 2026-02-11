@@ -4,6 +4,7 @@ use gotcha::Schematic;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::agent::AgentBriefResponse;
 use super::project::ProjectResponse;
 
 // ============================================================================
@@ -89,6 +90,8 @@ pub struct Task {
     pub status: String,
     pub create_at: DateTime<Utc>,
     pub archived: bool,
+    /// Agent ID if this task is being executed by an agent
+    pub agent_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Creatable)]
@@ -99,6 +102,7 @@ pub struct CreateTask {
     pub status: String,
     pub create_at: DateTime<Utc>,
     pub archived: bool,
+    pub agent_id: Option<Uuid>,
 }
 
 impl CreateTask {
@@ -110,6 +114,7 @@ impl CreateTask {
             status: status.as_str().to_string(),
             create_at: Utc::now(),
             archived: false,
+            agent_id: None,
         }
     }
 }
@@ -279,6 +284,9 @@ pub struct TaskResponse {
     pub archived: bool,
     pub events: Vec<TaskEventResponse>,
     pub comments: Vec<TaskCommentResponse>,
+    /// Agent executing this task, if any
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent: Option<AgentBriefResponse>,
 }
 
 impl TaskResponse {
@@ -287,6 +295,7 @@ impl TaskResponse {
         project: ProjectResponse,
         events: Vec<TaskEvent>,
         comments: Vec<TaskComment>,
+        agent: Option<AgentBriefResponse>,
     ) -> Self {
         Self {
             id: task.id,
@@ -298,6 +307,7 @@ impl TaskResponse {
             archived: task.archived,
             events: events.into_iter().map(Into::into).collect(),
             comments: comments.into_iter().map(Into::into).collect(),
+            agent,
         }
     }
 }

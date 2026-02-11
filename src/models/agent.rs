@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use conservator::{Creatable, Domain};
+use gotcha::Schematic;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -7,7 +8,7 @@ use uuid::Uuid;
 // Execution Mode
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Schematic)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionMode {
     #[default]
@@ -35,7 +36,7 @@ impl ExecutionMode {
 // Agent Status
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Schematic)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentStatus {
     #[default]
@@ -72,7 +73,7 @@ impl AgentStatus {
 // Session Status
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Schematic)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionStatus {
     Running,
@@ -141,7 +142,7 @@ impl OutputStream {
 // Agent Role
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Schematic)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentRole {
     #[default]
@@ -329,7 +330,7 @@ impl CreateAgentEvent {
 // API DTOs
 // ============================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Schematic)]
 pub struct AgentResponse {
     pub id: Uuid,
     pub name: String,
@@ -364,7 +365,7 @@ impl From<Agent> for AgentResponse {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Schematic)]
 pub struct AgentSessionResponse {
     pub id: Uuid,
     pub agent_id: Uuid,
@@ -402,6 +403,26 @@ impl From<AgentEvent> for AgentEventResponse {
             ts: e.ts,
             stream: e.stream_enum(),
             message: e.message,
+        }
+    }
+}
+
+/// Brief agent info for embedding in other responses (e.g., TaskResponse)
+#[derive(Debug, Clone, Serialize, Deserialize, Schematic)]
+pub struct AgentBriefResponse {
+    pub id: Uuid,
+    pub name: String,
+    pub status: AgentStatus,
+    pub role: AgentRole,
+}
+
+impl From<Agent> for AgentBriefResponse {
+    fn from(a: Agent) -> Self {
+        Self {
+            id: a.id,
+            name: a.name.clone(),
+            status: a.status_enum(),
+            role: a.role_enum(),
         }
     }
 }

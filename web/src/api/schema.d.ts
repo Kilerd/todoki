@@ -288,6 +288,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{task_id}/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Execute Task
+         * @description POST /api/tasks/:task_id/execute - Execute task on a relay
+         */
+        post: operations["execute_task"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{task_id}/status": {
         parameters: {
             query?: never;
@@ -359,12 +379,16 @@ export interface operations {
                 content: {
                     "application/json": {
                         archived: boolean;
+                        business_template?: string | null;
+                        coding_template?: string | null;
                         color: string;
                         created_at: string;
                         description?: string | null;
+                        general_template?: string | null;
                         /** Format: uuid */
                         id: string;
                         name: string;
+                        qa_template?: string | null;
                         updated_at: string;
                     }[];
                 };
@@ -396,12 +420,16 @@ export interface operations {
                 content: {
                     "application/json": {
                         archived: boolean;
+                        business_template?: string | null;
+                        coding_template?: string | null;
                         color: string;
                         created_at: string;
                         description?: string | null;
+                        general_template?: string | null;
                         /** Format: uuid */
                         id: string;
                         name: string;
+                        qa_template?: string | null;
                         updated_at: string;
                     };
                 };
@@ -427,12 +455,16 @@ export interface operations {
                 content: {
                     "application/json": {
                         archived: boolean;
+                        business_template?: string | null;
+                        coding_template?: string | null;
                         color: string;
                         created_at: string;
                         description?: string | null;
+                        general_template?: string | null;
                         /** Format: uuid */
                         id: string;
                         name: string;
+                        qa_template?: string | null;
                         updated_at: string;
                     } | null;
                 };
@@ -458,12 +490,16 @@ export interface operations {
                 content: {
                     "application/json": {
                         archived: boolean;
+                        business_template?: string | null;
+                        coding_template?: string | null;
                         color: string;
                         created_at: string;
                         description?: string | null;
+                        general_template?: string | null;
                         /** Format: uuid */
                         id: string;
                         name: string;
+                        qa_template?: string | null;
                         updated_at: string;
                     };
                 };
@@ -483,9 +519,13 @@ export interface operations {
             content: {
                 "application/json": {
                     archived?: boolean | null;
+                    business_template?: string | null;
+                    coding_template?: string | null;
                     color?: string | null;
                     description?: string | null;
+                    general_template?: string | null;
                     name?: string | null;
+                    qa_template?: string | null;
                 };
             };
         };
@@ -498,12 +538,16 @@ export interface operations {
                 content: {
                     "application/json": {
                         archived: boolean;
+                        business_template?: string | null;
+                        coding_template?: string | null;
                         color: string;
                         created_at: string;
                         description?: string | null;
+                        general_template?: string | null;
                         /** Format: uuid */
                         id: string;
                         name: string;
+                        qa_template?: string | null;
                         updated_at: string;
                     };
                 };
@@ -578,6 +622,16 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Agent executing this task, if any */
+                        agent?: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            role: "general" | "business" | "coding" | "qa";
+                            /** @enum {string} */
+                            status: "created" | "running" | "stopped" | "exited" | "failed";
+                        } | null;
                         archived: boolean;
                         comments: {
                             content: string;
@@ -604,12 +658,16 @@ export interface operations {
                         priority: number;
                         project: {
                             archived: boolean;
+                            business_template?: string | null;
+                            coding_template?: string | null;
                             color: string;
                             created_at: string;
                             description?: string | null;
+                            general_template?: string | null;
                             /** Format: uuid */
                             id: string;
                             name: string;
+                            qa_template?: string | null;
                             updated_at: string;
                         };
                         status: string;
@@ -645,6 +703,16 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Agent executing this task, if any */
+                        agent?: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            role: "general" | "business" | "coding" | "qa";
+                            /** @enum {string} */
+                            status: "created" | "running" | "stopped" | "exited" | "failed";
+                        } | null;
                         archived: boolean;
                         comments: {
                             content: string;
@@ -671,12 +739,16 @@ export interface operations {
                         priority: number;
                         project: {
                             archived: boolean;
+                            business_template?: string | null;
+                            coding_template?: string | null;
                             color: string;
                             created_at: string;
                             description?: string | null;
+                            general_template?: string | null;
                             /** Format: uuid */
                             id: string;
                             name: string;
+                            qa_template?: string | null;
                             updated_at: string;
                         };
                         status: string;
@@ -701,6 +773,16 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Agent executing this task, if any */
+                        agent?: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            role: "general" | "business" | "coding" | "qa";
+                            /** @enum {string} */
+                            status: "created" | "running" | "stopped" | "exited" | "failed";
+                        } | null;
                         archived: boolean;
                         comments: {
                             content: string;
@@ -727,12 +809,16 @@ export interface operations {
                         priority: number;
                         project: {
                             archived: boolean;
+                            business_template?: string | null;
+                            coding_template?: string | null;
                             color: string;
                             created_at: string;
                             description?: string | null;
+                            general_template?: string | null;
                             /** Format: uuid */
                             id: string;
                             name: string;
+                            qa_template?: string | null;
                             updated_at: string;
                         };
                         status: string;
@@ -757,6 +843,16 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Agent executing this task, if any */
+                        agent?: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            role: "general" | "business" | "coding" | "qa";
+                            /** @enum {string} */
+                            status: "created" | "running" | "stopped" | "exited" | "failed";
+                        } | null;
                         archived: boolean;
                         comments: {
                             content: string;
@@ -783,12 +879,16 @@ export interface operations {
                         priority: number;
                         project: {
                             archived: boolean;
+                            business_template?: string | null;
+                            coding_template?: string | null;
                             color: string;
                             created_at: string;
                             description?: string | null;
+                            general_template?: string | null;
                             /** Format: uuid */
                             id: string;
                             name: string;
+                            qa_template?: string | null;
                             updated_at: string;
                         };
                         status: string;
@@ -813,6 +913,16 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Agent executing this task, if any */
+                        agent?: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            role: "general" | "business" | "coding" | "qa";
+                            /** @enum {string} */
+                            status: "created" | "running" | "stopped" | "exited" | "failed";
+                        } | null;
                         archived: boolean;
                         comments: {
                             content: string;
@@ -839,12 +949,16 @@ export interface operations {
                         priority: number;
                         project: {
                             archived: boolean;
+                            business_template?: string | null;
+                            coding_template?: string | null;
                             color: string;
                             created_at: string;
                             description?: string | null;
+                            general_template?: string | null;
                             /** Format: uuid */
                             id: string;
                             name: string;
+                            qa_template?: string | null;
                             updated_at: string;
                         };
                         status: string;
@@ -869,6 +983,16 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Agent executing this task, if any */
+                        agent?: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            role: "general" | "business" | "coding" | "qa";
+                            /** @enum {string} */
+                            status: "created" | "running" | "stopped" | "exited" | "failed";
+                        } | null;
                         archived: boolean;
                         comments: {
                             content: string;
@@ -895,12 +1019,16 @@ export interface operations {
                         priority: number;
                         project: {
                             archived: boolean;
+                            business_template?: string | null;
+                            coding_template?: string | null;
                             color: string;
                             created_at: string;
                             description?: string | null;
+                            general_template?: string | null;
                             /** Format: uuid */
                             id: string;
                             name: string;
+                            qa_template?: string | null;
                             updated_at: string;
                         };
                         status: string;
@@ -925,6 +1053,16 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Agent executing this task, if any */
+                        agent?: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            role: "general" | "business" | "coding" | "qa";
+                            /** @enum {string} */
+                            status: "created" | "running" | "stopped" | "exited" | "failed";
+                        } | null;
                         archived: boolean;
                         comments: {
                             content: string;
@@ -951,12 +1089,16 @@ export interface operations {
                         priority: number;
                         project: {
                             archived: boolean;
+                            business_template?: string | null;
+                            coding_template?: string | null;
                             color: string;
                             created_at: string;
                             description?: string | null;
+                            general_template?: string | null;
                             /** Format: uuid */
                             id: string;
                             name: string;
+                            qa_template?: string | null;
                             updated_at: string;
                         };
                         status: string;
@@ -983,6 +1125,16 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Agent executing this task, if any */
+                        agent?: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            role: "general" | "business" | "coding" | "qa";
+                            /** @enum {string} */
+                            status: "created" | "running" | "stopped" | "exited" | "failed";
+                        } | null;
                         archived: boolean;
                         comments: {
                             content: string;
@@ -1009,12 +1161,16 @@ export interface operations {
                         priority: number;
                         project: {
                             archived: boolean;
+                            business_template?: string | null;
+                            coding_template?: string | null;
                             color: string;
                             created_at: string;
                             description?: string | null;
+                            general_template?: string | null;
                             /** Format: uuid */
                             id: string;
                             name: string;
+                            qa_template?: string | null;
                             updated_at: string;
                         };
                         status: string;
@@ -1050,6 +1206,16 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Agent executing this task, if any */
+                        agent?: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            role: "general" | "business" | "coding" | "qa";
+                            /** @enum {string} */
+                            status: "created" | "running" | "stopped" | "exited" | "failed";
+                        } | null;
                         archived: boolean;
                         comments: {
                             content: string;
@@ -1076,12 +1242,16 @@ export interface operations {
                         priority: number;
                         project: {
                             archived: boolean;
+                            business_template?: string | null;
+                            coding_template?: string | null;
                             color: string;
                             created_at: string;
                             description?: string | null;
+                            general_template?: string | null;
                             /** Format: uuid */
                             id: string;
                             name: string;
+                            qa_template?: string | null;
                             updated_at: string;
                         };
                         status: string;
@@ -1130,6 +1300,16 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Agent executing this task, if any */
+                        agent?: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            role: "general" | "business" | "coding" | "qa";
+                            /** @enum {string} */
+                            status: "created" | "running" | "stopped" | "exited" | "failed";
+                        } | null;
                         archived: boolean;
                         comments: {
                             content: string;
@@ -1156,12 +1336,16 @@ export interface operations {
                         priority: number;
                         project: {
                             archived: boolean;
+                            business_template?: string | null;
+                            coding_template?: string | null;
                             color: string;
                             created_at: string;
                             description?: string | null;
+                            general_template?: string | null;
                             /** Format: uuid */
                             id: string;
                             name: string;
+                            qa_template?: string | null;
                             updated_at: string;
                         };
                         status: string;
@@ -1205,6 +1389,68 @@ export interface operations {
             };
         };
     };
+    execute_task: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Optionally specify a relay ID to use */
+                    relay_id?: string | null;
+                    /** @description Optional setup script to run before the agent command */
+                    setup_script?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        agent: {
+                            args: string[];
+                            command: string;
+                            created_at: string;
+                            /** @enum {string} */
+                            execution_mode: "local" | "remote";
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** Format: uuid */
+                            project_id: string;
+                            relay_id?: string | null;
+                            /** @enum {string} */
+                            role: "general" | "business" | "coding" | "qa";
+                            /** @enum {string} */
+                            status: "created" | "running" | "stopped" | "exited" | "failed";
+                            updated_at: string;
+                            workdir: string;
+                        };
+                        session: {
+                            /** Format: uuid */
+                            agent_id: string;
+                            ended_at?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            relay_id?: string | null;
+                            started_at: string;
+                            /** @enum {string} */
+                            status: "running" | "completed" | "failed" | "cancelled";
+                        };
+                    };
+                };
+            };
+        };
+    };
     update_task_status: {
         parameters: {
             query?: never;
@@ -1230,6 +1476,16 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Agent executing this task, if any */
+                        agent?: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            role: "general" | "business" | "coding" | "qa";
+                            /** @enum {string} */
+                            status: "created" | "running" | "stopped" | "exited" | "failed";
+                        } | null;
                         archived: boolean;
                         comments: {
                             content: string;
@@ -1256,12 +1512,16 @@ export interface operations {
                         priority: number;
                         project: {
                             archived: boolean;
+                            business_template?: string | null;
+                            coding_template?: string | null;
                             color: string;
                             created_at: string;
                             description?: string | null;
+                            general_template?: string | null;
                             /** Format: uuid */
                             id: string;
                             name: string;
+                            qa_template?: string | null;
                             updated_at: string;
                         };
                         status: string;
@@ -1288,6 +1548,16 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Agent executing this task, if any */
+                        agent?: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            role: "general" | "business" | "coding" | "qa";
+                            /** @enum {string} */
+                            status: "created" | "running" | "stopped" | "exited" | "failed";
+                        } | null;
                         archived: boolean;
                         comments: {
                             content: string;
@@ -1314,12 +1584,16 @@ export interface operations {
                         priority: number;
                         project: {
                             archived: boolean;
+                            business_template?: string | null;
+                            coding_template?: string | null;
                             color: string;
                             created_at: string;
                             description?: string | null;
+                            general_template?: string | null;
                             /** Format: uuid */
                             id: string;
                             name: string;
+                            qa_template?: string | null;
                             updated_at: string;
                         };
                         status: string;

@@ -8,12 +8,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
   Archive,
   ArchiveRestore,
   Check,
+  FileCode,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -33,8 +35,8 @@ import {
   createProject,
   updateProject,
   deleteProject,
+  type Project,
 } from "../hooks/useProjects";
-import type { Project } from "../api/types";
 
 const PRESET_COLORS = [
   "#3B82F6", // blue
@@ -52,6 +54,22 @@ interface ProjectFormData {
   description: string;
   color: string;
 }
+
+type ProjectTemplates = Pick<Project, 'general_template' | 'business_template' | 'coding_template' | 'qa_template'>;
+
+const DEFAULT_TEMPLATE = `# Task Execution
+
+## Project: {{project_name}}
+{{project_description}}
+
+## Task
+{{task_content}}
+
+## Acceptance Criteria
+- Complete the task as described
+- Follow project conventions
+- Test your changes before completion
+`;
 
 function ProjectForm({
   initialData,
@@ -137,14 +155,121 @@ function ProjectForm({
   );
 }
 
+type TemplateTab = "general" | "business" | "coding" | "qa";
+
+function TemplateEditor({
+  templates,
+  onSave,
+  onCancel,
+}: {
+  templates: ProjectTemplates;
+  onSave: (templates: ProjectTemplates) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<TemplateTab>("coding");
+  const [general, setGeneral] = useState(templates.general_template || "");
+  const [business, setBusiness] = useState(templates.business_template || "");
+  const [coding, setCoding] = useState(templates.coding_template || "");
+  const [qa, setQa] = useState(templates.qa_template || "");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSave = async () => {
+    setIsSubmitting(true);
+    try {
+      await onSave({
+        general_template: general || undefined,
+        business_template: business || undefined,
+        coding_template: coding || undefined,
+        qa_template: qa || undefined,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const tabs: { key: TemplateTab; label: string }[] = [
+    { key: "general", label: "General" },
+    { key: "business", label: "Business" },
+    { key: "coding", label: "Coding" },
+    { key: "qa", label: "QA" },
+  ];
+
+  const getValue = (tab: TemplateTab) => {
+    switch (tab) {
+      case "general": return general;
+      case "business": return business;
+      case "coding": return coding;
+      case "qa": return qa;
+    }
+  };
+
+  const setValue = (tab: TemplateTab, value: string) => {
+    switch (tab) {
+      case "general": setGeneral(value); break;
+      case "business": setBusiness(value); break;
+      case "coding": setCoding(value); break;
+      case "qa": setQa(value); break;
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-slate-500">
+        Templates are used when executing tasks on a relay. Available variables:{" "}
+        <code className="text-xs bg-slate-100 px-1 rounded">{"{{task_content}}"}</code>,{" "}
+        <code className="text-xs bg-slate-100 px-1 rounded">{"{{project_name}}"}</code>,{" "}
+        <code className="text-xs bg-slate-100 px-1 rounded">{"{{project_description}}"}</code>
+      </p>
+
+      {/* Tab buttons */}
+      <div className="flex gap-1 p-1 bg-slate-100 rounded-lg">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key)}
+            className={cn(
+              "flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              activeTab === tab.key
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Template textarea */}
+      <Textarea
+        value={getValue(activeTab)}
+        onChange={(e) => setValue(activeTab, e.target.value)}
+        placeholder={DEFAULT_TEMPLATE}
+        className="font-mono text-sm min-h-[300px]"
+      />
+
+      <div className="flex justify-end gap-2 pt-2">
+        <Button type="button" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button onClick={handleSave} disabled={isSubmitting}>
+          {isSubmitting ? "Saving..." : "Save Templates"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ProjectCard({
   project,
   onEdit,
+  onEditTemplates,
   onArchive,
   onDelete,
 }: {
   project: Project;
   onEdit: () => void;
+  onEditTemplates: () => void;
   onArchive: () => void;
   onDelete: () => void;
 }) {
@@ -192,6 +317,10 @@ function ProjectCard({
             <Pencil className="h-4 w-4 mr-2" />
             Edit
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={onEditTemplates}>
+            <FileCode className="h-4 w-4 mr-2" />
+            Edit Templates
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={onArchive}>
             {project.archived ? (
               <>
@@ -221,6 +350,7 @@ function Projects() {
   const { projects, isLoading, refresh } = useProjects();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [editingTemplatesProject, setEditingTemplatesProject] = useState<Project | null>(null);
   const [showArchived, setShowArchived] = useState(false);
 
   const activeProjects = projects.filter((p) => !p.archived);
@@ -252,6 +382,14 @@ function Projects() {
   const handleArchive = async (project: Project) => {
     await updateProject(project.id, { archived: !project.archived });
     toast({ title: project.archived ? "Project unarchived" : "Project archived" });
+    refresh();
+  };
+
+  const handleUpdateTemplates = async (templates: ProjectTemplates) => {
+    if (!editingTemplatesProject) return;
+    await updateProject(editingTemplatesProject.id, templates);
+    toast({ title: "Templates updated" });
+    setEditingTemplatesProject(null);
     refresh();
   };
 
@@ -296,6 +434,7 @@ function Projects() {
                   key={project.id}
                   project={project}
                   onEdit={() => setEditingProject(project)}
+                  onEditTemplates={() => setEditingTemplatesProject(project)}
                   onArchive={() => handleArchive(project)}
                   onDelete={() => handleDelete(project)}
                 />
@@ -322,6 +461,7 @@ function Projects() {
                       key={project.id}
                       project={project}
                       onEdit={() => setEditingProject(project)}
+                      onEditTemplates={() => setEditingTemplatesProject(project)}
                       onArchive={() => handleArchive(project)}
                       onDelete={() => handleDelete(project)}
                     />
@@ -365,6 +505,32 @@ function Projects() {
               onSubmit={handleUpdate}
               onCancel={() => setEditingProject(null)}
               submitLabel="Save"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Templates Dialog */}
+      <Dialog
+        open={!!editingTemplatesProject}
+        onOpenChange={(open) => !open && setEditingTemplatesProject(null)}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              Edit Templates - {editingTemplatesProject?.name}
+            </DialogTitle>
+          </DialogHeader>
+          {editingTemplatesProject && (
+            <TemplateEditor
+              templates={{
+                general_template: editingTemplatesProject.general_template,
+                business_template: editingTemplatesProject.business_template,
+                coding_template: editingTemplatesProject.coding_template,
+                qa_template: editingTemplatesProject.qa_template,
+              }}
+              onSave={handleUpdateTemplates}
+              onCancel={() => setEditingTemplatesProject(null)}
             />
           )}
         </DialogContent>

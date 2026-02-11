@@ -86,9 +86,16 @@ export async function updateProject(
     description?: string | null;
     color?: string | null;
     archived?: boolean | null;
+    general_template?: string | null;
+    business_template?: string | null;
+    coding_template?: string | null;
+    qa_template?: string | null;
   }
 ): Promise<Project> {
-  const { data } = await api.updateProject({ project_id: projectId, ...projectData });
+  const { data } = await api.updateProject({
+    project_id: projectId,
+    ...projectData,
+  });
   await refreshProjects();
   return data;
 }

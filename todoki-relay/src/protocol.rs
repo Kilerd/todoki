@@ -129,6 +129,10 @@ pub struct SpawnSessionParams {
     pub args: Vec<String>,
     #[serde(default)]
     pub env: HashMap<String, String>,
+    /// Optional setup script to run before the main command.
+    /// If provided, executes as: bash -c "setup_script && exec command args..."
+    #[serde(default)]
+    pub setup_script: Option<String>,
 }
 
 /// Parameters for send-input RPC

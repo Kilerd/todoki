@@ -1,7 +1,7 @@
 use crate::models::{
     agent::{
-        Agent, AgentEvent, AgentSession, AgentStatus, CreateAgent, CreateAgentEvent,
-        CreateAgentSession, SessionStatus,
+        Agent, AgentBriefResponse, AgentEvent, AgentSession, AgentStatus, CreateAgent,
+        CreateAgentEvent, CreateAgentSession, SessionStatus,
     },
     project::{CreateProject, Project},
     report::{ReportPeriod, ReportResponse},
@@ -69,10 +69,12 @@ impl DatabaseService {
 
         let query = format!(
             r#"
-            SELECT t.id, t.priority, t.content, t.project_id, t.status, t.create_at, t.archived,
+            SELECT t.id, t.priority, t.content, t.project_id, t.status, t.create_at, t.archived, t.agent_id,
                    p.id as p_id, p.name as p_name, p.description as p_description,
                    p.color as p_color, p.archived as p_archived,
-                   p.created_at as p_created_at, p.updated_at as p_updated_at
+                   p.created_at as p_created_at, p.updated_at as p_updated_at,
+                   p.general_template as p_general_template, p.business_template as p_business_template,
+                   p.coding_template as p_coding_template, p.qa_template as p_qa_template
             FROM tasks t
             JOIN projects p ON t.project_id = p.id
             WHERE t.status IN ({})
@@ -101,6 +103,7 @@ impl DatabaseService {
                     status: row.get("status"),
                     create_at: row.get("create_at"),
                     archived: row.get("archived"),
+                    agent_id: row.get("agent_id"),
                 };
                 let project = Project {
                     id: row.get("p_id"),
@@ -110,6 +113,10 @@ impl DatabaseService {
                     archived: row.get("p_archived"),
                     created_at: row.get("p_created_at"),
                     updated_at: row.get("p_updated_at"),
+                    general_template: row.get("p_general_template"),
+                    business_template: row.get("p_business_template"),
+                    coding_template: row.get("p_coding_template"),
+                    qa_template: row.get("p_qa_template"),
                 };
                 (task, project)
             })
@@ -156,10 +163,12 @@ impl DatabaseService {
             .map_err(|e| crate::TodokiError::Database(e))?;
 
         let query = r#"
-            SELECT DISTINCT ON (t.id) t.id, t.priority, t.content, t.project_id, t.status, t.create_at, t.archived,
+            SELECT DISTINCT ON (t.id) t.id, t.priority, t.content, t.project_id, t.status, t.create_at, t.archived, t.agent_id,
                    p.id as p_id, p.name as p_name, p.description as p_description,
                    p.color as p_color, p.archived as p_archived,
-                   p.created_at as p_created_at, p.updated_at as p_updated_at
+                   p.created_at as p_created_at, p.updated_at as p_updated_at,
+                   p.general_template as p_general_template, p.business_template as p_business_template,
+                   p.coding_template as p_coding_template, p.qa_template as p_qa_template
             FROM tasks t
             JOIN task_events e ON t.id = e.task_id
             JOIN projects p ON t.project_id = p.id
@@ -187,6 +196,7 @@ impl DatabaseService {
                     status: row.get("status"),
                     create_at: row.get("create_at"),
                     archived: row.get("archived"),
+                    agent_id: row.get("agent_id"),
                 };
                 let project = Project {
                     id: row.get("p_id"),
@@ -196,6 +206,10 @@ impl DatabaseService {
                     archived: row.get("p_archived"),
                     created_at: row.get("p_created_at"),
                     updated_at: row.get("p_updated_at"),
+                    general_template: row.get("p_general_template"),
+                    business_template: row.get("p_business_template"),
+                    coding_template: row.get("p_coding_template"),
+                    qa_template: row.get("p_qa_template"),
                 };
                 (task, project)
             })
@@ -231,7 +245,7 @@ impl DatabaseService {
             .map_err(|e| crate::TodokiError::Database(e))
     }
 
-    /// Get full task response with events and comments
+    /// Get full task response with events, comments, and agent info
     pub async fn get_task_response(
         &self,
         task: Task,
@@ -239,7 +253,21 @@ impl DatabaseService {
     ) -> crate::Result<TaskResponse> {
         let events = self.get_task_events(task.id).await?;
         let comments = self.get_task_comments(task.id).await?;
-        Ok(TaskResponse::from_task(task, project.into(), events, comments))
+
+        // Load agent info if task has an agent_id
+        let agent = if let Some(agent_id) = task.agent_id {
+            self.get_agent(agent_id).await?.map(AgentBriefResponse::from)
+        } else {
+            None
+        };
+
+        Ok(TaskResponse::from_task(
+            task,
+            project.into(),
+            events,
+            comments,
+            agent,
+        ))
     }
 
     /// Get task with project by task ID
@@ -251,10 +279,12 @@ impl DatabaseService {
             .map_err(|e| crate::TodokiError::Database(e))?;
 
         let query = r#"
-            SELECT t.id, t.priority, t.content, t.project_id, t.status, t.create_at, t.archived,
+            SELECT t.id, t.priority, t.content, t.project_id, t.status, t.create_at, t.archived, t.agent_id,
                    p.id as p_id, p.name as p_name, p.description as p_description,
                    p.color as p_color, p.archived as p_archived,
-                   p.created_at as p_created_at, p.updated_at as p_updated_at
+                   p.created_at as p_created_at, p.updated_at as p_updated_at,
+                   p.general_template as p_general_template, p.business_template as p_business_template,
+                   p.coding_template as p_coding_template, p.qa_template as p_qa_template
             FROM tasks t
             JOIN projects p ON t.project_id = p.id
             WHERE t.id = $1
@@ -274,6 +304,7 @@ impl DatabaseService {
                 status: r.get("status"),
                 create_at: r.get("create_at"),
                 archived: r.get("archived"),
+                agent_id: r.get("agent_id"),
             };
             let project = Project {
                 id: r.get("p_id"),
@@ -283,6 +314,10 @@ impl DatabaseService {
                 archived: r.get("p_archived"),
                 created_at: r.get("p_created_at"),
                 updated_at: r.get("p_updated_at"),
+                general_template: r.get("p_general_template"),
+                business_template: r.get("p_business_template"),
+                coding_template: r.get("p_coding_template"),
+                qa_template: r.get("p_qa_template"),
             };
             (task, project)
         }))
@@ -438,6 +473,25 @@ impl DatabaseService {
         Ok(())
     }
 
+    /// Update task's agent_id (link task to an agent)
+    pub async fn update_task_agent_id(
+        &self,
+        task_id: Uuid,
+        agent_id: Option<Uuid>,
+    ) -> crate::Result<Task> {
+        let mut task = Task::fetch_one_by_pk(&task_id, &*self.pool)
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        task.agent_id = agent_id;
+
+        task.save(&*self.pool)
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Ok(task)
+    }
+
     /// Add a comment to a task
     pub async fn add_task_comment(
         &self,
@@ -478,9 +532,13 @@ impl DatabaseService {
             .map_err(|e| crate::TodokiError::Database(e))?;
 
         let query = if include_archived {
-            "SELECT id, name, description, color, archived, created_at, updated_at FROM projects ORDER BY name ASC"
+            r#"SELECT id, name, description, color, archived, created_at, updated_at,
+                      general_template, business_template, coding_template, qa_template
+               FROM projects ORDER BY name ASC"#
         } else {
-            "SELECT id, name, description, color, archived, created_at, updated_at FROM projects WHERE archived = false ORDER BY name ASC"
+            r#"SELECT id, name, description, color, archived, created_at, updated_at,
+                      general_template, business_template, coding_template, qa_template
+               FROM projects WHERE archived = false ORDER BY name ASC"#
         };
 
         let rows = conn
@@ -498,6 +556,10 @@ impl DatabaseService {
                 archived: row.get("archived"),
                 created_at: row.get("created_at"),
                 updated_at: row.get("updated_at"),
+                general_template: row.get("general_template"),
+                business_template: row.get("business_template"),
+                coding_template: row.get("coding_template"),
+                qa_template: row.get("qa_template"),
             })
             .collect())
     }
@@ -521,7 +583,9 @@ impl DatabaseService {
 
         let row = conn
             .query_opt(
-                "SELECT id, name, description, color, archived, created_at, updated_at FROM projects WHERE name = $1",
+                r#"SELECT id, name, description, color, archived, created_at, updated_at,
+                          general_template, business_template, coding_template, qa_template
+                   FROM projects WHERE name = $1"#,
                 &[&name],
             )
             .await
@@ -535,6 +599,10 @@ impl DatabaseService {
             archived: r.get("archived"),
             created_at: r.get("created_at"),
             updated_at: r.get("updated_at"),
+            general_template: r.get("general_template"),
+            business_template: r.get("business_template"),
+            coding_template: r.get("coding_template"),
+            qa_template: r.get("qa_template"),
         }))
     }
 
@@ -559,6 +627,10 @@ impl DatabaseService {
         description: Option<String>,
         color: Option<String>,
         archived: Option<bool>,
+        general_template: Option<String>,
+        business_template: Option<String>,
+        coding_template: Option<String>,
+        qa_template: Option<String>,
     ) -> crate::Result<Project> {
         let mut project = Project::fetch_one_by_pk(&project_id, &*self.pool)
             .await
@@ -575,6 +647,18 @@ impl DatabaseService {
         }
         if let Some(a) = archived {
             project.archived = a;
+        }
+        if let Some(t) = general_template {
+            project.general_template = Some(t);
+        }
+        if let Some(t) = business_template {
+            project.business_template = Some(t);
+        }
+        if let Some(t) = coding_template {
+            project.coding_template = Some(t);
+        }
+        if let Some(t) = qa_template {
+            project.qa_template = Some(t);
         }
         project.updated_at = Utc::now();
 

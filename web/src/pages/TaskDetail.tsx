@@ -7,16 +7,20 @@ import dayjs from "dayjs";
 import {
   Archive,
   ArrowLeft,
+  Bot,
   Check,
+  Circle,
   Clock,
+  ExternalLink,
   Inbox,
+  Play,
   RotateCcw,
   Send,
   Trash2,
 } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   useTask,
   addComment,
@@ -25,6 +29,7 @@ import {
   unarchiveTask,
   deleteTask,
 } from "../hooks/useTasks";
+import { executeTask } from "../api/tasks";
 import type { TaskEvent, TaskStatus } from "../api/types";
 
 const STATUS_CONFIG: Record<
@@ -36,6 +41,17 @@ const STATUS_CONFIG: Record<
   "in-progress": { label: "In Progress", color: "bg-amber-50 text-amber-600" },
   "in-review": { label: "In Review", color: "bg-purple-50 text-purple-600" },
   done: { label: "Done", color: "bg-teal-50 text-teal-600" },
+};
+
+const AGENT_STATUS_CONFIG: Record<
+  string,
+  { label: string; color: string; dotColor: string }
+> = {
+  created: { label: "Created", color: "bg-slate-100 text-slate-600", dotColor: "bg-slate-400" },
+  running: { label: "Running", color: "bg-green-100 text-green-700", dotColor: "bg-green-500" },
+  stopped: { label: "Stopped", color: "bg-yellow-100 text-yellow-700", dotColor: "bg-yellow-500" },
+  exited: { label: "Exited", color: "bg-slate-100 text-slate-600", dotColor: "bg-slate-400" },
+  failed: { label: "Failed", color: "bg-red-100 text-red-700", dotColor: "bg-red-500" },
 };
 
 function formatEvent(event: TaskEvent): string {
@@ -66,6 +82,7 @@ export default function TaskDetail() {
   const navigate = useNavigate();
   const [comment, setComment] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
   const { toast } = useToast();
   const { task, isLoading, refresh } = useTask(id!);
 
@@ -97,6 +114,26 @@ export default function TaskDetail() {
   const handleDelete = async () => {
     await deleteTask(id!);
     navigate("/inbox");
+  };
+
+  const handleExecute = async () => {
+    setIsExecuting(true);
+    try {
+      const { data } = await executeTask({ task_id: id! });
+      toast({
+        title: "Task execution started",
+        description: `Agent ${data.agent.name} is now running`,
+      });
+      refresh();
+    } catch (e) {
+      toast({
+        title: "Failed to execute task",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExecuting(false);
+    }
   };
 
   if (isLoading || !task) {
@@ -157,6 +194,23 @@ export default function TaskDetail() {
               Archived
             </Badge>
           )}
+          {task.agent && (
+            <Link
+              to={`/agents`}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border border-slate-200 hover:border-slate-300 transition-colors"
+            >
+              <Bot className="h-3 w-3" />
+              <Circle
+                className={cn(
+                  "h-2 w-2",
+                  AGENT_STATUS_CONFIG[task.agent.status]?.dotColor || "bg-slate-400"
+                )}
+                fill="currentColor"
+              />
+              {task.agent.name}
+              <ExternalLink className="h-3 w-3 text-slate-400" />
+            </Link>
+          )}
         </div>
 
         {/* Task content */}
@@ -216,6 +270,19 @@ export default function TaskDetail() {
               <Check className="h-4 w-4 mr-1.5" />
               Done
             </Button>
+            {/* Execute on Relay button - only show if no running agent */}
+            {(!task.agent || task.agent.status !== "running") && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExecute}
+                disabled={isExecuting}
+                className="cursor-pointer"
+              >
+                <Play className="h-4 w-4 mr-1.5" />
+                {isExecuting ? "Starting..." : "Execute on Relay"}
+              </Button>
+            )}
           </>
         )}
 
