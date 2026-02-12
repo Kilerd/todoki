@@ -1,6 +1,5 @@
 mod acp;
 mod config;
-mod protocol;
 mod relay;
 mod session;
 

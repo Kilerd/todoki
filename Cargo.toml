@@ -1,48 +1,23 @@
-[package]
-name = "todoki"
-version = "0.1.0"
+[workspace]
+resolver = "2"
+members = [
+    "crates/todoki-protocol",
+    "crates/todoki-server",
+    "crates/todoki-relay",
+]
+
+[workspace.package]
 edition = "2024"
 
-[dependencies]
-# Web framework
-gotcha = { git = "https://github.com/Kilerd/gotcha.git", branch = "main", features=["cors", "openapi"] }
-axum = { version = "0.7", features = ["ws"] }
-
-# Database ORM
-conservator = { git = "https://github.com/kilerd/conservator.git", branch = "main" }
-
-# Async runtime
-tokio = { version = "1", features = ["full"] }
-tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
-
-# Serialization
+[workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-
-# Configuration
-config = "0.14"
-
-# Logging
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# Error handling
-thiserror = "1"
-
-# Async trait
-async-trait = "0.1"
-
-# UUID
 uuid = { version = "1", features = ["v4", "serde"] }
-
-# Time
 chrono = { version = "0.4", features = ["serde"] }
-
-# Environment variables
-dotenvy = "0.15"
-
-# Async utilities
-futures-util = "0.3"
-
-# Error handling (for relay)
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+thiserror = "2"
 anyhow = "1"
+futures-util = "0.3"
+async-trait = "0.1"
+todoki-protocol = { path = "crates/todoki-protocol" }

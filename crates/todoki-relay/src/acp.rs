@@ -15,7 +15,7 @@ use tokio::process::{ChildStdin, ChildStdout};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use crate::protocol::RelayToServer;
+use todoki_protocol::RelayToServer;
 
 /// ACP session handle for sending commands
 #[derive(Clone)]

@@ -1,30 +1,15 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Relay role for task routing
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, ValueEnum)]
-#[serde(rename_all = "lowercase")]
-pub enum RelayRole {
-    #[default]
-    General,
-    Business,
-    Coding,
-    Qa,
-}
+// Re-export from shared protocol
+pub use todoki_protocol::RelayRole;
 
-impl RelayRole {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            RelayRole::General => "general",
-            RelayRole::Business => "business",
-            RelayRole::Coding => "coding",
-            RelayRole::Qa => "qa",
-        }
-    }
+fn parse_relay_role(s: &str) -> Result<RelayRole, String> {
+    Ok(RelayRole::from_str(s))
 }
 
 /// Todoki relay agent
@@ -43,8 +28,8 @@ pub struct Args {
     #[arg(short, long, env = "TODOKI_RELAY_NAME")]
     pub name: Option<String>,
 
-    /// Relay role for task routing
-    #[arg(short, long, env = "TODOKI_RELAY_ROLE", default_value = "general")]
+    /// Relay role for task routing (general, business, coding, qa)
+    #[arg(short, long, env = "TODOKI_RELAY_ROLE", default_value = "general", value_parser = parse_relay_role)]
     pub role: RelayRole,
 
     /// Allowed working directories (comma-separated)

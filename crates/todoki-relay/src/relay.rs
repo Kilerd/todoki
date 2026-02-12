@@ -8,11 +8,11 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use crate::config::RelayConfig;
-use crate::protocol::{
+use crate::session::SessionManager;
+use todoki_protocol::{
     PermissionOutcome, RelayToServer, RpcResult, SendInputParams, ServerToRelay,
     SpawnSessionParams, StopSessionParams,
 };
-use crate::session::SessionManager;
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(3);
 const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(60);

@@ -8,7 +8,7 @@ use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, mpsc};
 
 use crate::acp::{spawn_acp_session, AcpHandle};
-use crate::protocol::{RelayToServer, SendInputParams, SpawnSessionParams, SpawnSessionResult};
+use todoki_protocol::{RelayToServer, SendInputParams, SpawnSessionParams, SpawnSessionResult};
 
 /// Manages local agent sessions (subprocesses)
 pub struct SessionManager {

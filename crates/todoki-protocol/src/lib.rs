@@ -1,10 +1,49 @@
+//! Shared protocol definitions for todoki server and relay communication.
+
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::config::RelayRole;
+// ============================================================================
+// Relay Role
+// ============================================================================
+
+/// Relay role for task routing
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum RelayRole {
+    #[default]
+    General,
+    Business,
+    Coding,
+    Qa,
+}
+
+impl RelayRole {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RelayRole::General => "general",
+            RelayRole::Business => "business",
+            RelayRole::Coding => "coding",
+            RelayRole::Qa => "qa",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "business" => RelayRole::Business,
+            "coding" => RelayRole::Coding,
+            "qa" => RelayRole::Qa,
+            _ => RelayRole::General,
+        }
+    }
+}
+
+// ============================================================================
+// Protocol: Relay -> Server
+// ============================================================================
 
 /// Messages from Relay to Server
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -12,7 +51,7 @@ use crate::config::RelayRole;
 pub enum RelayToServer {
     /// Registration request
     Register {
-        /// Stable relay ID (hash of machine id)
+        /// Stable relay ID (e.g. hash of machine id)
         relay_id: String,
         name: String,
         #[serde(default)]
@@ -67,6 +106,10 @@ pub enum RelayToServer {
     Pong,
 }
 
+// ============================================================================
+// Protocol: Server -> Relay
+// ============================================================================
+
 /// Messages from Server to Relay
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -92,7 +135,7 @@ pub enum ServerToRelay {
     Ping,
 }
 
-/// Permission outcome from server
+/// Permission outcome from user
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PermissionOutcome {
@@ -101,6 +144,10 @@ pub enum PermissionOutcome {
     /// User cancelled
     Cancelled,
 }
+
+// ============================================================================
+// RPC types
+// ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -120,6 +167,10 @@ impl RpcResult {
         RpcResult::Error { error: msg.into() }
     }
 }
+
+// ============================================================================
+// RPC Parameters
+// ============================================================================
 
 /// Parameters for spawn-session RPC
 #[derive(Debug, Clone, Serialize, Deserialize)]

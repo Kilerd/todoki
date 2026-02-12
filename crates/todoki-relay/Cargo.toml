@@ -1,7 +1,7 @@
 [package]
 name = "todoki-relay"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
 description = "Remote agent relay for todoki"
 
 [[bin]]
@@ -9,16 +9,19 @@ name = "todoki-relay"
 path = "src/main.rs"
 
 [dependencies]
+# Shared protocol
+todoki-protocol.workspace = true
+
 # Async runtime
-tokio = { version = "1", features = ["full"] }
+tokio.workspace = true
 
 # WebSocket
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
-futures-util = "0.3"
+futures-util.workspace = true
 
 # Serialization
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde.workspace = true
+serde_json.workspace = true
 
 # Configuration
 toml = "0.8"
@@ -27,18 +30,18 @@ toml = "0.8"
 clap = { version = "4", features = ["derive", "env"] }
 
 # Logging
-tracing = "0.1"
+tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Error handling
-anyhow = "1"
-thiserror = "2"
+anyhow.workspace = true
+thiserror.workspace = true
 
 # UUID
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid.workspace = true
 
 # Time
-chrono = { version = "0.4", features = ["serde"] }
+chrono.workspace = true
 
 # URL parsing
 url = "2"
@@ -53,6 +56,6 @@ hex = "0.4"
 
 # ACP protocol for Claude Code
 agent-client-protocol = { version = "0.9.3", features = ["unstable"] }
-async-trait = "0.1"
+async-trait.workspace = true
 tokio-util = { version = "0.7", features = ["compat"] }
 openssl = { version = "0.10", features = ["vendored"] }

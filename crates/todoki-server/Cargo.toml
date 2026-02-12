@@ -1,0 +1,55 @@
+[package]
+name = "todoki"
+version = "0.1.0"
+edition.workspace = true
+
+[[bin]]
+name = "todoki"
+path = "src/main.rs"
+
+[dependencies]
+# Shared protocol
+todoki-protocol.workspace = true
+
+# Web framework
+gotcha = { git = "https://github.com/Kilerd/gotcha.git", branch = "main", features = ["cors", "openapi"] }
+axum = { version = "0.7", features = ["ws"] }
+
+# Database ORM
+conservator = { git = "https://github.com/kilerd/conservator.git", branch = "main" }
+
+# Async runtime
+tokio.workspace = true
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Configuration
+config = "0.14"
+
+# Logging
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+thiserror.workspace = true
+
+# Async trait
+async-trait.workspace = true
+
+# UUID
+uuid.workspace = true
+
+# Time
+chrono.workspace = true
+
+# Environment variables
+dotenvy = "0.15"
+
+# Async utilities
+futures-util.workspace = true
+
+# Error handling (for relay)
+anyhow.workspace = true
