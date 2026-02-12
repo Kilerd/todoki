@@ -357,7 +357,7 @@ pub async fn execute_task(
         agent_name,
         workdir.clone(),
         "claude-code-acp".to_string(),
-        vec![],
+        vec!["--dangerously-skip-permissions".to_string()],
         ExecutionMode::Remote,
         agent_role,
         project.id,
