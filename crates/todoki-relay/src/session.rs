@@ -146,8 +146,23 @@ impl SessionManager {
         let stdout = stdout.ok_or_else(|| anyhow::anyhow!("no stdout for ACP"))?;
         let stdin = stdin.ok_or_else(|| anyhow::anyhow!("no stdin for ACP"))?;
 
-        // stderr is not used in ACP mode
-        drop(stderr);
+        // Spawn stderr reader to capture agent errors
+        if let Some(stderr) = stderr {
+            let session_id_for_stderr = params.session_id.clone();
+            tokio::spawn(async move {
+                use tokio::io::AsyncBufReadExt;
+                let reader = tokio::io::BufReader::new(stderr);
+                let mut lines = reader.lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    tracing::warn!(
+                        session_id = %session_id_for_stderr,
+                        line = %line,
+                        "agent stderr"
+                    );
+                    eprintln!("[STDERR] session={} {}", session_id_for_stderr, line);
+                }
+            });
+        }
 
         tracing::debug!(session_id = %params.session_id, "calling spawn_acp_session");
         let acp_handle = match spawn_acp_session(
