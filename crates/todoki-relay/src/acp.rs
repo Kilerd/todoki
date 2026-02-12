@@ -99,6 +99,19 @@ impl AcpEventSink {
         let seq = self.seq_counter.fetch_add(1, Ordering::SeqCst);
         let ts = Utc::now().timestamp();
 
+        // Print output to stdout for debugging
+        println!(
+            "[OUTPUT] session={} stream={} seq={} message={}",
+            self.session_id, stream, seq, message
+        );
+        tracing::debug!(
+            session_id = %self.session_id,
+            stream = %stream,
+            seq = seq,
+            message_len = message.len(),
+            "emitting agent output"
+        );
+
         let msg = RelayToServer::AgentOutput {
             agent_id: self.agent_id.clone(),
             session_id: self.session_id.clone(),
@@ -112,6 +125,11 @@ impl AcpEventSink {
     }
 
     async fn emit_update(&self, update: SessionUpdate) {
+        tracing::debug!(
+            session_id = %self.session_id,
+            update_type = %std::any::type_name_of_val(&update),
+            "processing session update"
+        );
         if let Some(value) = update_to_event(update) {
             self.emit_acp(value).await;
         }
@@ -347,30 +365,62 @@ pub async fn spawn_acp_session(
             let _ = ready_tx.send(Ok(acp_session_id.clone()));
 
             // Command loop
+            tracing::debug!(acp_session_id = %acp_session_id, "entering ACP command loop");
             while let Some(cmd) = cmd_rx.recv().await {
+                tracing::debug!(acp_session_id = %acp_session_id, cmd = ?cmd, "received ACP command");
                 match cmd {
-                    AcpCommand::Prompt(prompt) => {
+                    AcpCommand::Prompt(ref prompt) => {
+                        tracing::info!(
+                            acp_session_id = %acp_session_id,
+                            prompt_len = prompt.len(),
+                            "sending prompt to agent"
+                        );
+                        tracing::debug!(
+                            acp_session_id = %acp_session_id,
+                            prompt = %prompt,
+                            "prompt content"
+                        );
                         let request = PromptRequest::new(
                             acp_session_id.clone(),
                             vec![ContentBlock::Text(
-                                agent_client_protocol::TextContent::new(prompt),
+                                agent_client_protocol::TextContent::new(prompt.clone()),
                             )],
                         );
                         if let Err(e) = conn.prompt(request).await {
+                            tracing::error!(
+                                acp_session_id = %acp_session_id,
+                                error = %e,
+                                "prompt request failed"
+                            );
                             sink.emit_system(format!("prompt error: {}", e)).await;
+                        } else {
+                            tracing::debug!(acp_session_id = %acp_session_id, "prompt request sent");
                         }
                     }
                     AcpCommand::Cancel => {
+                        tracing::info!(acp_session_id = %acp_session_id, "cancelling current operation");
                         let request = CancelNotification::new(acp_session_id.clone());
                         if let Err(e) = conn.cancel(request).await {
+                            tracing::error!(
+                                acp_session_id = %acp_session_id,
+                                error = %e,
+                                "cancel request failed"
+                            );
                             sink.emit_system(format!("cancel error: {}", e)).await;
                         }
                     }
                     AcpCommand::RespondPermission { request_id, outcome } => {
+                        tracing::info!(
+                            acp_session_id = %acp_session_id,
+                            request_id = %request_id,
+                            outcome = ?outcome,
+                            "responding to permission request"
+                        );
                         permissions_for_cmd.respond(&request_id, outcome).await;
                     }
                 }
             }
+            tracing::debug!(acp_session_id = %acp_session_id, "ACP command loop ended");
         }));
     });
 

@@ -203,12 +203,25 @@ impl SessionManager {
 
     /// Send input to a session
     pub async fn send_input(&self, params: SendInputParams) -> anyhow::Result<()> {
+        tracing::debug!(
+            session_id = %params.session_id,
+            input_len = params.input.len(),
+            "send_input called"
+        );
+
         let sessions = self.sessions.lock().await;
         let session = sessions
             .get(&params.session_id)
             .ok_or_else(|| anyhow::anyhow!("session not found: {}", params.session_id))?;
 
+        tracing::debug!(
+            session_id = %params.session_id,
+            acp_session_id = %session.acp_handle.acp_session_id,
+            "forwarding input to ACP"
+        );
+
         session.acp_handle.prompt(params.input).await?;
+        tracing::debug!(session_id = %params.session_id, "input sent to ACP");
         Ok(())
     }
 

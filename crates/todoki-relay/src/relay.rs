@@ -333,6 +333,20 @@ impl Relay {
                     Err(e) => return RpcResult::error(format!("invalid params: {}", e)),
                 };
 
+                tracing::info!(
+                    session_id = %params.session_id,
+                    input_len = params.input.len(),
+                    "sending input to session"
+                );
+                tracing::debug!(
+                    session_id = %params.session_id,
+                    input = %params.input,
+                    "input content"
+                );
+
+                // Print input to stdout for debugging
+                println!("[INPUT] session={} input={}", params.session_id, params.input);
+
                 match session_manager.send_input(params).await {
                     Ok(()) => RpcResult::success(serde_json::json!({})),
                     Err(e) => RpcResult::error(e.to_string()),
