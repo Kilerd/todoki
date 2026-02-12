@@ -2,8 +2,7 @@ use gotcha::axum::extract::Extension;
 use gotcha::axum::extract::Path;
 use gotcha::axum::extract::Query;
 use gotcha::axum::extract::State;
-use gotcha::axum::response::{IntoResponse, Response};
-use gotcha::Json;
+use gotcha::{Json, Schematic};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -21,40 +20,35 @@ use crate::Relays;
 // List agents
 // ============================================================================
 
+/// GET /api/agents - List all agents
+#[gotcha::api]
 pub async fn list_agents(
     Extension(auth): Extension<AuthContext>,
     State(db): State<Db>,
-) -> Response {
-    if auth.require_auth().is_err() {
-        return ApiError::unauthorized().into_response();
-    }
+) -> Result<Json<Vec<AgentResponse>>, ApiError> {
+    auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
-    match db.list_agents().await {
-        Ok(agents) => {
-            let resp: Vec<AgentResponse> = agents.into_iter().map(Into::into).collect();
-            Json(resp).into_response()
-        }
-        Err(e) => ApiError::from(e).into_response(),
-    }
+    let agents = db.list_agents().await?;
+    let resp: Vec<AgentResponse> = agents.into_iter().map(Into::into).collect();
+    Ok(Json(resp))
 }
 
 // ============================================================================
 // Get agent
 // ============================================================================
 
+/// GET /api/agents/:agent_id - Get agent by ID
+#[gotcha::api]
 pub async fn get_agent(
     Extension(auth): Extension<AuthContext>,
     State(db): State<Db>,
     Path(agent_id): Path<Uuid>,
-) -> Response {
-    if auth.require_auth().is_err() {
-        return ApiError::unauthorized().into_response();
-    }
+) -> Result<Json<AgentResponse>, ApiError> {
+    auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
-    match db.get_agent(agent_id).await {
-        Ok(Some(agent)) => Json(AgentResponse::from(agent)).into_response(),
-        Ok(None) => ApiError::not_found("agent not found").into_response(),
-        Err(e) => ApiError::from(e).into_response(),
+    match db.get_agent(agent_id).await? {
+        Some(agent) => Ok(Json(AgentResponse::from(agent))),
+        None => Err(ApiError::not_found("agent not found")),
     }
 }
 
@@ -62,7 +56,7 @@ pub async fn get_agent(
 // Create agent
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Schematic)]
 pub struct CreateAgentRequest {
     pub name: String,
     pub workdir: String,
@@ -80,24 +74,25 @@ pub struct CreateAgentRequest {
     pub auto_start: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Schematic)]
 pub struct CreateAgentResponse {
     #[serde(flatten)]
+    #[schematic(flatten)]
     pub agent: AgentResponse,
     /// Session info if auto_start was true
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session: Option<AgentSessionResponse>,
 }
 
+/// POST /api/agents - Create a new agent
+#[gotcha::api]
 pub async fn create_agent(
     Extension(auth): Extension<AuthContext>,
     State(db): State<Db>,
     State(relays): State<Relays>,
     Json(req): Json<CreateAgentRequest>,
-) -> Response {
-    if auth.require_auth().is_err() {
-        return ApiError::unauthorized().into_response();
-    }
+) -> Result<Json<CreateAgentResponse>, ApiError> {
+    auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
     let auto_start = req.auto_start;
     let execution_mode = req.execution_mode;
@@ -115,29 +110,23 @@ pub async fn create_agent(
         req.relay_id,
     );
 
-    let agent = match db.create_agent(create).await {
-        Ok(a) => a,
-        Err(e) => return ApiError::from(e).into_response(),
-    };
+    let agent = db.create_agent(create).await?;
 
     // If auto_start, start the agent immediately
     if auto_start {
-        let session = match start_agent_internal(&db, &relays, &agent).await {
-            Ok(s) => s,
-            Err(e) => return ApiError::internal(e.to_string()).into_response(),
-        };
+        let session = start_agent_internal(&db, &relays, &agent)
+            .await
+            .map_err(|e| ApiError::internal(e.to_string()))?;
 
-        Json(CreateAgentResponse {
+        Ok(Json(CreateAgentResponse {
             agent: AgentResponse::from(agent),
             session: Some(AgentSessionResponse::from(session)),
-        })
-        .into_response()
+        }))
     } else {
-        Json(CreateAgentResponse {
+        Ok(Json(CreateAgentResponse {
             agent: AgentResponse::from(agent),
             session: None,
-        })
-        .into_response()
+        }))
     }
 }
 
@@ -145,19 +134,20 @@ pub async fn create_agent(
 // Delete agent
 // ============================================================================
 
+#[derive(Debug, Serialize, Schematic)]
+pub struct EmptyResponse {}
+
+/// DELETE /api/agents/:agent_id - Delete agent
+#[gotcha::api]
 pub async fn delete_agent(
     Extension(auth): Extension<AuthContext>,
     State(db): State<Db>,
     Path(agent_id): Path<Uuid>,
-) -> Response {
-    if auth.require_auth().is_err() {
-        return ApiError::unauthorized().into_response();
-    }
+) -> Result<Json<EmptyResponse>, ApiError> {
+    auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
-    match db.delete_agent(agent_id).await {
-        Ok(()) => Json(serde_json::json!({})).into_response(),
-        Err(e) => ApiError::from(e).into_response(),
-    }
+    db.delete_agent(agent_id).await?;
+    Ok(Json(EmptyResponse {}))
 }
 
 // ============================================================================
@@ -244,57 +234,53 @@ async fn start_agent_internal(
 // Start agent
 // ============================================================================
 
+/// POST /api/agents/:agent_id/start - Start agent
+#[gotcha::api]
 pub async fn start_agent(
     Extension(auth): Extension<AuthContext>,
     State(db): State<Db>,
     State(relays): State<Relays>,
     Path(agent_id): Path<Uuid>,
-) -> Response {
-    if auth.require_auth().is_err() {
-        return ApiError::unauthorized().into_response();
-    }
+) -> Result<Json<AgentSessionResponse>, ApiError> {
+    auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
-    let agent = match db.get_agent(agent_id).await {
-        Ok(Some(a)) => a,
-        Ok(None) => return ApiError::not_found("agent not found").into_response(),
-        Err(e) => return ApiError::from(e).into_response(),
-    };
+    let agent = db
+        .get_agent(agent_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("agent not found"))?;
 
-    match start_agent_internal(&db, &relays, &agent).await {
-        Ok(session) => Json(AgentSessionResponse::from(session)).into_response(),
-        Err(e) => ApiError::internal(e.to_string()).into_response(),
-    }
+    let session = start_agent_internal(&db, &relays, &agent)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+
+    Ok(Json(AgentSessionResponse::from(session)))
 }
 
 // ============================================================================
 // Stop agent
 // ============================================================================
 
+/// POST /api/agents/:agent_id/stop - Stop agent
+#[gotcha::api]
 pub async fn stop_agent(
     Extension(auth): Extension<AuthContext>,
     State(db): State<Db>,
     State(relays): State<Relays>,
     Path(agent_id): Path<Uuid>,
-) -> Response {
-    if auth.require_auth().is_err() {
-        return ApiError::unauthorized().into_response();
-    }
+) -> Result<Json<EmptyResponse>, ApiError> {
+    auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
-    let agent = match db.get_agent(agent_id).await {
-        Ok(Some(a)) => a,
-        Ok(None) => return ApiError::not_found("agent not found").into_response(),
-        Err(e) => return ApiError::from(e).into_response(),
-    };
+    let agent = db
+        .get_agent(agent_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("agent not found"))?;
 
     if agent.status_enum() != AgentStatus::Running {
-        return ApiError::internal("agent not running").into_response();
+        return Err(ApiError::internal("agent not running"));
     }
 
     // Get running session
-    let sessions = match db.get_agent_sessions(agent_id).await {
-        Ok(s) => s,
-        Err(e) => return ApiError::from(e).into_response(),
-    };
+    let sessions = db.get_agent_sessions(agent_id).await?;
 
     let running_session = sessions
         .into_iter()
@@ -318,40 +304,34 @@ pub async fn stop_agent(
             .await;
     }
 
-    if let Err(e) = db.update_agent_status(agent_id, AgentStatus::Stopped).await {
-        return ApiError::from(e).into_response();
-    }
+    db.update_agent_status(agent_id, AgentStatus::Stopped).await?;
 
-    Json(serde_json::json!({})).into_response()
+    Ok(Json(EmptyResponse {}))
 }
 
 // ============================================================================
 // Get agent sessions
 // ============================================================================
 
+/// GET /api/agents/:agent_id/sessions - Get agent sessions
+#[gotcha::api]
 pub async fn get_agent_sessions(
     Extension(auth): Extension<AuthContext>,
     State(db): State<Db>,
     Path(agent_id): Path<Uuid>,
-) -> Response {
-    if auth.require_auth().is_err() {
-        return ApiError::unauthorized().into_response();
-    }
+) -> Result<Json<Vec<AgentSessionResponse>>, ApiError> {
+    auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
-    match db.get_agent_sessions(agent_id).await {
-        Ok(sessions) => {
-            let resp: Vec<AgentSessionResponse> = sessions.into_iter().map(Into::into).collect();
-            Json(resp).into_response()
-        }
-        Err(e) => ApiError::from(e).into_response(),
-    }
+    let sessions = db.get_agent_sessions(agent_id).await?;
+    let resp: Vec<AgentSessionResponse> = sessions.into_iter().map(Into::into).collect();
+    Ok(Json(resp))
 }
 
 // ============================================================================
 // Get agent events
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Schematic)]
 pub struct EventsQuery {
     #[serde(default = "default_limit")]
     pub limit: i64,
@@ -362,76 +342,63 @@ fn default_limit() -> i64 {
     100
 }
 
+/// GET /api/agents/:agent_id/events - Get agent events
+#[gotcha::api]
 pub async fn get_agent_events(
     Extension(auth): Extension<AuthContext>,
     State(db): State<Db>,
     Path(agent_id): Path<Uuid>,
     Query(query): Query<EventsQuery>,
-) -> Response {
-    if auth.require_auth().is_err() {
-        return ApiError::unauthorized().into_response();
-    }
+) -> Result<Json<Vec<AgentEventResponse>>, ApiError> {
+    auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
-    match db
+    let events = db
         .get_agent_events(agent_id, query.limit, query.before_seq)
-        .await
-    {
-        Ok(events) => {
-            let resp: Vec<AgentEventResponse> = events.into_iter().map(Into::into).collect();
-            Json(resp).into_response()
-        }
-        Err(e) => ApiError::from(e).into_response(),
-    }
+        .await?;
+    let resp: Vec<AgentEventResponse> = events.into_iter().map(Into::into).collect();
+    Ok(Json(resp))
 }
 
 // ============================================================================
 // Send input to agent
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Schematic)]
 pub struct SendInputRequest {
     pub input: String,
 }
 
+/// POST /api/agents/:agent_id/input - Send input to agent
+#[gotcha::api]
 pub async fn send_input(
     Extension(auth): Extension<AuthContext>,
     State(db): State<Db>,
     State(relays): State<Relays>,
     Path(agent_id): Path<Uuid>,
     Json(req): Json<SendInputRequest>,
-) -> Response {
-    if auth.require_auth().is_err() {
-        return ApiError::unauthorized().into_response();
-    }
+) -> Result<Json<EmptyResponse>, ApiError> {
+    auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
-    let agent = match db.get_agent(agent_id).await {
-        Ok(Some(a)) => a,
-        Ok(None) => return ApiError::not_found("agent not found").into_response(),
-        Err(e) => return ApiError::from(e).into_response(),
-    };
+    let agent = db
+        .get_agent(agent_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("agent not found"))?;
 
     if agent.status_enum() != AgentStatus::Running {
-        return ApiError::internal("agent not running").into_response();
+        return Err(ApiError::internal("agent not running"));
     }
 
     // Get running session
-    let sessions = match db.get_agent_sessions(agent_id).await {
-        Ok(s) => s,
-        Err(e) => return ApiError::from(e).into_response(),
-    };
+    let sessions = db.get_agent_sessions(agent_id).await?;
 
-    let running_session = match sessions
+    let running_session = sessions
         .into_iter()
         .find(|s| s.status_enum() == SessionStatus::Running)
-    {
-        Some(s) => s,
-        None => return ApiError::internal("no running session").into_response(),
-    };
+        .ok_or_else(|| ApiError::internal("no running session"))?;
 
-    let relay_id = match running_session.relay_id {
-        Some(id) => id,
-        None => return ApiError::internal("session has no relay").into_response(),
-    };
+    let relay_id = running_session
+        .relay_id
+        .ok_or_else(|| ApiError::internal("session has no relay"))?;
 
     // Call relay to send input
     let params = serde_json::json!({
@@ -439,24 +406,25 @@ pub async fn send_input(
         "input": req.input,
     });
 
-    match relays.call(&relay_id, "send-input", params).await {
-        Ok(_) => Json(serde_json::json!({})).into_response(),
-        Err(e) => ApiError::internal(format!("failed to send input: {}", e)).into_response(),
-    }
+    relays
+        .call(&relay_id, "send-input", params)
+        .await
+        .map_err(|e| ApiError::internal(format!("failed to send input: {}", e)))?;
+
+    Ok(Json(EmptyResponse {}))
 }
 
 // ============================================================================
 // Respond to permission request
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Schematic)]
 pub struct PermissionResponseRequest {
     pub request_id: String,
-    #[serde(flatten)]
     pub outcome: PermissionOutcomeRequest,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Schematic)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PermissionOutcomeRequest {
     Selected { option_id: String },
@@ -474,15 +442,15 @@ impl From<PermissionOutcomeRequest> for PermissionOutcome {
     }
 }
 
+/// POST /api/agents/:agent_id/permission - Respond to permission request
+#[gotcha::api]
 pub async fn respond_permission(
     Extension(auth): Extension<AuthContext>,
     State(relays): State<Relays>,
     Path(agent_id): Path<Uuid>,
     Json(req): Json<PermissionResponseRequest>,
-) -> Response {
-    if auth.require_auth().is_err() {
-        return ApiError::unauthorized().into_response();
-    }
+) -> Result<Json<EmptyResponse>, ApiError> {
+    auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
     // agent_id is used for authorization check (optional: verify request belongs to agent)
     tracing::info!(
@@ -491,13 +459,10 @@ pub async fn respond_permission(
         "responding to permission request"
     );
 
-    match relays
+    relays
         .respond_to_permission(&req.request_id, req.outcome.into())
         .await
-    {
-        Ok(()) => Json(serde_json::json!({})).into_response(),
-        Err(e) => {
-            ApiError::internal(format!("failed to respond to permission: {}", e)).into_response()
-        }
-    }
+        .map_err(|e| ApiError::internal(format!("failed to respond to permission: {}", e)))?;
+
+    Ok(Json(EmptyResponse {}))
 }

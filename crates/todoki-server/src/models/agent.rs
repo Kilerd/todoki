@@ -106,7 +106,7 @@ impl SessionStatus {
 // Output Stream
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Schematic)]
 #[serde(rename_all = "snake_case")]
 pub enum OutputStream {
     Stdout,
@@ -388,7 +388,7 @@ impl From<AgentSession> for AgentSessionResponse {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Schematic)]
 pub struct AgentEventResponse {
     pub seq: i64,
     pub ts: DateTime<Utc>,

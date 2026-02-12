@@ -15,16 +15,128 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import NavBar from "../components/NavBar";
 import {
-  Agent,
   listAgents,
   startAgent,
   stopAgent,
   deleteAgent,
+  respondPermission,
 } from "../api/agents";
+import type { operations } from "../api/schema";
+
+type Agent = operations["list_agents"]["responses"]["200"]["content"]["application/json"][number];
 import {
   useAgentStream,
   parseAcpEvents,
 } from "../hooks/useAgentStream";
+
+interface PermissionOption {
+  optionId: string;  // ACP uses camelCase
+  name: string;
+  kind: string;
+}
+
+interface PermissionRequest {
+  request_id: string;
+  tool_call_id: string;
+  options: PermissionOption[];
+  tool_call: {
+    tool_call_id: string;
+    title?: string;
+    kind?: string;
+    raw_input?: unknown;
+  };
+}
+
+function PermissionRequestCard({
+  request,
+  agentId,
+  onResponded,
+}: {
+  request: PermissionRequest;
+  agentId: string;
+  onResponded: () => void;
+}) {
+  const [isResponding, setIsResponding] = useState(false);
+
+  const handleSelect = async (optionId: string) => {
+    setIsResponding(true);
+    try {
+      await respondPermission({
+        agent_id: agentId,
+        request_id: request.request_id,
+        outcome: {
+          type: "selected",
+          option_id: optionId,
+        },
+      });
+      onResponded();
+    } catch (e) {
+      console.error("Failed to respond to permission:", e);
+    } finally {
+      setIsResponding(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    setIsResponding(true);
+    try {
+      await respondPermission({
+        agent_id: agentId,
+        request_id: request.request_id,
+        outcome: {
+          type: "cancelled",
+        },
+      });
+      onResponded();
+    } catch (e) {
+      console.error("Failed to cancel permission:", e);
+    } finally {
+      setIsResponding(false);
+    }
+  };
+
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 my-2">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-amber-600 font-medium">Permission Required</span>
+      </div>
+      <div className="text-sm text-slate-700 mb-3">
+        <div className="font-medium">
+          {String(request.tool_call.title ?? "Tool Call")}
+        </div>
+        {request.tool_call.raw_input != null && (
+          <pre className="mt-1 text-xs bg-slate-100 p-2 rounded overflow-auto max-h-32">
+            {JSON.stringify(request.tool_call.raw_input, null, 2)}
+          </pre>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {request.options.map((option) => (
+          <Button
+            key={option.optionId}
+            size="sm"
+            variant={option.kind === "reject_once" ? "outline" : "default"}
+            onClick={() => handleSelect(option.optionId)}
+            disabled={isResponding}
+            className={cn(
+              option.kind === "reject_once" && "text-red-600 border-red-200 hover:bg-red-50"
+            )}
+          >
+            {option.name}
+          </Button>
+        ))}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={handleCancel}
+          disabled={isResponding}
+        >
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function StatusBadge({ status }: { status: Agent["status"] }) {
   const variants: Record<Agent["status"], { color: string; label: string }> = {
@@ -150,6 +262,7 @@ function AgentOutput({
   const outputRef = useRef<HTMLDivElement>(null);
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [respondedRequests, setRespondedRequests] = useState<Set<string>>(new Set());
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -161,10 +274,34 @@ function AgentOutput({
   // Group events by stream and render
   const renderedOutput = useMemo(() => {
     const acpText = parseAcpEvents(events);
-    const nonAcpEvents = events.filter((e) => e.stream !== "acp");
+    const nonAcpEvents = events.filter(
+      (e) => e.stream !== "acp" && e.stream !== "permission_request"
+    );
 
-    return { acpText, nonAcpEvents };
-  }, [events]);
+    // Parse permission request events
+    const permissionRequests: PermissionRequest[] = [];
+    for (const event of events) {
+      if (event.stream === "permission_request") {
+        try {
+          const parsed = JSON.parse(event.message) as PermissionRequest;
+          console.log("Permission request parsed:", parsed);
+          console.log("Options:", parsed.options);
+          // Only show if not already responded
+          if (!respondedRequests.has(parsed.request_id)) {
+            permissionRequests.push(parsed);
+          }
+        } catch {
+          console.error("Failed to parse permission request:", event.message);
+        }
+      }
+    }
+
+    return { acpText, nonAcpEvents, permissionRequests };
+  }, [events, respondedRequests]);
+
+  const handlePermissionResponded = (requestId: string) => {
+    setRespondedRequests((prev) => new Set([...prev, requestId]));
+  };
 
   const handleSendInput = async () => {
     if (!inputValue.trim() || isSending || !isConnected) return;
@@ -235,6 +372,16 @@ function AgentOutput({
           </div>
         )}
 
+        {/* Permission requests */}
+        {renderedOutput.permissionRequests.map((request) => (
+          <PermissionRequestCard
+            key={request.request_id}
+            request={request}
+            agentId={agentId}
+            onResponded={() => handlePermissionResponded(request.request_id)}
+          />
+        ))}
+
         {events.length === 0 && !isLoadingHistory && (
           <div className="text-slate-500 italic">No output yet</div>
         )}
@@ -271,7 +418,7 @@ function Agents() {
 
   const loadAgents = async () => {
     try {
-      const data = await listAgents();
+      const { data } = await listAgents({});
       setAgents(data);
       // Auto-select first agent if none selected
       if (!selectedAgentId && data.length > 0) {
@@ -295,7 +442,7 @@ function Agents() {
 
   const handleStart = async (agentId: string) => {
     try {
-      await startAgent(agentId);
+      await startAgent({ agent_id: agentId });
       loadAgents();
     } catch (e) {
       console.error("Failed to start agent:", e);
@@ -304,7 +451,7 @@ function Agents() {
 
   const handleStop = async (agentId: string) => {
     try {
-      await stopAgent(agentId);
+      await stopAgent({ agent_id: agentId });
       loadAgents();
     } catch (e) {
       console.error("Failed to stop agent:", e);
@@ -315,7 +462,7 @@ function Agents() {
     if (!confirm("Are you sure you want to delete this agent?")) return;
 
     try {
-      await deleteAgent(agentId);
+      await deleteAgent({ agent_id: agentId });
       if (selectedAgentId === agentId) {
         setSelectedAgentId(null);
       }

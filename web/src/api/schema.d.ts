@@ -4,6 +4,174 @@
  */
 
 export interface paths {
+    "/api/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agents
+         * @description GET /api/agents - List all agents
+         */
+        get: operations["list_agents"];
+        put?: never;
+        /**
+         * Create Agent
+         * @description POST /api/agents - Create a new agent
+         */
+        post: operations["create_agent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{agent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Agent
+         * @description GET /api/agents/:agent_id - Get agent by ID
+         */
+        get: operations["get_agent"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Agent
+         * @description DELETE /api/agents/:agent_id - Delete agent
+         */
+        delete: operations["delete_agent"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{agent_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Agent Events
+         * @description GET /api/agents/:agent_id/events - Get agent events
+         */
+        get: operations["get_agent_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{agent_id}/input": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Input
+         * @description POST /api/agents/:agent_id/input - Send input to agent
+         */
+        post: operations["send_input"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{agent_id}/permission": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Respond Permission
+         * @description POST /api/agents/:agent_id/permission - Respond to permission request
+         */
+        post: operations["respond_permission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{agent_id}/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Agent Sessions
+         * @description GET /api/agents/:agent_id/sessions - Get agent sessions
+         */
+        get: operations["get_agent_sessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{agent_id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Agent
+         * @description POST /api/agents/:agent_id/start - Start agent
+         */
+        post: operations["start_agent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{agent_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop Agent
+         * @description POST /api/agents/:agent_id/stop - Stop agent
+         */
+        post: operations["stop_agent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -360,6 +528,357 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_agents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        args: string[];
+                        command: string;
+                        created_at: string;
+                        /** @enum {string} */
+                        execution_mode: "local" | "remote";
+                        /** Format: uuid */
+                        id: string;
+                        name: string;
+                        /** Format: uuid */
+                        project_id: string;
+                        relay_id?: string | null;
+                        /** @enum {string} */
+                        role: "general" | "business" | "coding" | "qa";
+                        /** @enum {string} */
+                        status: "created" | "running" | "stopped" | "exited" | "failed";
+                        updated_at: string;
+                        workdir: string;
+                    }[];
+                };
+            };
+        };
+    };
+    create_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    args: string[];
+                    /** @description If true, automatically start the agent after creation */
+                    auto_start: boolean;
+                    command: string;
+                    /** @enum {string} */
+                    execution_mode: "local" | "remote";
+                    name: string;
+                    /** Format: uuid */
+                    project_id: string;
+                    relay_id?: string | null;
+                    /** @enum {string} */
+                    role: "general" | "business" | "coding" | "qa";
+                    workdir: string;
+                };
+            };
+        };
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        agent: {
+                            args: string[];
+                            command: string;
+                            created_at: string;
+                            /** @enum {string} */
+                            execution_mode: "local" | "remote";
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** Format: uuid */
+                            project_id: string;
+                            relay_id?: string | null;
+                            /** @enum {string} */
+                            role: "general" | "business" | "coding" | "qa";
+                            /** @enum {string} */
+                            status: "created" | "running" | "stopped" | "exited" | "failed";
+                            updated_at: string;
+                            workdir: string;
+                        };
+                        /** @description Session info if auto_start was true */
+                        session?: {
+                            /** Format: uuid */
+                            agent_id: string;
+                            ended_at?: string | null;
+                            /** Format: uuid */
+                            id: string;
+                            relay_id?: string | null;
+                            started_at: string;
+                            /** @enum {string} */
+                            status: "running" | "completed" | "failed" | "cancelled";
+                        } | null;
+                    };
+                };
+            };
+        };
+    };
+    get_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        args: string[];
+                        command: string;
+                        created_at: string;
+                        /** @enum {string} */
+                        execution_mode: "local" | "remote";
+                        /** Format: uuid */
+                        id: string;
+                        name: string;
+                        /** Format: uuid */
+                        project_id: string;
+                        relay_id?: string | null;
+                        /** @enum {string} */
+                        role: "general" | "business" | "coding" | "qa";
+                        /** @enum {string} */
+                        status: "created" | "running" | "stopped" | "exited" | "failed";
+                        updated_at: string;
+                        workdir: string;
+                    };
+                };
+            };
+        };
+    };
+    delete_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    get_agent_events: {
+        parameters: {
+            query: {
+                limit: number;
+                before_seq?: number | null;
+            };
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        message: string;
+                        seq: number;
+                        /** @enum {string} */
+                        stream: "stdout" | "stderr" | "system" | "acp" | "permission_request";
+                        ts: string;
+                    }[];
+                };
+            };
+        };
+    };
+    send_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    input: string;
+                };
+            };
+        };
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    respond_permission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    outcome: {
+                        option_id: string;
+                        /** @enum {string} */
+                        type: "selected";
+                    } | {
+                        /** @enum {string} */
+                        type: "cancelled";
+                    };
+                    request_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    get_agent_sessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        agent_id: string;
+                        ended_at?: string | null;
+                        /** Format: uuid */
+                        id: string;
+                        relay_id?: string | null;
+                        started_at: string;
+                        /** @enum {string} */
+                        status: "running" | "completed" | "failed" | "cancelled";
+                    }[];
+                };
+            };
+        };
+    };
+    start_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        agent_id: string;
+                        ended_at?: string | null;
+                        /** Format: uuid */
+                        id: string;
+                        relay_id?: string | null;
+                        started_at: string;
+                        /** @enum {string} */
+                        status: "running" | "completed" | "failed" | "cancelled";
+                    };
+                };
+            };
+        };
+    };
+    stop_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
     list_projects: {
         parameters: {
             query: {
