@@ -26,7 +26,8 @@ import type { operations } from "../api/schema";
 type Agent = operations["list_agents"]["responses"]["200"]["content"]["application/json"][number];
 import {
   useAgentStream,
-  parseAcpEvents,
+  parseAcpEventsStructured,
+  type ToolCallInfo,
 } from "../hooks/useAgentStream";
 
 interface PermissionOption {
@@ -134,6 +135,90 @@ function PermissionRequestCard({
           Cancel
         </Button>
       </div>
+    </div>
+  );
+}
+
+function ThinkingBlock({ text }: { text: string }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const previewLength = 200;
+  const isLong = text.length > previewLength;
+
+  return (
+    <div className="my-2 border-l-2 border-purple-400 pl-3">
+      <div
+        className="flex items-center gap-2 text-purple-400 text-xs cursor-pointer select-none"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <span className="font-medium">Thinking</span>
+        {isLong && (
+          <span className="text-purple-300">
+            {isExpanded ? "[-]" : "[+]"}
+          </span>
+        )}
+      </div>
+      <div className="text-purple-300/80 text-sm whitespace-pre-wrap mt-1">
+        {isExpanded || !isLong
+          ? text
+          : text.slice(0, previewLength) + "..."}
+      </div>
+    </div>
+  );
+}
+
+function ToolCallBlock({ toolCall }: { toolCall: ToolCallInfo }) {
+  const [showDetails, setShowDetails] = useState(false);
+  const statusStr = toolCall.status
+    ? typeof toolCall.status === "string"
+      ? toolCall.status
+      : String(toolCall.status)
+    : null;
+
+  return (
+    <div className="my-2 border-l-2 border-blue-400 pl-3">
+      <div
+        className="flex items-center gap-2 text-blue-400 text-xs cursor-pointer select-none"
+        onClick={() => setShowDetails(!showDetails)}
+      >
+        <span className="font-medium">Tool: {toolCall.title || toolCall.id}</span>
+        {statusStr && (
+          <span
+            className={cn(
+              "px-1.5 py-0.5 rounded text-xs",
+              statusStr.includes("running") && "bg-blue-500/20 text-blue-300",
+              statusStr.includes("completed") && "bg-green-500/20 text-green-300",
+              statusStr.includes("failed") && "bg-red-500/20 text-red-300"
+            )}
+          >
+            {statusStr}
+          </span>
+        )}
+        <span className="text-blue-300">{showDetails ? "[-]" : "[+]"}</span>
+      </div>
+      {showDetails && (
+        <div className="mt-2 text-xs">
+          {toolCall.raw_input != null && (
+            <div className="mb-2">
+              <div className="text-slate-400 mb-1">Input:</div>
+              <pre className="bg-slate-800 p-2 rounded overflow-auto max-h-32 text-slate-300">
+                {typeof toolCall.raw_input === "string"
+                  ? toolCall.raw_input
+                  : JSON.stringify(toolCall.raw_input, null, 2)}
+              </pre>
+            </div>
+          )}
+          {toolCall.raw_output != null && (
+            <div>
+              <div className="text-slate-400 mb-1">Output:</div>
+              <pre className="bg-slate-800 p-2 rounded overflow-auto max-h-32 text-slate-300">
+                {typeof toolCall.raw_output === "string"
+                  ? toolCall.raw_output
+                  : JSON.stringify(toolCall.raw_output, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -273,7 +358,7 @@ function AgentOutput({
 
   // Group events by stream and render
   const renderedOutput = useMemo(() => {
-    const acpText = parseAcpEvents(events);
+    const acpContents = parseAcpEventsStructured(events);
     const nonAcpEvents = events.filter(
       (e) => e.stream !== "acp" && e.stream !== "permission_request"
     );
@@ -284,8 +369,6 @@ function AgentOutput({
       if (event.stream === "permission_request") {
         try {
           const parsed = JSON.parse(event.message) as PermissionRequest;
-          console.log("Permission request parsed:", parsed);
-          console.log("Options:", parsed.options);
           // Only show if not already responded
           if (!respondedRequests.has(parsed.request_id)) {
             permissionRequests.push(parsed);
@@ -296,7 +379,7 @@ function AgentOutput({
       }
     }
 
-    return { acpText, nonAcpEvents, permissionRequests };
+    return { acpContents, nonAcpEvents, permissionRequests };
   }, [events, respondedRequests]);
 
   const handlePermissionResponded = (requestId: string) => {
@@ -365,12 +448,30 @@ function AgentOutput({
           </div>
         ))}
 
-        {/* ACP concatenated text */}
-        {renderedOutput.acpText && (
-          <div className="whitespace-pre-wrap text-teal-300 mt-2">
-            {renderedOutput.acpText}
-          </div>
-        )}
+        {/* ACP structured content */}
+        {renderedOutput.acpContents.map((content, idx) => {
+          if (content.type === "thought" && content.text) {
+            return <ThinkingBlock key={`thought-${idx}`} text={content.text} />;
+          }
+          if (content.type === "message" && content.text) {
+            return (
+              <div key={`msg-${idx}`} className="whitespace-pre-wrap text-teal-300 my-1">
+                {content.text}
+              </div>
+            );
+          }
+          if ((content.type === "tool_call" || content.type === "tool_call_update") && content.toolCall) {
+            return <ToolCallBlock key={`tool-${content.toolCall.id}-${idx}`} toolCall={content.toolCall} />;
+          }
+          if (content.type === "other" && content.text) {
+            return (
+              <div key={`other-${idx}`} className="whitespace-pre-wrap text-slate-400 my-1">
+                {content.text}
+              </div>
+            );
+          }
+          return null;
+        })}
 
         {/* Permission requests */}
         {renderedOutput.permissionRequests.map((request) => (

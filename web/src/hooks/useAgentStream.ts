@@ -16,6 +16,22 @@ export interface ParsedAcpMessage {
   [key: string]: unknown;
 }
 
+export interface ToolCallInfo {
+  id: string;
+  title?: string;
+  kind?: unknown;
+  status?: unknown;
+  content?: unknown;
+  raw_input?: unknown;
+  raw_output?: unknown;
+}
+
+export interface AcpContent {
+  type: "thought" | "message" | "tool_call" | "tool_call_update" | "other";
+  text?: string;
+  toolCall?: ToolCallInfo;
+}
+
 interface HistoryEventMessage {
   type: "history_event";
   id: number;
@@ -251,7 +267,7 @@ export function useAgentStream({
   };
 }
 
-// Helper to parse ACP messages and concatenate text chunks
+// Helper to parse ACP messages and concatenate text chunks (legacy)
 export function parseAcpEvents(events: AgentEvent[]): string {
   let result = "";
 
@@ -272,4 +288,85 @@ export function parseAcpEvents(events: AgentEvent[]): string {
   }
 
   return result;
+}
+
+// Parse ACP events into structured content list
+export function parseAcpEventsStructured(events: AgentEvent[]): AcpContent[] {
+  const contents: AcpContent[] = [];
+  // Track tool calls by id for merging updates
+  const toolCalls = new Map<string, ToolCallInfo>();
+
+  for (const event of events) {
+    if (event.stream !== "acp") continue;
+
+    try {
+      const parsed: ParsedAcpMessage = JSON.parse(event.message);
+      const msgType = parsed.type;
+
+      if (msgType === "agent_thought" && parsed.text) {
+        // Merge consecutive thoughts
+        const last = contents[contents.length - 1];
+        if (last && last.type === "thought") {
+          last.text = (last.text || "") + parsed.text;
+        } else {
+          contents.push({ type: "thought", text: parsed.text });
+        }
+      } else if (msgType === "agent_message" && parsed.text) {
+        // Merge consecutive messages
+        const last = contents[contents.length - 1];
+        if (last && last.type === "message") {
+          last.text = (last.text || "") + parsed.text;
+        } else {
+          contents.push({ type: "message", text: parsed.text });
+        }
+      } else if (msgType === "tool_call") {
+        const toolCall: ToolCallInfo = {
+          id: String(parsed.id || ""),
+          title: parsed.title as string | undefined,
+          kind: parsed.kind,
+          status: parsed.status,
+          content: parsed.content,
+          raw_input: parsed.raw_input,
+          raw_output: parsed.raw_output,
+        };
+        toolCalls.set(toolCall.id, toolCall);
+        contents.push({ type: "tool_call", toolCall });
+      } else if (msgType === "tool_call_update") {
+        const id = String(parsed.id || "");
+        const existing = toolCalls.get(id);
+        if (existing) {
+          // Update existing tool call
+          if (parsed.status !== undefined) existing.status = parsed.status;
+          if (parsed.title !== undefined) existing.title = parsed.title as string;
+          if (parsed.content !== undefined) existing.content = parsed.content;
+          if (parsed.raw_input !== undefined) existing.raw_input = parsed.raw_input;
+          if (parsed.raw_output !== undefined) existing.raw_output = parsed.raw_output;
+        } else {
+          // Add as update event
+          contents.push({
+            type: "tool_call_update",
+            toolCall: {
+              id,
+              status: parsed.status,
+              title: parsed.title as string | undefined,
+              raw_output: parsed.raw_output,
+            },
+          });
+        }
+      } else if (parsed.chunk && parsed.text) {
+        // Generic chunk - treat as message
+        const last = contents[contents.length - 1];
+        if (last && last.type === "message") {
+          last.text = (last.text || "") + parsed.text;
+        } else {
+          contents.push({ type: "message", text: parsed.text });
+        }
+      }
+    } catch {
+      // Not JSON - treat as message
+      contents.push({ type: "other", text: event.message });
+    }
+  }
+
+  return contents;
 }
