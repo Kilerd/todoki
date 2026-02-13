@@ -294,6 +294,9 @@ function ProjectCard({
           >
             {project.name}
           </span>
+          <span className="text-xs text-slate-400 font-mono truncate">
+            ID: {project.id}
+          </span>
           {project.description && (
             <span className="text-xs text-slate-400 truncate">
               {project.description}
