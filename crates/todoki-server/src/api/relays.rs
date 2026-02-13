@@ -307,8 +307,25 @@ async fn handle_relay_connection(socket: WebSocket, db: Db, relays: Relays, broa
                     event_data.to_string(),
                 );
 
-                if let Err(e) = db.insert_agent_event(create_event).await {
-                    tracing::error!(error = %e, "failed to insert permission request event");
+                // Store event in database and broadcast to subscribers
+                match db.insert_agent_event(create_event).await {
+                    Ok(event) => {
+                        // Broadcast to subscribers so they see permission request immediately
+                        let ts = chrono::Utc::now();
+                        let stream_event = AgentStreamEvent {
+                            agent_id: agent_uuid,
+                            session_id: session_uuid,
+                            id: event.id,
+                            seq,
+                            ts: ts.to_rfc3339(),
+                            stream: "permission_request".to_string(),
+                            message: event_data.to_string(),
+                        };
+                        broadcaster.broadcast(stream_event).await;
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "failed to insert permission request event");
+                    }
                 }
 
                 // Store pending permission request in relays manager
