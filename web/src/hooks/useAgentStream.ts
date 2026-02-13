@@ -1,13 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { getToken } from "@/lib/auth";
+import type { ServerToClient, AgentEventMessage, OutputStream } from "@/server-bindings";
 
-export interface AgentEvent {
-  id: number;
-  seq: number;
-  ts: string;
-  stream: string;
-  message: string;
-}
+export type AgentEvent = AgentEventMessage;
+export type { OutputStream };
 
 export interface ParsedAcpMessage {
   chunk?: boolean;
@@ -32,46 +28,6 @@ export interface AcpContent {
   toolCall?: ToolCallInfo;
 }
 
-interface HistoryEventMessage {
-  type: "history_event";
-  id: number;
-  seq: number;
-  ts: string;
-  stream: string;
-  message: string;
-}
-
-interface LiveEventMessage {
-  type: "live_event";
-  id: number;
-  seq: number;
-  ts: string;
-  stream: string;
-  message: string;
-}
-
-interface HistoryEndMessage {
-  type: "history_end";
-  last_id: number | null;
-}
-
-interface InputResultMessage {
-  type: "input_result";
-  success: boolean;
-  error: string | null;
-}
-
-interface ErrorMessage {
-  type: "error";
-  message: string;
-}
-
-type ServerMessage =
-  | HistoryEventMessage
-  | LiveEventMessage
-  | HistoryEndMessage
-  | InputResultMessage
-  | ErrorMessage;
 
 export interface UseAgentStreamOptions {
   agentId: string;
@@ -149,7 +105,7 @@ export function useAgentStream({
     ws.onmessage = (event) => {
       if (!isMountedRef.current) return;
       try {
-        const msg: ServerMessage = JSON.parse(event.data);
+        const msg: ServerToClient = JSON.parse(event.data);
 
         switch (msg.type) {
           case "history_event":

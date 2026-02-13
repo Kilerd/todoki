@@ -4,6 +4,7 @@ use gotcha::Schematic;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use specta::{Type};
 // ============================================================================
 // Execution Mode
 // ============================================================================
@@ -48,7 +49,7 @@ pub enum SessionStatus {
 // Output Stream
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Schematic, TextEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Schematic, TextEnum, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum OutputStream {
     Stdout,

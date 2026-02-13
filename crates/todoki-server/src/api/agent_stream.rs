@@ -13,6 +13,8 @@ use crate::Broadcaster;
 use crate::Db;
 use crate::Relays;
 
+use specta::{Type};
+
 /// Query parameters for WebSocket authentication
 #[derive(Debug, Deserialize)]
 pub struct WsAuthQuery {
@@ -30,7 +32,7 @@ pub enum ClientToServer {
 }
 
 /// Message sent from server to client
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Type)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerToClient {
     /// Historical event from database
@@ -45,7 +47,7 @@ pub enum ServerToClient {
     Error { message: String },
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Type)]
 pub struct AgentEventMessage {
     /// Database id (for ordering and pagination)
     pub id: i64,

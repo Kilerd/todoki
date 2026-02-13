@@ -8,14 +8,16 @@ mod relay;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use gotcha::axum::extract::FromRef;
-use gotcha::axum::response::{IntoResponse, Response};
 use gotcha::Gotcha;
 use gotcha::Json;
+use gotcha::axum::extract::FromRef;
+use gotcha::axum::response::{IntoResponse, Response};
 use serde_json::json;
+use specta_typescript::BigIntExportBehavior;
 use thiserror::Error;
 use tracing::{error, info};
 
+use crate::api::agent_stream::{AgentEventMessage, ServerToClient};
 use crate::api::{agent_stream, agents, artifacts, projects, relays, report, tasks};
 use crate::auth::auth_middleware;
 use crate::config::Settings;
@@ -172,6 +174,16 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting Todoki API Server");
 
+    info!("Exporting Server to Client Event Type Bindings");
+    let mut binding = specta::TypeCollection::default();
+    binding.register::<AgentEventMessage>();
+    binding.register::<ServerToClient>();
+
+    specta_typescript::Typescript::default()
+        .bigint(BigIntExportBehavior::Number)
+        .export_to("./web/src/server-bindings.ts", &binding)
+        .expect("cannot export bindings");
+
     let settings = Settings::new().map_err(|e| {
         error!("Failed to load configuration: {}", e);
         e
@@ -231,7 +243,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         // Report route
         .get("/api/report", report::get_report)
         // Artifact routes
-        .get("/api/projects/:project_id/artifacts", artifacts::list_artifacts)
+        .get(
+            "/api/projects/:project_id/artifacts",
+            artifacts::list_artifacts,
+        )
         .get("/api/artifacts/:artifact_id", artifacts::get_artifact)
         // Agent routes
         .get("/api/agents", agents::list_agents)
@@ -243,12 +258,18 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .get("/api/agents/:agent_id/sessions", agents::get_agent_sessions)
         .get("/api/agents/:agent_id/events", agents::get_agent_events)
         .post("/api/agents/:agent_id/input", agents::send_input)
-        .post("/api/agents/:agent_id/permission", agents::respond_permission)
+        .post(
+            "/api/agents/:agent_id/permission",
+            agents::respond_permission,
+        )
         // Relay routes (before auth middleware so WebSocket can use token in query)
         .get("/ws/relays", relays::ws_relay)
         .get("/api/relays", relays::list_relays)
         .get("/api/relays/:relay_id", relays::get_relay)
-        .get("/api/projects/:project_id/relays", relays::list_relays_by_project)
+        .get(
+            "/api/projects/:project_id/relays",
+            relays::list_relays_by_project,
+        )
         // Agent stream WebSocket (for frontend real-time updates)
         .get("/ws/agents/:agent_id/stream", agent_stream::ws_agent_stream)
         .layer(gotcha::axum::middleware::from_fn_with_state(
