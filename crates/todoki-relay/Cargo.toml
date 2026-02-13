@@ -59,3 +59,7 @@ agent-client-protocol = { version = "0.9.3", features = ["unstable"] }
 async-trait.workspace = true
 tokio-util = { version = "0.7", features = ["compat"] }
 openssl = { version = "0.10", features = ["vendored"] }
+
+# Regex for artifact detection
+regex = "1"
+once_cell = "1"

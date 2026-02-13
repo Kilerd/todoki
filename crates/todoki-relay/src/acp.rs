@@ -11,6 +11,8 @@ use agent_client_protocol::{
     SelectedPermissionOutcome, SessionNotification, SessionUpdate, ToolCall, ToolCallUpdate,
 };
 use chrono::Utc;
+use once_cell::sync::Lazy;
+use regex::Regex;
 use serde_json::{Map, Value};
 use tokio::process::{ChildStdin, ChildStdout};
 use tokio::sync::{mpsc, oneshot, Mutex};
@@ -18,11 +20,17 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use todoki_protocol::RelayToServer;
 
+/// Regex for detecting GitHub PR URLs
+static PR_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)").unwrap());
+
 /// ACP session handle for sending commands
 #[derive(Clone)]
 pub struct AcpHandle {
     pub acp_session_id: String,
     tx: mpsc::Sender<AcpCommand>,
+    /// Receiver for prompt completion signal (can only be taken once)
+    done_rx: Arc<Mutex<Option<oneshot::Receiver<()>>>>,
 }
 
 impl AcpHandle {
@@ -49,6 +57,22 @@ impl AcpHandle {
             .send(AcpCommand::RespondPermission { request_id, outcome })
             .await
             .map_err(|_| anyhow::anyhow!("acp channel closed"))
+    }
+
+    /// Wait for prompt completion. Returns true if completed, false if cancelled/dropped.
+    /// Can only be called once per handle.
+    pub async fn wait_for_done(&self) -> bool {
+        let rx = {
+            let mut guard = self.done_rx.lock().await;
+            guard.take()
+        };
+        match rx {
+            Some(rx) => rx.await.is_ok(),
+            None => {
+                tracing::warn!("wait_for_done called but receiver already taken");
+                false
+            }
+        }
     }
 }
 
@@ -131,8 +155,55 @@ impl AcpEventSink {
             update_type = %std::any::type_name_of_val(&update),
             "processing session update"
         );
+
+        // Check for artifacts in tool call updates
+        if let SessionUpdate::ToolCallUpdate(ref tool_update) = update {
+            self.detect_artifacts(tool_update).await;
+        }
+
         if let Some(value) = update_to_event(update) {
             self.emit_acp(value).await;
+        }
+    }
+
+    /// Detect and emit artifacts from tool call output (e.g., GitHub PR URLs)
+    async fn detect_artifacts(&self, update: &ToolCallUpdate) {
+        if let Some(raw_output) = &update.fields.raw_output {
+            if let Some(output_str) = raw_output.as_str() {
+                // Detect GitHub PR URLs
+                for caps in PR_REGEX.captures_iter(output_str) {
+                    let url = caps.get(0).map(|m| m.as_str()).unwrap_or_default();
+                    let owner = caps.get(1).map(|m| m.as_str()).unwrap_or_default();
+                    let repo = caps.get(2).map(|m| m.as_str()).unwrap_or_default();
+                    let number: u32 = caps
+                        .get(3)
+                        .and_then(|m| m.as_str().parse().ok())
+                        .unwrap_or(0);
+
+                    tracing::info!(
+                        session_id = %self.session_id,
+                        url = %url,
+                        owner = %owner,
+                        repo = %repo,
+                        number = number,
+                        "detected GitHub PR artifact"
+                    );
+
+                    let msg = RelayToServer::Artifact {
+                        session_id: self.session_id.clone(),
+                        agent_id: self.agent_id.clone(),
+                        artifact_type: "github_pr".to_string(),
+                        data: serde_json::json!({
+                            "url": url,
+                            "owner": owner,
+                            "repo": repo,
+                            "number": number,
+                        }),
+                    };
+
+                    let _ = self.output_tx.send(msg).await;
+                }
+            }
         }
     }
 }
@@ -287,14 +358,19 @@ pub async fn spawn_acp_session(
 
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<AcpCommand>(64);
     let (ready_tx, ready_rx) = oneshot::channel::<Result<String, String>>();
+    let (done_tx, done_rx) = oneshot::channel::<()>();
 
     let sink = AcpEventSink::new(output_tx.clone(), agent_id.clone(), session_id.clone());
     let permissions = Arc::new(PermissionManager::new(
-        output_tx,
+        output_tx.clone(),
         agent_id.clone(),
         session_id.clone(),
     ));
     let permissions_for_cmd = permissions.clone();
+
+    // Clone for prompt completed notification
+    let prompt_completed_tx = output_tx.clone();
+    let prompt_completed_session_id = session_id.clone();
 
     let session_id_for_thread = session_id.clone();
     std::thread::spawn(move || {
@@ -368,6 +444,9 @@ pub async fn spawn_acp_session(
             // Wrap conn in Rc so it can be shared with spawn_local tasks
             let conn = Rc::new(conn);
 
+            // Wrap done_tx in Rc<RefCell> so it can be moved into spawn_local
+            let done_tx = Rc::new(std::cell::RefCell::new(Some(done_tx)));
+
             // Command loop
             tracing::debug!(acp_session_id = %acp_session_id, "entering ACP command loop");
             while let Some(cmd) = cmd_rx.recv().await {
@@ -392,6 +471,9 @@ pub async fn spawn_acp_session(
                         let acp_session_id = acp_session_id.clone();
                         let sink = sink.clone();
                         let prompt = prompt.clone();
+                        let done_tx = done_tx.clone();
+                        let prompt_completed_tx = prompt_completed_tx.clone();
+                        let prompt_completed_session_id = prompt_completed_session_id.clone();
                         tokio::task::spawn_local(async move {
                             let request = PromptRequest::new(
                                 acp_session_id.clone(),
@@ -399,7 +481,11 @@ pub async fn spawn_acp_session(
                                     agent_client_protocol::TextContent::new(prompt),
                                 )],
                             );
-                            if let Err(e) = conn.prompt(request).await {
+                            let result = conn.prompt(request).await;
+                            let success = result.is_ok();
+                            let error = result.as_ref().err().map(|e| e.to_string());
+
+                            if let Err(ref e) = result {
                                 tracing::error!(
                                     acp_session_id = %acp_session_id,
                                     error = %e,
@@ -408,6 +494,19 @@ pub async fn spawn_acp_session(
                                 sink.emit_system(format!("prompt error: {}", e)).await;
                             } else {
                                 tracing::debug!(acp_session_id = %acp_session_id, "prompt request completed");
+                            }
+
+                            // Send prompt completed notification
+                            let msg = RelayToServer::PromptCompleted {
+                                session_id: prompt_completed_session_id,
+                                success,
+                                error,
+                            };
+                            let _ = prompt_completed_tx.send(msg).await;
+
+                            // Signal done
+                            if let Some(tx) = done_tx.borrow_mut().take() {
+                                let _ = tx.send(());
                             }
                         });
                     }
@@ -449,6 +548,7 @@ pub async fn spawn_acp_session(
             Ok(AcpHandle {
                 acp_session_id,
                 tx: cmd_tx,
+                done_rx: Arc::new(Mutex::new(Some(done_rx))),
             })
         }
         Ok(Err(e)) => {

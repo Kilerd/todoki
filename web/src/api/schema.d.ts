@@ -172,6 +172,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/artifacts/{artifact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Artifact
+         * @description GET /api/artifacts/:artifact_id - Get artifact by ID
+         */
+        get: operations["get_artifact"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -239,6 +259,26 @@ export interface paths {
          * @description DELETE /api/projects/:project_id - Delete project
          */
         delete: operations["delete_project"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Artifacts
+         * @description GET /api/projects/:project_id/artifacts - List artifacts for a project
+         */
+        get: operations["list_artifacts"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -879,6 +919,44 @@ export interface operations {
             };
         };
     };
+    get_artifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        agent_id?: string | null;
+                        artifact_type: string;
+                        created_at: string;
+                        /** Format: json */
+                        data: Record<string, never>;
+                        /** Format: uuid */
+                        id: string;
+                        /** Format: uuid */
+                        project_id: string;
+                        /** Format: uuid */
+                        session_id?: string | null;
+                        /** Format: uuid */
+                        task_id: string;
+                        updated_at: string;
+                    };
+                };
+            };
+        };
+    };
     list_projects: {
         parameters: {
             query: {
@@ -1095,6 +1173,46 @@ export interface operations {
             };
         };
     };
+    list_artifacts: {
+        parameters: {
+            query?: {
+                type?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        agent_id?: string | null;
+                        artifact_type: string;
+                        created_at: string;
+                        /** Format: json */
+                        data: Record<string, never>;
+                        /** Format: uuid */
+                        id: string;
+                        /** Format: uuid */
+                        project_id: string;
+                        /** Format: uuid */
+                        session_id?: string | null;
+                        /** Format: uuid */
+                        task_id: string;
+                        updated_at: string;
+                    }[];
+                };
+            };
+        };
+    };
     get_report: {
         parameters: {
             query?: {
@@ -1152,6 +1270,24 @@ export interface operations {
                             status: "created" | "running" | "stopped" | "exited" | "failed";
                         } | null;
                         archived: boolean;
+                        /** @description Artifacts created by the agent (e.g., GitHub PRs) */
+                        artifacts: {
+                            /** Format: uuid */
+                            agent_id?: string | null;
+                            artifact_type: string;
+                            created_at: string;
+                            /** Format: json */
+                            data: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            project_id: string;
+                            /** Format: uuid */
+                            session_id?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                            updated_at: string;
+                        }[];
                         comments: {
                             content: string;
                             create_at: string;
@@ -1233,6 +1369,24 @@ export interface operations {
                             status: "created" | "running" | "stopped" | "exited" | "failed";
                         } | null;
                         archived: boolean;
+                        /** @description Artifacts created by the agent (e.g., GitHub PRs) */
+                        artifacts: {
+                            /** Format: uuid */
+                            agent_id?: string | null;
+                            artifact_type: string;
+                            created_at: string;
+                            /** Format: json */
+                            data: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            project_id: string;
+                            /** Format: uuid */
+                            session_id?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                            updated_at: string;
+                        }[];
                         comments: {
                             content: string;
                             create_at: string;
@@ -1303,6 +1457,24 @@ export interface operations {
                             status: "created" | "running" | "stopped" | "exited" | "failed";
                         } | null;
                         archived: boolean;
+                        /** @description Artifacts created by the agent (e.g., GitHub PRs) */
+                        artifacts: {
+                            /** Format: uuid */
+                            agent_id?: string | null;
+                            artifact_type: string;
+                            created_at: string;
+                            /** Format: json */
+                            data: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            project_id: string;
+                            /** Format: uuid */
+                            session_id?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                            updated_at: string;
+                        }[];
                         comments: {
                             content: string;
                             create_at: string;
@@ -1373,6 +1545,24 @@ export interface operations {
                             status: "created" | "running" | "stopped" | "exited" | "failed";
                         } | null;
                         archived: boolean;
+                        /** @description Artifacts created by the agent (e.g., GitHub PRs) */
+                        artifacts: {
+                            /** Format: uuid */
+                            agent_id?: string | null;
+                            artifact_type: string;
+                            created_at: string;
+                            /** Format: json */
+                            data: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            project_id: string;
+                            /** Format: uuid */
+                            session_id?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                            updated_at: string;
+                        }[];
                         comments: {
                             content: string;
                             create_at: string;
@@ -1443,6 +1633,24 @@ export interface operations {
                             status: "created" | "running" | "stopped" | "exited" | "failed";
                         } | null;
                         archived: boolean;
+                        /** @description Artifacts created by the agent (e.g., GitHub PRs) */
+                        artifacts: {
+                            /** Format: uuid */
+                            agent_id?: string | null;
+                            artifact_type: string;
+                            created_at: string;
+                            /** Format: json */
+                            data: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            project_id: string;
+                            /** Format: uuid */
+                            session_id?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                            updated_at: string;
+                        }[];
                         comments: {
                             content: string;
                             create_at: string;
@@ -1513,6 +1721,24 @@ export interface operations {
                             status: "created" | "running" | "stopped" | "exited" | "failed";
                         } | null;
                         archived: boolean;
+                        /** @description Artifacts created by the agent (e.g., GitHub PRs) */
+                        artifacts: {
+                            /** Format: uuid */
+                            agent_id?: string | null;
+                            artifact_type: string;
+                            created_at: string;
+                            /** Format: json */
+                            data: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            project_id: string;
+                            /** Format: uuid */
+                            session_id?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                            updated_at: string;
+                        }[];
                         comments: {
                             content: string;
                             create_at: string;
@@ -1583,6 +1809,24 @@ export interface operations {
                             status: "created" | "running" | "stopped" | "exited" | "failed";
                         } | null;
                         archived: boolean;
+                        /** @description Artifacts created by the agent (e.g., GitHub PRs) */
+                        artifacts: {
+                            /** Format: uuid */
+                            agent_id?: string | null;
+                            artifact_type: string;
+                            created_at: string;
+                            /** Format: json */
+                            data: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            project_id: string;
+                            /** Format: uuid */
+                            session_id?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                            updated_at: string;
+                        }[];
                         comments: {
                             content: string;
                             create_at: string;
@@ -1655,6 +1899,24 @@ export interface operations {
                             status: "created" | "running" | "stopped" | "exited" | "failed";
                         } | null;
                         archived: boolean;
+                        /** @description Artifacts created by the agent (e.g., GitHub PRs) */
+                        artifacts: {
+                            /** Format: uuid */
+                            agent_id?: string | null;
+                            artifact_type: string;
+                            created_at: string;
+                            /** Format: json */
+                            data: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            project_id: string;
+                            /** Format: uuid */
+                            session_id?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                            updated_at: string;
+                        }[];
                         comments: {
                             content: string;
                             create_at: string;
@@ -1736,6 +1998,24 @@ export interface operations {
                             status: "created" | "running" | "stopped" | "exited" | "failed";
                         } | null;
                         archived: boolean;
+                        /** @description Artifacts created by the agent (e.g., GitHub PRs) */
+                        artifacts: {
+                            /** Format: uuid */
+                            agent_id?: string | null;
+                            artifact_type: string;
+                            created_at: string;
+                            /** Format: json */
+                            data: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            project_id: string;
+                            /** Format: uuid */
+                            session_id?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                            updated_at: string;
+                        }[];
                         comments: {
                             content: string;
                             create_at: string;
@@ -1830,6 +2110,24 @@ export interface operations {
                             status: "created" | "running" | "stopped" | "exited" | "failed";
                         } | null;
                         archived: boolean;
+                        /** @description Artifacts created by the agent (e.g., GitHub PRs) */
+                        artifacts: {
+                            /** Format: uuid */
+                            agent_id?: string | null;
+                            artifact_type: string;
+                            created_at: string;
+                            /** Format: json */
+                            data: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            project_id: string;
+                            /** Format: uuid */
+                            session_id?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                            updated_at: string;
+                        }[];
                         comments: {
                             content: string;
                             create_at: string;
@@ -2004,6 +2302,24 @@ export interface operations {
                             status: "created" | "running" | "stopped" | "exited" | "failed";
                         } | null;
                         archived: boolean;
+                        /** @description Artifacts created by the agent (e.g., GitHub PRs) */
+                        artifacts: {
+                            /** Format: uuid */
+                            agent_id?: string | null;
+                            artifact_type: string;
+                            created_at: string;
+                            /** Format: json */
+                            data: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            project_id: string;
+                            /** Format: uuid */
+                            session_id?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                            updated_at: string;
+                        }[];
                         comments: {
                             content: string;
                             create_at: string;
@@ -2076,6 +2392,24 @@ export interface operations {
                             status: "created" | "running" | "stopped" | "exited" | "failed";
                         } | null;
                         archived: boolean;
+                        /** @description Artifacts created by the agent (e.g., GitHub PRs) */
+                        artifacts: {
+                            /** Format: uuid */
+                            agent_id?: string | null;
+                            artifact_type: string;
+                            created_at: string;
+                            /** Format: json */
+                            data: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            project_id: string;
+                            /** Format: uuid */
+                            session_id?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                            updated_at: string;
+                        }[];
                         comments: {
                             content: string;
                             create_at: string;

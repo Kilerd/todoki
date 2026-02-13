@@ -216,7 +216,7 @@ async fn handle_relay_connection(socket: WebSocket, db: Db, relays: Relays, broa
                 // Map status string to SessionStatus enum
                 let session_status = match status.as_str() {
                     "running" => SessionStatus::Running,
-                    "exited" => SessionStatus::Completed,
+                    "exited" | "completed" => SessionStatus::Completed,
                     "failed" => SessionStatus::Failed,
                     "cancelled" => SessionStatus::Cancelled,
                     _ => {
@@ -321,6 +321,72 @@ async fn handle_relay_connection(socket: WebSocket, db: Db, relays: Relays, broa
 
             RelayToServer::Pong => {
                 // Heartbeat response, ignore
+            }
+
+            RelayToServer::Artifact {
+                session_id,
+                agent_id,
+                artifact_type,
+                data,
+            } => {
+                tracing::info!(
+                    session_id = %session_id,
+                    agent_id = %agent_id,
+                    artifact_type = %artifact_type,
+                    "received artifact from relay"
+                );
+
+                // Parse UUIDs
+                let agent_uuid = match Uuid::parse_str(&agent_id) {
+                    Ok(id) => id,
+                    Err(_) => {
+                        tracing::warn!(agent_id = %agent_id, "invalid agent_id for artifact");
+                        continue;
+                    }
+                };
+                let session_uuid = match Uuid::parse_str(&session_id) {
+                    Ok(id) => id,
+                    Err(_) => {
+                        tracing::warn!(session_id = %session_id, "invalid session_id for artifact");
+                        continue;
+                    }
+                };
+
+                // Get task and project_id from agent
+                let (task_id, project_id) = match db.get_task_by_agent_id(agent_uuid).await {
+                    Ok(Some(task)) => (task.id, task.project_id),
+                    Ok(None) => {
+                        tracing::warn!(agent_id = %agent_id, "no task found for agent");
+                        continue;
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "failed to get task for artifact");
+                        continue;
+                    }
+                };
+
+                // Store artifact
+                if let Err(e) = db
+                    .create_artifact(task_id, project_id, Some(agent_uuid), Some(session_uuid), &artifact_type, data)
+                    .await
+                {
+                    tracing::error!(error = %e, "failed to store artifact");
+                }
+            }
+
+            RelayToServer::PromptCompleted {
+                session_id,
+                success,
+                error,
+            } => {
+                tracing::info!(
+                    session_id = %session_id,
+                    success = success,
+                    error = ?error,
+                    "prompt completed"
+                );
+                // This is informational - the actual session termination
+                // will be handled by SessionStatus when the process exits
             }
         }
     }

@@ -14,6 +14,9 @@ export type TaskComment = TaskResponse["comments"][number];
 // Extract TaskEvent from TaskResponse.events
 export type TaskEvent = TaskResponse["events"][number];
 
+// Extract Artifact from TaskResponse.artifacts
+export type Artifact = TaskResponse["artifacts"][number];
+
 // Extract TaskCreateRequest from create_task operation request body
 export type TaskCreateRequest =
     operations["create_task"]["requestBody"]["content"]["application/json"];

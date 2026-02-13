@@ -12,7 +12,9 @@ import {
   Circle,
   Clock,
   ExternalLink,
+  GitPullRequest,
   Inbox,
+  Link as LinkIcon,
   Play,
   RotateCcw,
   Send,
@@ -351,6 +353,55 @@ export default function TaskDetail() {
           ))}
         </div>
       </div>
+
+      {/* Artifacts (PRs, etc.) */}
+      {task.artifacts && task.artifacts.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-4">
+            Artifacts ({task.artifacts.length})
+          </h2>
+          <div className="space-y-2">
+            {task.artifacts.map((artifact) => (
+              <div
+                key={artifact.id}
+                className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg bg-white hover:border-slate-300 transition-colors"
+              >
+                {artifact.artifact_type === "github_pr" ? (
+                  <>
+                    <GitPullRequest className="h-5 w-5 text-purple-500" />
+                    <div className="flex-1 min-w-0">
+                      <a
+                        href={artifact.data.url as string}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-slate-700 hover:text-purple-600 flex items-center gap-1"
+                      >
+                        {artifact.data.owner}/{artifact.data.repo}#{artifact.data.number}
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                      <p className="text-xs text-slate-400 truncate">
+                        {artifact.data.url as string}
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <LinkIcon className="h-5 w-5 text-slate-400" />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-slate-700">
+                        {artifact.artifact_type}
+                      </span>
+                      <p className="text-xs text-slate-400 truncate">
+                        {JSON.stringify(artifact.data)}
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Comments */}
       <div className="mt-8">

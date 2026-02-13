@@ -224,19 +224,42 @@ impl SessionManager {
             "send_input called"
         );
 
-        let sessions = self.sessions.lock().await;
-        let session = sessions
-            .get(&params.session_id)
-            .ok_or_else(|| anyhow::anyhow!("session not found: {}", params.session_id))?;
+        let (acp_handle, child) = {
+            let sessions = self.sessions.lock().await;
+            let session = sessions
+                .get(&params.session_id)
+                .ok_or_else(|| anyhow::anyhow!("session not found: {}", params.session_id))?;
 
-        tracing::debug!(
-            session_id = %params.session_id,
-            acp_session_id = %session.acp_handle.acp_session_id,
-            "forwarding input to ACP"
-        );
+            tracing::debug!(
+                session_id = %params.session_id,
+                acp_session_id = %session.acp_handle.acp_session_id,
+                "forwarding input to ACP"
+            );
 
-        session.acp_handle.prompt(params.input).await?;
+            (session.acp_handle.clone(), session.child.clone())
+        };
+
+        acp_handle.prompt(params.input).await?;
         tracing::debug!(session_id = %params.session_id, "input sent to ACP");
+
+        // Spawn a task to wait for prompt completion and then terminate the process
+        let session_id = params.session_id.clone();
+        tokio::spawn(async move {
+            tracing::debug!(session_id = %session_id, "waiting for prompt completion");
+            let completed = acp_handle.wait_for_done().await;
+            tracing::info!(
+                session_id = %session_id,
+                completed = completed,
+                "prompt completed, terminating agent process"
+            );
+
+            // Kill the child process to trigger exit_watcher
+            let mut child_guard = child.lock().await;
+            if let Some(child) = child_guard.as_mut() {
+                let _ = child.kill().await;
+            }
+        });
+
         Ok(())
     }
 

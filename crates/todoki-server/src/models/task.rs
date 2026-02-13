@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::agent::AgentBriefResponse;
+use super::artifact::ArtifactResponse;
 use super::project::ProjectResponse;
 
 // ============================================================================
@@ -287,6 +288,9 @@ pub struct TaskResponse {
     /// Agent executing this task, if any
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent: Option<AgentBriefResponse>,
+    /// Artifacts created by the agent (e.g., GitHub PRs)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<ArtifactResponse>,
 }
 
 impl TaskResponse {
@@ -296,6 +300,7 @@ impl TaskResponse {
         events: Vec<TaskEvent>,
         comments: Vec<TaskComment>,
         agent: Option<AgentBriefResponse>,
+        artifacts: Vec<ArtifactResponse>,
     ) -> Self {
         Self {
             id: task.id,
@@ -308,6 +313,7 @@ impl TaskResponse {
             events: events.into_iter().map(Into::into).collect(),
             comments: comments.into_iter().map(Into::into).collect(),
             agent,
+            artifacts,
         }
     }
 }

@@ -3,6 +3,7 @@ use crate::models::{
         Agent, AgentBriefResponse, AgentEvent, AgentSession, AgentStatus, CreateAgent,
         CreateAgentEvent, CreateAgentSession, SessionStatus,
     },
+    artifact::{Artifact, CreateArtifact},
     project::{CreateProject, Project},
     report::{ReportPeriod, ReportResponse},
     task::{
@@ -10,6 +11,7 @@ use crate::models::{
         TaskResponse, TaskStatus,
     },
 };
+use serde_json::Value;
 use chrono::Utc;
 use conservator::{Creatable, Domain, Executor, Migrator, PooledConnection};
 use std::sync::Arc;
@@ -245,7 +247,7 @@ impl DatabaseService {
             .map_err(|e| crate::TodokiError::Database(e))
     }
 
-    /// Get full task response with events, comments, and agent info
+    /// Get full task response with events, comments, agent info, and artifacts
     pub async fn get_task_response(
         &self,
         task: Task,
@@ -261,12 +263,21 @@ impl DatabaseService {
             None
         };
 
+        // Load artifacts for this task
+        let artifacts = self
+            .list_artifacts_by_task(task.id)
+            .await?
+            .into_iter()
+            .map(crate::models::ArtifactResponse::from)
+            .collect();
+
         Ok(TaskResponse::from_task(
             task,
             project.into(),
             events,
             comments,
             agent,
+            artifacts,
         ))
     }
 
@@ -490,6 +501,39 @@ impl DatabaseService {
             .map_err(|e| crate::TodokiError::Database(e))?;
 
         Ok(task)
+    }
+
+    /// Get task by agent_id (find the task that this agent is executing)
+    pub async fn get_task_by_agent_id(&self, agent_id: Uuid) -> crate::Result<Option<Task>> {
+        let conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        let row = conn
+            .query_opt(
+                r#"
+                SELECT id, priority, content, project_id, status, create_at, archived, agent_id
+                FROM tasks
+                WHERE agent_id = $1
+                LIMIT 1
+                "#,
+                &[&agent_id],
+            )
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Ok(row.map(|r| Task {
+            id: r.get("id"),
+            priority: r.get("priority"),
+            content: r.get("content"),
+            project_id: r.get("project_id"),
+            status: r.get("status"),
+            create_at: r.get("create_at"),
+            archived: r.get("archived"),
+            agent_id: r.get("agent_id"),
+        }))
     }
 
     /// Add a comment to a task
@@ -1076,5 +1120,131 @@ impl DatabaseService {
         .map_err(|e| crate::TodokiError::Database(e))?;
 
         Ok(())
+    }
+
+    // ========================================================================
+    // Artifact operations
+    // ========================================================================
+
+    /// Create a new artifact
+    pub async fn create_artifact(
+        &self,
+        task_id: Uuid,
+        project_id: Uuid,
+        agent_id: Option<Uuid>,
+        session_id: Option<Uuid>,
+        artifact_type: &str,
+        data: Value,
+    ) -> crate::Result<Artifact> {
+        let create = CreateArtifact::new(task_id, project_id, agent_id, session_id, artifact_type, data);
+
+        let artifact_id = create
+            .insert::<Artifact>()
+            .returning_pk(&*self.pool)
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Artifact::fetch_one_by_pk(&artifact_id, &*self.pool)
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))
+    }
+
+    /// List artifacts for a project
+    pub async fn list_artifacts(
+        &self,
+        project_id: Uuid,
+        artifact_type: Option<&str>,
+    ) -> crate::Result<Vec<Artifact>> {
+        let conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        let rows = if let Some(atype) = artifact_type {
+            conn.query(
+                r#"
+                SELECT id, task_id, project_id, agent_id, session_id, artifact_type, data, created_at, updated_at
+                FROM artifacts
+                WHERE project_id = $1 AND artifact_type = $2
+                ORDER BY created_at DESC
+                "#,
+                &[&project_id, &atype],
+            )
+            .await
+        } else {
+            conn.query(
+                r#"
+                SELECT id, task_id, project_id, agent_id, session_id, artifact_type, data, created_at, updated_at
+                FROM artifacts
+                WHERE project_id = $1
+                ORDER BY created_at DESC
+                "#,
+                &[&project_id],
+            )
+            .await
+        }
+        .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Ok(rows
+            .iter()
+            .map(|row| Artifact {
+                id: row.get("id"),
+                task_id: row.get("task_id"),
+                project_id: row.get("project_id"),
+                agent_id: row.get("agent_id"),
+                session_id: row.get("session_id"),
+                artifact_type: row.get("artifact_type"),
+                data: row.get("data"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+            })
+            .collect())
+    }
+
+    /// Get artifact by ID
+    pub async fn get_artifact(&self, artifact_id: Uuid) -> crate::Result<Option<Artifact>> {
+        match Artifact::fetch_one_by_pk(&artifact_id, &*self.pool).await {
+            Ok(artifact) => Ok(Some(artifact)),
+            Err(conservator::Error::TooManyRows(0)) => Ok(None),
+            Err(e) => Err(crate::TodokiError::Database(e)),
+        }
+    }
+
+    /// List artifacts by task ID
+    pub async fn list_artifacts_by_task(&self, task_id: Uuid) -> crate::Result<Vec<Artifact>> {
+        let conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        let rows = conn
+            .query(
+                r#"
+                SELECT id, task_id, project_id, agent_id, session_id, artifact_type, data, created_at, updated_at
+                FROM artifacts
+                WHERE task_id = $1
+                ORDER BY created_at DESC
+                "#,
+                &[&task_id],
+            )
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Ok(rows
+            .iter()
+            .map(|row| Artifact {
+                id: row.get("id"),
+                task_id: row.get("task_id"),
+                project_id: row.get("project_id"),
+                agent_id: row.get("agent_id"),
+                session_id: row.get("session_id"),
+                artifact_type: row.get("artifact_type"),
+                data: row.get("data"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+            })
+            .collect())
     }
 }

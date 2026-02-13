@@ -104,6 +104,22 @@ pub enum RelayToServer {
 
     /// Pong response to ping
     Pong,
+
+    /// Artifact detected (e.g., GitHub PR created)
+    Artifact {
+        session_id: String,
+        agent_id: String,
+        artifact_type: String,
+        data: Value,
+    },
+
+    /// Prompt completed notification
+    PromptCompleted {
+        session_id: String,
+        success: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
 }
 
 // ============================================================================
