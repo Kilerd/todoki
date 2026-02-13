@@ -15,6 +15,7 @@ import {
   Archive,
   ArchiveRestore,
   Check,
+  Copy,
   FileCode,
   MoreHorizontal,
   Pencil,
@@ -266,12 +267,14 @@ function ProjectCard({
   onEditTemplates,
   onArchive,
   onDelete,
+  onCopyId,
 }: {
   project: Project;
   onEdit: () => void;
   onEditTemplates: () => void;
   onArchive: () => void;
   onDelete: () => void;
+  onCopyId: () => void;
 }) {
   return (
     <div
@@ -323,6 +326,10 @@ function ProjectCard({
           <DropdownMenuItem onClick={onEditTemplates}>
             <FileCode className="h-4 w-4 mr-2" />
             Edit Templates
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onCopyId}>
+            <Copy className="h-4 w-4 mr-2" />
+            Copy ID
           </DropdownMenuItem>
           <DropdownMenuItem onClick={onArchive}>
             {project.archived ? (
@@ -410,6 +417,19 @@ function Projects() {
     }
   };
 
+  const handleCopyId = async (projectId: string) => {
+    try {
+      await navigator.clipboard.writeText(projectId);
+      toast({ title: "Project ID copied to clipboard" });
+    } catch {
+      toast({
+        title: "Failed to copy",
+        description: "Could not copy project ID to clipboard",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="container mx-auto mt-12 max-w-3xl">
       <NavBar />
@@ -440,6 +460,7 @@ function Projects() {
                   onEditTemplates={() => setEditingTemplatesProject(project)}
                   onArchive={() => handleArchive(project)}
                   onDelete={() => handleDelete(project)}
+                  onCopyId={() => handleCopyId(project.id)}
                 />
               ))}
               {activeProjects.length === 0 && (
@@ -467,6 +488,7 @@ function Projects() {
                       onEditTemplates={() => setEditingTemplatesProject(project)}
                       onArchive={() => handleArchive(project)}
                       onDelete={() => handleDelete(project)}
+                      onCopyId={() => handleCopyId(project.id)}
                     />
                   ))}
               </div>
