@@ -216,7 +216,8 @@ impl SessionManager {
         Ok(SpawnSessionResult { pid })
     }
 
-    /// Send input to a session
+    /// Send input to a session. This consumes the session - after prompt completes,
+    /// the session is removed and no further input can be sent.
     pub async fn send_input(&self, params: SendInputParams) -> anyhow::Result<()> {
         tracing::debug!(
             session_id = %params.session_id,
@@ -224,35 +225,35 @@ impl SessionManager {
             "send_input called"
         );
 
-        let (acp_handle, child) = {
-            let sessions = self.sessions.lock().await;
-            let session = sessions
-                .get(&params.session_id)
-                .ok_or_else(|| anyhow::anyhow!("session not found: {}", params.session_id))?;
-
-            tracing::debug!(
-                session_id = %params.session_id,
-                acp_session_id = %session.acp_handle.acp_session_id,
-                "forwarding input to ACP"
-            );
-
-            (session.acp_handle.clone(), session.child.clone())
+        // Take ownership of the session - remove it from the map immediately
+        // This prevents any further input from being sent to this session
+        let session = {
+            let mut sessions = self.sessions.lock().await;
+            sessions
+                .remove(&params.session_id)
+                .ok_or_else(|| anyhow::anyhow!("session not found: {}", params.session_id))?
         };
 
-        acp_handle.prompt(params.input).await?;
+        tracing::debug!(
+            session_id = %params.session_id,
+            acp_session_id = %session.acp_handle.acp_session_id,
+            "forwarding input to ACP (session removed from active sessions)"
+        );
+
+        let done_rx = session.acp_handle.prompt(params.input).await?;
         tracing::debug!(session_id = %params.session_id, "input sent to ACP");
 
-        // Spawn a task to wait for prompt completion and then terminate the process
+        // Spawn a task to wait for this specific prompt completion and then terminate the process
         let session_id = params.session_id.clone();
+        let child = session.child.clone();
         tokio::spawn(async move {
             tracing::debug!(session_id = %session_id, "waiting for prompt completion");
-            let completed = acp_handle.wait_for_done().await;
 
-            // Only terminate if this was a real completion (not a duplicate call)
-            if !completed {
+            // Wait for this specific prompt to complete
+            if done_rx.await.is_err() {
                 tracing::debug!(
                     session_id = %session_id,
-                    "wait_for_done returned false, skipping termination (already handled or receiver taken)"
+                    "prompt done channel dropped, prompt may have been cancelled"
                 );
                 return;
             }

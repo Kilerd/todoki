@@ -29,16 +29,17 @@ static PR_REGEX: Lazy<Regex> =
 pub struct AcpHandle {
     pub acp_session_id: String,
     tx: mpsc::Sender<AcpCommand>,
-    /// Receiver for prompt completion signal (can only be taken once)
-    done_rx: Arc<Mutex<Option<oneshot::Receiver<()>>>>,
 }
 
 impl AcpHandle {
-    pub async fn prompt(&self, input: String) -> anyhow::Result<()> {
+    /// Send a prompt and return a receiver that signals when this prompt completes.
+    pub async fn prompt(&self, input: String) -> anyhow::Result<oneshot::Receiver<()>> {
+        let (done_tx, done_rx) = oneshot::channel();
         self.tx
-            .send(AcpCommand::Prompt(input))
+            .send(AcpCommand::Prompt { input, done_tx })
             .await
-            .map_err(|_| anyhow::anyhow!("acp channel closed"))
+            .map_err(|_| anyhow::anyhow!("acp channel closed"))?;
+        Ok(done_rx)
     }
 
     pub async fn cancel(&self) -> anyhow::Result<()> {
@@ -75,27 +76,15 @@ impl AcpHandle {
 
         Ok(())
     }
-
-    /// Wait for prompt completion. Returns true if completed, false if cancelled/dropped.
-    /// Can only be called once per handle.
-    pub async fn wait_for_done(&self) -> bool {
-        let rx = {
-            let mut guard = self.done_rx.lock().await;
-            guard.take()
-        };
-        match rx {
-            Some(rx) => rx.await.is_ok(),
-            None => {
-                tracing::warn!("wait_for_done called but receiver already taken");
-                false
-            }
-        }
-    }
 }
 
 #[derive(Debug)]
 enum AcpCommand {
-    Prompt(String),
+    Prompt {
+        input: String,
+        /// Sender to signal when this specific prompt completes
+        done_tx: oneshot::Sender<()>,
+    },
     Cancel,
     RespondPermission {
         request_id: String,
@@ -433,7 +422,6 @@ pub async fn spawn_acp_session(
 
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<AcpCommand>(64);
     let (ready_tx, ready_rx) = oneshot::channel::<Result<String, String>>();
-    let (done_tx, done_rx) = oneshot::channel::<()>();
 
     let sink = AcpEventSink::new(output_tx.clone(), agent_id.clone(), session_id.clone());
     let permissions = Arc::new(PermissionManager::new(
@@ -519,15 +507,12 @@ pub async fn spawn_acp_session(
             // Wrap conn in Rc so it can be shared with spawn_local tasks
             let conn = Rc::new(conn);
 
-            // Wrap done_tx in Rc<RefCell> so it can be moved into spawn_local
-            let done_tx = Rc::new(std::cell::RefCell::new(Some(done_tx)));
-
             // Command loop
             tracing::debug!(acp_session_id = %acp_session_id, "entering ACP command loop");
             while let Some(cmd) = cmd_rx.recv().await {
                 tracing::debug!(acp_session_id = %acp_session_id, cmd = ?cmd, "received ACP command");
                 match cmd {
-                    AcpCommand::Prompt(ref prompt) => {
+                    AcpCommand::Prompt { input: ref prompt, done_tx: prompt_done_tx } => {
                         tracing::info!(
                             acp_session_id = %acp_session_id,
                             prompt_len = prompt.len(),
@@ -546,7 +531,6 @@ pub async fn spawn_acp_session(
                         let acp_session_id = acp_session_id.clone();
                         let sink = sink.clone();
                         let prompt = prompt.clone();
-                        let done_tx = done_tx.clone();
                         let prompt_completed_tx = prompt_completed_tx.clone();
                         let prompt_completed_session_id = prompt_completed_session_id.clone();
                         tokio::task::spawn_local(async move {
@@ -579,10 +563,8 @@ pub async fn spawn_acp_session(
                             };
                             let _ = prompt_completed_tx.send(msg).await;
 
-                            // Signal done
-                            if let Some(tx) = done_tx.borrow_mut().take() {
-                                let _ = tx.send(());
-                            }
+                            // Signal this specific prompt is done
+                            let _ = prompt_done_tx.send(());
                         });
                     }
                     AcpCommand::Cancel => {
@@ -623,7 +605,6 @@ pub async fn spawn_acp_session(
             Ok(AcpHandle {
                 acp_session_id,
                 tx: cmd_tx,
-                done_rx: Arc::new(Mutex::new(Some(done_rx))),
             })
         }
         Ok(Err(e)) => {
