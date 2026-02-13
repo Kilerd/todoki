@@ -153,6 +153,10 @@ export function useAgentStream({
 
         switch (msg.type) {
           case "history_event":
+            // Debug: log permission_request events
+            if (msg.stream === "permission_request") {
+              console.log("[useAgentStream] Received history permission_request:", msg);
+            }
             setEvents((prev) => [
               ...prev,
               {
@@ -166,6 +170,10 @@ export function useAgentStream({
             break;
 
           case "live_event":
+            // Debug: log permission_request events
+            if (msg.stream === "permission_request") {
+              console.log("[useAgentStream] Received live permission_request:", msg);
+            }
             setEvents((prev) => [
               ...prev,
               {

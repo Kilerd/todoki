@@ -114,6 +114,7 @@ pub enum OutputStream {
     System,
     Acp,
     PermissionRequest,
+    PermissionResponse,
 }
 
 impl OutputStream {
@@ -124,6 +125,7 @@ impl OutputStream {
             OutputStream::System => "system",
             OutputStream::Acp => "acp",
             OutputStream::PermissionRequest => "permission_request",
+            OutputStream::PermissionResponse => "permission_response",
         }
     }
 
@@ -133,6 +135,7 @@ impl OutputStream {
             "stderr" => OutputStream::Stderr,
             "acp" => OutputStream::Acp,
             "permission_request" => OutputStream::PermissionRequest,
+            "permission_response" => OutputStream::PermissionResponse,
             _ => OutputStream::System,
         }
     }

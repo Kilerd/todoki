@@ -396,11 +396,12 @@ impl RelayManager {
     }
 
     /// Respond to a pending permission request
+    /// Returns the session_id for the responded permission
     pub async fn respond_to_permission(
         &self,
         request_id: &str,
         outcome: PermissionOutcome,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<String> {
         // Get and remove the pending permission
         let pending = {
             let mut pending = self.pending_permissions.lock().await;
@@ -410,6 +411,8 @@ impl RelayManager {
         let pending = pending.ok_or_else(|| {
             anyhow::anyhow!("permission request not found: {}", request_id)
         })?;
+
+        let session_id = pending.session_id.clone();
 
         // Get relay sender
         let relay_tx = {
@@ -438,7 +441,7 @@ impl RelayManager {
             "sent permission response"
         );
 
-        Ok(())
+        Ok(session_id)
     }
 }
 

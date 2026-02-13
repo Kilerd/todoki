@@ -1,3 +1,4 @@
+use chrono::Utc;
 use gotcha::axum::extract::Extension;
 use gotcha::axum::extract::Path;
 use gotcha::axum::extract::Query;
@@ -10,9 +11,10 @@ use crate::api::error::ApiError;
 use crate::auth::AuthContext;
 use crate::models::agent::{
     AgentEventResponse, AgentResponse, AgentRole, AgentSessionResponse, AgentStatus, CreateAgent,
-    ExecutionMode, SessionStatus,
+    CreateAgentEvent, ExecutionMode, OutputStream, SessionStatus,
 };
-use crate::relay::{PermissionOutcome, RelayRole};
+use crate::relay::{AgentStreamEvent, PermissionOutcome, RelayRole};
+use crate::Broadcaster;
 use crate::Db;
 use crate::Relays;
 
@@ -446,23 +448,63 @@ impl From<PermissionOutcomeRequest> for PermissionOutcome {
 #[gotcha::api]
 pub async fn respond_permission(
     Extension(auth): Extension<AuthContext>,
+    State(db): State<Db>,
     State(relays): State<Relays>,
+    State(broadcaster): State<Broadcaster>,
     Path(agent_id): Path<Uuid>,
     Json(req): Json<PermissionResponseRequest>,
 ) -> Result<Json<EmptyResponse>, ApiError> {
     auth.require_auth().map_err(|_| ApiError::unauthorized())?;
 
-    // agent_id is used for authorization check (optional: verify request belongs to agent)
     tracing::info!(
         agent_id = %agent_id,
         request_id = %req.request_id,
         "responding to permission request"
     );
 
-    relays
+    // Send response to relay and get session_id
+    let session_id_str = relays
         .respond_to_permission(&req.request_id, req.outcome.into())
         .await
         .map_err(|e| ApiError::internal(format!("failed to respond to permission: {}", e)))?;
+
+    // Parse session_id
+    let session_id = Uuid::parse_str(&session_id_str)
+        .map_err(|_| ApiError::internal("invalid session_id"))?;
+
+    // Record permission_response event so UI knows this request is handled
+    let event_data = serde_json::json!({
+        "request_id": req.request_id,
+    });
+
+    let seq = Utc::now().timestamp_nanos_opt().unwrap_or(0);
+    let create_event = CreateAgentEvent::new(
+        agent_id,
+        session_id,
+        seq,
+        OutputStream::PermissionResponse,
+        event_data.to_string(),
+    );
+
+    // Store event in database and broadcast to subscribers
+    match db.insert_agent_event(create_event).await {
+        Ok(event) => {
+            let ts = Utc::now();
+            let stream_event = AgentStreamEvent {
+                agent_id,
+                session_id,
+                id: event.id,
+                seq,
+                ts: ts.to_rfc3339(),
+                stream: "permission_response".to_string(),
+                message: event_data.to_string(),
+            };
+            broadcaster.broadcast(stream_event).await;
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "failed to insert permission response event");
+        }
+    }
 
     Ok(Json(EmptyResponse {}))
 }

@@ -360,17 +360,30 @@ function AgentOutput({
   const renderedOutput = useMemo(() => {
     const acpContents = parseAcpEventsStructured(events);
     const nonAcpEvents = events.filter(
-      (e) => e.stream !== "acp" && e.stream !== "permission_request"
+      (e) => e.stream !== "acp" && e.stream !== "permission_request" && e.stream !== "permission_response"
     );
 
-    // Parse permission request events
+    // First, collect all responded request_ids from permission_response events
+    const serverRespondedRequests = new Set<string>();
+    for (const event of events) {
+      if (event.stream === "permission_response") {
+        try {
+          const parsed = JSON.parse(event.message) as { request_id: string };
+          serverRespondedRequests.add(parsed.request_id);
+        } catch {
+          console.error("Failed to parse permission response:", event.message);
+        }
+      }
+    }
+
+    // Parse permission request events, filtering out already responded ones
     const permissionRequests: PermissionRequest[] = [];
     for (const event of events) {
       if (event.stream === "permission_request") {
         try {
           const parsed = JSON.parse(event.message) as PermissionRequest;
-          // Only show if not already responded
-          if (!respondedRequests.has(parsed.request_id)) {
+          // Only show if not already responded (check both local and server state)
+          if (!respondedRequests.has(parsed.request_id) && !serverRespondedRequests.has(parsed.request_id)) {
             permissionRequests.push(parsed);
           }
         } catch {
@@ -429,6 +442,27 @@ function AgentOutput({
         <div className="p-2 bg-red-50 text-red-600 text-sm">{error}</div>
       )}
 
+      {/* Permission requests - fixed at top for visibility */}
+      {renderedOutput.permissionRequests.length > 0 && (
+        <div className="p-3 border-b border-amber-400 bg-amber-50 space-y-2">
+          <div className="text-amber-700 text-sm font-medium flex items-center gap-2">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+            </span>
+            {renderedOutput.permissionRequests.length} Permission Request(s) Pending
+          </div>
+          {renderedOutput.permissionRequests.map((request) => (
+            <PermissionRequestCard
+              key={request.request_id}
+              request={request}
+              agentId={agentId}
+              onResponded={() => handlePermissionResponded(request.request_id)}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Output area */}
       <div
         ref={outputRef}
@@ -472,16 +506,6 @@ function AgentOutput({
           }
           return null;
         })}
-
-        {/* Permission requests */}
-        {renderedOutput.permissionRequests.map((request) => (
-          <PermissionRequestCard
-            key={request.request_id}
-            request={request}
-            agentId={agentId}
-            onResponded={() => handlePermissionResponded(request.request_id)}
-          />
-        ))}
 
         {events.length === 0 && !isLoadingHistory && (
           <div className="text-slate-500 italic">No output yet</div>
