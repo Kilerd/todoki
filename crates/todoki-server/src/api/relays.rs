@@ -441,21 +441,32 @@ async fn handle_relay_connection(socket: WebSocket, db: Db, relays: Relays, broa
 }
 
 /// List all connected relays
-pub async fn list_relays(State(relays): State<Relays>) -> Response {
+#[gotcha::api]
+pub async fn list_relays(State(relays): State<Relays>) -> Json<Vec<RelayInfo>> {
     let list: Vec<RelayInfo> = relays.list_relays().await;
-    Json(list).into_response()
+    Json(list)
 }
 
 /// Get relay by ID
+#[gotcha::api]
 pub async fn get_relay(
     State(relays): State<Relays>,
     axum::extract::Path(relay_id): axum::extract::Path<String>,
-) -> Response {
+) -> Result<Json<RelayInfo>, crate::api::error::ApiError> {
     match relays.get_relay(&relay_id).await {
-        Some(info) => Json(info).into_response(),
+        Some(info) => Ok(Json(info)),
         None => {
-            let err = crate::api::error::ApiError::not_found("relay not found");
-            err.into_response()
+            Err(crate::api::error::ApiError::not_found("relay not found"))
         }
     }
+}
+
+/// List connected relays for a specific project
+#[gotcha::api]
+pub async fn list_relays_by_project(
+    State(relays): State<Relays>,
+    axum::extract::Path(project_id): axum::extract::Path<Uuid>,
+) -> Json<Vec<RelayInfo>> {
+    let list: Vec<RelayInfo> = relays.list_relays_by_project(project_id).await;
+    Json(list)
 }

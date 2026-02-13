@@ -344,11 +344,12 @@ pub async fn execute_task(
         .unwrap_or_else(|| "~".to_string());
 
     // 6. Determine agent role from relay
-    let agent_role = match relay_info.role {
-        RelayRole::General => AgentRole::General,
-        RelayRole::Business => AgentRole::Business,
-        RelayRole::Coding => AgentRole::Coding,
-        RelayRole::Qa => AgentRole::Qa,
+    let agent_role = match relay_info.role.as_str() {
+        "general" => AgentRole::General,
+        "business" => AgentRole::Business,
+        "coding" => AgentRole::Coding,
+        "qa" => AgentRole::Qa,
+        _ => AgentRole::General,
     };
 
     // 7. Create agent
