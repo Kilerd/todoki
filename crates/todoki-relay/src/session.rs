@@ -247,16 +247,52 @@ impl SessionManager {
         tokio::spawn(async move {
             tracing::debug!(session_id = %session_id, "waiting for prompt completion");
             let completed = acp_handle.wait_for_done().await;
+
+            // Only terminate if this was a real completion (not a duplicate call)
+            if !completed {
+                tracing::debug!(
+                    session_id = %session_id,
+                    "wait_for_done returned false, skipping termination (already handled or receiver taken)"
+                );
+                return;
+            }
+
             tracing::info!(
                 session_id = %session_id,
-                completed = completed,
                 "prompt completed, terminating agent process"
             );
 
-            // Kill the child process to trigger exit_watcher
+            // Kill the child process and wait for it to exit
             let mut child_guard = child.lock().await;
             if let Some(child) = child_guard.as_mut() {
-                let _ = child.kill().await;
+                tracing::debug!(session_id = %session_id, "sending kill signal to child process");
+                match child.kill().await {
+                    Ok(()) => {
+                        tracing::debug!(session_id = %session_id, "kill signal sent, waiting for process to exit");
+                        // Wait for the process to actually exit
+                        match child.wait().await {
+                            Ok(status) => {
+                                tracing::info!(
+                                    session_id = %session_id,
+                                    exit_status = ?status,
+                                    "child process exited"
+                                );
+                            }
+                            Err(e) => {
+                                tracing::error!(
+                                    session_id = %session_id,
+                                    error = %e,
+                                    "failed to wait for child process"
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(session_id = %session_id, error = %e, "failed to kill child process");
+                    }
+                }
+            } else {
+                tracing::warn!(session_id = %session_id, "child process already gone");
             }
         });
 
