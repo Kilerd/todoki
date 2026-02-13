@@ -304,13 +304,12 @@ pub async fn execute_task(
         .ok_or_else(|| ApiError::not_found("task not found"))?;
 
     // 2. Check task status - only allow executing todo/in-progress/in-review tasks
-    let status = TaskStatus::from_str(&task.status).unwrap_or_default();
     if !matches!(
-        status,
+        task.status,
         TaskStatus::Todo | TaskStatus::InProgress | TaskStatus::InReview
     ) {
         return Err(ApiError::bad_request(format!(
-            "cannot execute task in status '{}', must be todo/in-progress/in-review",
+            "cannot execute task in status '{:?}', must be todo/in-progress/in-review",
             task.status
         )));
     }
@@ -318,7 +317,7 @@ pub async fn execute_task(
     // 3. Check if task already has a running agent
     if let Some(existing_agent_id) = task.agent_id {
         if let Ok(Some(existing_agent)) = db.get_agent(existing_agent_id).await {
-            if existing_agent.status_enum() == AgentStatus::Running {
+            if existing_agent.status == AgentStatus::Running {
                 return Err(ApiError::bad_request("task already has a running agent"));
             }
         }
@@ -406,7 +405,7 @@ pub async fn execute_task(
     }
 
     // 13. Update task status to in-progress if it was todo
-    if status == TaskStatus::Todo {
+    if task.status == TaskStatus::Todo {
         let _ = db.update_task_status(task_id, TaskStatus::InProgress).await;
     }
 

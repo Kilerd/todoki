@@ -490,7 +490,7 @@ dependencies = [
 [[package]]
 name = "conservator"
 version = "0.2.0"
-source = "git+https://github.com/kilerd/conservator.git?branch=main#deb6adfa61510efdb2b599a6ed32b887a130f0ba"
+source = "git+https://github.com/kilerd/conservator.git?branch=main#efc32d0cb297cf0465ca46aca2c62b8cf8fc6476"
 dependencies = [
  "async-trait",
  "chrono",
@@ -509,7 +509,7 @@ dependencies = [
 [[package]]
 name = "conservator_macro"
 version = "0.2.0"
-source = "git+https://github.com/kilerd/conservator.git?branch=main#deb6adfa61510efdb2b599a6ed32b887a130f0ba"
+source = "git+https://github.com/kilerd/conservator.git?branch=main#efc32d0cb297cf0465ca46aca2c62b8cf8fc6476"
 dependencies = [
  "darling 0.13.4",
  "itertools 0.10.5",

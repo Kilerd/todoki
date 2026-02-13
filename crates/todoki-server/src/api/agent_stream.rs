@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::config::Settings;
-use crate::models::agent::SessionStatus;
+use crate::models::agent::{OutputStream, SessionStatus};
 use crate::Broadcaster;
 use crate::Db;
 use crate::Relays;
@@ -52,7 +52,7 @@ pub struct AgentEventMessage {
     /// Original sequence from relay (for reference)
     pub seq: i64,
     pub ts: String,
-    pub stream: String,
+    pub stream: OutputStream,
     pub message: String,
 }
 
@@ -180,7 +180,7 @@ async fn handle_agent_stream(
                         id: event.id,
                         seq: event.seq,
                         ts: event.ts,
-                        stream: event.stream,
+                        stream: event.stream.parse().unwrap_or(OutputStream::System),
                         message: event.message,
                     });
                     if live_tx.send(msg).await.is_err() {
@@ -252,7 +252,7 @@ async fn send_input_to_relay(
 
     let running_session = sessions
         .into_iter()
-        .find(|s| s.status_enum() == SessionStatus::Running)
+        .find(|s| s.status == SessionStatus::Running)
         .ok_or_else(|| "no running session".to_string())?;
 
     let relay_id = running_session

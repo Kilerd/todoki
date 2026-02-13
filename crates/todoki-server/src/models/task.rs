@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use conservator::{Creatable, Domain};
+use conservator::{Creatable, Domain, TextEnum};
 use gotcha::Schematic;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -12,9 +12,10 @@ use super::project::ProjectResponse;
 // Task Status
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Schematic)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Schematic, TextEnum, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum TaskStatus {
+    #[default]
     Backlog,
     Todo,
     InProgress,
@@ -22,58 +23,17 @@ pub enum TaskStatus {
     Done,
 }
 
-impl TaskStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            TaskStatus::Backlog => "backlog",
-            TaskStatus::Todo => "todo",
-            TaskStatus::InProgress => "in-progress",
-            TaskStatus::InReview => "in-review",
-            TaskStatus::Done => "done",
-        }
-    }
-
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "backlog" => Some(TaskStatus::Backlog),
-            "todo" => Some(TaskStatus::Todo),
-            "in-progress" => Some(TaskStatus::InProgress),
-            "in-review" => Some(TaskStatus::InReview),
-            "done" => Some(TaskStatus::Done),
-            _ => None,
-        }
-    }
-}
-
-impl Default for TaskStatus {
-    fn default() -> Self {
-        TaskStatus::Backlog
-    }
-}
-
 // ============================================================================
 // Task Event Type
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Schematic)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Schematic, TextEnum)]
 pub enum TaskEventType {
     Create,
     StatusChange,
     Unarchived,
     Archived,
     CreateComment,
-}
-
-impl TaskEventType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            TaskEventType::Create => "Create",
-            TaskEventType::StatusChange => "StatusChange",
-            TaskEventType::Unarchived => "Unarchived",
-            TaskEventType::Archived => "Archived",
-            TaskEventType::CreateComment => "CreateComment",
-        }
-    }
 }
 
 // ============================================================================
@@ -88,7 +48,7 @@ pub struct Task {
     pub priority: i32,
     pub content: String,
     pub project_id: Uuid,
-    pub status: String,
+    pub status: TaskStatus,
     pub create_at: DateTime<Utc>,
     pub archived: bool,
     /// Agent ID if this task is being executed by an agent
@@ -100,7 +60,7 @@ pub struct CreateTask {
     pub priority: i32,
     pub content: String,
     pub project_id: Uuid,
-    pub status: String,
+    pub status: TaskStatus,
     pub create_at: DateTime<Utc>,
     pub archived: bool,
     pub agent_id: Option<Uuid>,
@@ -112,7 +72,7 @@ impl CreateTask {
             priority,
             content,
             project_id,
-            status: status.as_str().to_string(),
+            status,
             create_at: Utc::now(),
             archived: false,
             agent_id: None,
@@ -130,26 +90,26 @@ pub struct TaskEvent {
     #[domain(primary_key)]
     pub id: Uuid,
     pub task_id: Uuid,
-    pub event_type: String,
+    pub event_type: TaskEventType,
     pub datetime: DateTime<Utc>,
-    pub state: Option<String>,
-    pub from_state: Option<String>,
+    pub state: Option<TaskStatus>,
+    pub from_state: Option<TaskStatus>,
 }
 
 #[derive(Debug, Clone, Creatable)]
 pub struct CreateTaskEvent {
     pub task_id: Uuid,
-    pub event_type: String,
+    pub event_type: TaskEventType,
     pub datetime: DateTime<Utc>,
-    pub state: Option<String>,
-    pub from_state: Option<String>,
+    pub state: Option<TaskStatus>,
+    pub from_state: Option<TaskStatus>,
 }
 
 impl CreateTaskEvent {
     pub fn create(task_id: Uuid) -> Self {
         Self {
             task_id,
-            event_type: TaskEventType::Create.as_str().to_string(),
+            event_type: TaskEventType::Create,
             datetime: Utc::now(),
             state: None,
             from_state: None,
@@ -159,17 +119,17 @@ impl CreateTaskEvent {
     pub fn status_change(task_id: Uuid, from_status: TaskStatus, to_status: TaskStatus) -> Self {
         Self {
             task_id,
-            event_type: TaskEventType::StatusChange.as_str().to_string(),
+            event_type: TaskEventType::StatusChange,
             datetime: Utc::now(),
-            state: Some(to_status.as_str().to_string()),
-            from_state: Some(from_status.as_str().to_string()),
+            state: Some(to_status),
+            from_state: Some(from_status),
         }
     }
 
     pub fn archived(task_id: Uuid) -> Self {
         Self {
             task_id,
-            event_type: TaskEventType::Archived.as_str().to_string(),
+            event_type: TaskEventType::Archived,
             datetime: Utc::now(),
             state: None,
             from_state: None,
@@ -179,7 +139,7 @@ impl CreateTaskEvent {
     pub fn unarchived(task_id: Uuid) -> Self {
         Self {
             task_id,
-            event_type: TaskEventType::Unarchived.as_str().to_string(),
+            event_type: TaskEventType::Unarchived,
             datetime: Utc::now(),
             state: None,
             from_state: None,
@@ -189,7 +149,7 @@ impl CreateTaskEvent {
     pub fn create_comment(task_id: Uuid) -> Self {
         Self {
             task_id,
-            event_type: TaskEventType::CreateComment.as_str().to_string(),
+            event_type: TaskEventType::CreateComment,
             datetime: Utc::now(),
             state: None,
             from_state: None,
@@ -236,10 +196,10 @@ impl CreateTaskComment {
 pub struct TaskEventResponse {
     pub id: Uuid,
     pub task_id: Uuid,
-    pub event_type: String,
+    pub event_type: TaskEventType,
     pub datetime: DateTime<Utc>,
-    pub state: Option<String>,
-    pub from_state: Option<String>,
+    pub state: Option<TaskStatus>,
+    pub from_state: Option<TaskStatus>,
 }
 
 impl From<TaskEvent> for TaskEventResponse {
@@ -280,7 +240,7 @@ pub struct TaskResponse {
     pub priority: i32,
     pub content: String,
     pub project: ProjectResponse,
-    pub status: String,
+    pub status: TaskStatus,
     pub create_at: DateTime<Utc>,
     pub archived: bool,
     pub events: Vec<TaskEventResponse>,

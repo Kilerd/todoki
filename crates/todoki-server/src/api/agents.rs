@@ -177,12 +177,12 @@ async fn start_agent_internal(
 ) -> anyhow::Result<AgentSession> {
     let agent_id = agent.id;
 
-    if agent.execution_mode_enum() != ExecutionMode::Remote {
+    if agent.execution_mode != ExecutionMode::Remote {
         anyhow::bail!("local execution not implemented");
     }
 
     // Convert agent role to relay role for selection
-    let required_role = Some(agent_role_to_relay_role(agent.role_enum()));
+    let required_role = Some(agent_role_to_relay_role(agent.role));
     let required_project = Some(agent.project_id);
 
     // Select relay based on role, project and availability
@@ -192,7 +192,7 @@ async fn start_agent_internal(
         .ok_or_else(|| {
             anyhow::anyhow!(
                 "no idle relay available for role {:?} and project {}",
-                agent.role_enum(),
+                agent.role,
                 agent.project_id
             )
         })?;
@@ -277,7 +277,7 @@ pub async fn stop_agent(
         .await?
         .ok_or_else(|| ApiError::not_found("agent not found"))?;
 
-    if agent.status_enum() != AgentStatus::Running {
+    if agent.status != AgentStatus::Running {
         return Err(ApiError::internal("agent not running"));
     }
 
@@ -286,7 +286,7 @@ pub async fn stop_agent(
 
     let running_session = sessions
         .into_iter()
-        .find(|s| s.status_enum() == SessionStatus::Running);
+        .find(|s| s.status == SessionStatus::Running);
 
     if let Some(session) = running_session {
         if let Some(relay_id) = &session.relay_id {
@@ -386,7 +386,7 @@ pub async fn send_input(
         .await?
         .ok_or_else(|| ApiError::not_found("agent not found"))?;
 
-    if agent.status_enum() != AgentStatus::Running {
+    if agent.status != AgentStatus::Running {
         return Err(ApiError::internal("agent not running"));
     }
 
@@ -395,7 +395,7 @@ pub async fn send_input(
 
     let running_session = sessions
         .into_iter()
-        .find(|s| s.status_enum() == SessionStatus::Running)
+        .find(|s| s.status == SessionStatus::Running)
         .ok_or_else(|| ApiError::internal("no running session"))?;
 
     let relay_id = running_session

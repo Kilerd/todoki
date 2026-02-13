@@ -1,7 +1,7 @@
 use crate::models::{
     agent::{
-        Agent, AgentBriefResponse, AgentEvent, AgentSession, AgentStatus, CreateAgent,
-        CreateAgentEvent, CreateAgentSession, SessionStatus,
+        Agent, AgentBriefResponse, AgentEvent, AgentSession, AgentRole, AgentStatus, CreateAgent,
+        CreateAgentEvent, CreateAgentSession, ExecutionMode, OutputStream, SessionStatus,
     },
     artifact::{Artifact, CreateArtifact},
     project::{CreateProject, Project},
@@ -13,7 +13,7 @@ use crate::models::{
 };
 use serde_json::Value;
 use chrono::Utc;
-use conservator::{Creatable, Domain, Executor, Migrator, PooledConnection};
+use conservator::{Creatable, Domain, Executor, Migrator, PooledConnection, SqlTypeWrapper};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -64,8 +64,8 @@ impl DatabaseService {
             .await
             .map_err(|e| crate::TodokiError::Database(e))?;
 
-        let status_values: Vec<String> = statuses.iter().map(|s| s.as_str().to_string()).collect();
-        let placeholders: Vec<String> = (1..=status_values.len())
+        let status_wrappers: Vec<SqlTypeWrapper<TaskStatus>> = statuses.iter().map(|s| SqlTypeWrapper(*s)).collect();
+        let placeholders: Vec<String> = (1..=status_wrappers.len())
             .map(|i| format!("${}", i))
             .collect();
 
@@ -87,7 +87,7 @@ impl DatabaseService {
         );
 
         let params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
-            status_values.iter().map(|s| s as _).collect();
+            status_wrappers.iter().map(|s| s as _).collect();
 
         let rows = conn
             .query(&query, &params)
@@ -102,7 +102,7 @@ impl DatabaseService {
                     priority: row.get("priority"),
                     content: row.get("content"),
                     project_id: row.get("project_id"),
-                    status: row.get("status"),
+                    status: row.get::<_, SqlTypeWrapper<TaskStatus>>("status").0,
                     create_at: row.get("create_at"),
                     archived: row.get("archived"),
                     agent_id: row.get("agent_id"),
@@ -195,7 +195,7 @@ impl DatabaseService {
                     priority: row.get("priority"),
                     content: row.get("content"),
                     project_id: row.get("project_id"),
-                    status: row.get("status"),
+                    status: row.get::<_, SqlTypeWrapper<TaskStatus>>("status").0,
                     create_at: row.get("create_at"),
                     archived: row.get("archived"),
                     agent_id: row.get("agent_id"),
@@ -312,7 +312,7 @@ impl DatabaseService {
                 priority: r.get("priority"),
                 content: r.get("content"),
                 project_id: r.get("project_id"),
-                status: r.get("status"),
+                status: r.get::<_, SqlTypeWrapper<TaskStatus>>("status").0,
                 create_at: r.get("create_at"),
                 archived: r.get("archived"),
                 agent_id: r.get("agent_id"),
@@ -399,8 +399,8 @@ impl DatabaseService {
             .await
             .map_err(|e| crate::TodokiError::Database(e))?;
 
-        let old_status = TaskStatus::from_str(&task.status).unwrap_or_default();
-        task.status = new_status.as_str().to_string();
+        let old_status = task.status;
+        task.status = new_status;
 
         // Create status change event
         let event = CreateTaskEvent::status_change(task_id, old_status, new_status);
@@ -529,7 +529,7 @@ impl DatabaseService {
             priority: r.get("priority"),
             content: r.get("content"),
             project_id: r.get("project_id"),
-            status: r.get("status"),
+            status: r.get::<_, SqlTypeWrapper<TaskStatus>>("status").0,
             create_at: r.get("create_at"),
             archived: r.get("archived"),
             agent_id: r.get("agent_id"),
@@ -822,11 +822,11 @@ impl DatabaseService {
             workdir: r.get("workdir"),
             command: r.get("command"),
             args: r.get("args"),
-            execution_mode: r.get("execution_mode"),
-            role: r.get("role"),
+            execution_mode: r.get::<_, SqlTypeWrapper<ExecutionMode>>("execution_mode").0,
+            role: r.get::<_, SqlTypeWrapper<AgentRole>>("role").0,
             project_id: r.get("project_id"),
             relay_id: r.get("relay_id"),
-            status: r.get("status"),
+            status: r.get::<_, SqlTypeWrapper<AgentStatus>>("status").0,
             created_at: r.get("created_at"),
             updated_at: r.get("updated_at"),
         }))
@@ -842,7 +842,7 @@ impl DatabaseService {
             .await
             .map_err(|e| crate::TodokiError::Database(e))?;
 
-        agent.status = status.as_str().to_string();
+        agent.status = status;
         agent.updated_at = Utc::now();
         agent
             .save(&*self.pool)
@@ -897,7 +897,7 @@ impl DatabaseService {
             .await
             .map_err(|e| crate::TodokiError::Database(e))?;
 
-        session.status = status.as_str().to_string();
+        session.status = status;
         if status != SessionStatus::Running {
             session.ended_at = Some(Utc::now());
         }
@@ -934,7 +934,7 @@ impl DatabaseService {
             id: r.get("id"),
             agent_id: r.get("agent_id"),
             relay_id: r.get("relay_id"),
-            status: r.get("status"),
+            status: r.get::<_, SqlTypeWrapper<SessionStatus>>("status").0,
             started_at: r.get("started_at"),
             ended_at: r.get("ended_at"),
         }))
@@ -967,7 +967,7 @@ impl DatabaseService {
                 id: row.get("id"),
                 agent_id: row.get("agent_id"),
                 relay_id: row.get("relay_id"),
-                status: row.get("status"),
+                status: row.get::<_, SqlTypeWrapper<SessionStatus>>("status").0,
                 started_at: row.get("started_at"),
                 ended_at: row.get("ended_at"),
             })
@@ -1039,7 +1039,7 @@ impl DatabaseService {
                 session_id: row.get("session_id"),
                 seq: row.get("seq"),
                 ts: row.get("ts"),
-                stream: row.get("stream"),
+                stream: row.get::<_, SqlTypeWrapper<OutputStream>>("stream").0,
                 message: row.get("message"),
             })
             .collect();
@@ -1083,7 +1083,7 @@ impl DatabaseService {
                 session_id: row.get("session_id"),
                 seq: row.get("seq"),
                 ts: row.get("ts"),
-                stream: row.get("stream"),
+                stream: row.get::<_, SqlTypeWrapper<OutputStream>>("stream").0,
                 message: row.get("message"),
             })
             .collect())

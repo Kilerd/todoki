@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use conservator::{Creatable, Domain};
+use conservator::{Creatable, Domain, TextEnum};
 use gotcha::Schematic;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -8,7 +8,7 @@ use uuid::Uuid;
 // Execution Mode
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Schematic)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Schematic, TextEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionMode {
     #[default]
@@ -16,27 +16,11 @@ pub enum ExecutionMode {
     Remote,
 }
 
-impl ExecutionMode {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            ExecutionMode::Local => "local",
-            ExecutionMode::Remote => "remote",
-        }
-    }
-
-    pub fn from_str(s: &str) -> Self {
-        match s {
-            "remote" => ExecutionMode::Remote,
-            _ => ExecutionMode::Local,
-        }
-    }
-}
-
 // ============================================================================
 // Agent Status
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Schematic)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Schematic, TextEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentStatus {
     #[default]
@@ -47,33 +31,11 @@ pub enum AgentStatus {
     Failed,
 }
 
-impl AgentStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            AgentStatus::Created => "created",
-            AgentStatus::Running => "running",
-            AgentStatus::Stopped => "stopped",
-            AgentStatus::Exited => "exited",
-            AgentStatus::Failed => "failed",
-        }
-    }
-
-    pub fn from_str(s: &str) -> Self {
-        match s {
-            "running" => AgentStatus::Running,
-            "stopped" => AgentStatus::Stopped,
-            "exited" => AgentStatus::Exited,
-            "failed" => AgentStatus::Failed,
-            _ => AgentStatus::Created,
-        }
-    }
-}
-
 // ============================================================================
 // Session Status
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Schematic)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Schematic, TextEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionStatus {
     Running,
@@ -82,31 +44,11 @@ pub enum SessionStatus {
     Cancelled,
 }
 
-impl SessionStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            SessionStatus::Running => "running",
-            SessionStatus::Completed => "completed",
-            SessionStatus::Failed => "failed",
-            SessionStatus::Cancelled => "cancelled",
-        }
-    }
-
-    pub fn from_str(s: &str) -> Self {
-        match s {
-            "running" => SessionStatus::Running,
-            "completed" => SessionStatus::Completed,
-            "cancelled" => SessionStatus::Cancelled,
-            _ => SessionStatus::Failed,
-        }
-    }
-}
-
 // ============================================================================
 // Output Stream
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Schematic)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Schematic, TextEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum OutputStream {
     Stdout,
@@ -117,26 +59,18 @@ pub enum OutputStream {
     PermissionResponse,
 }
 
-impl OutputStream {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            OutputStream::Stdout => "stdout",
-            OutputStream::Stderr => "stderr",
-            OutputStream::System => "system",
-            OutputStream::Acp => "acp",
-            OutputStream::PermissionRequest => "permission_request",
-            OutputStream::PermissionResponse => "permission_response",
-        }
-    }
+impl std::str::FromStr for OutputStream {
+    type Err = ();
 
-    pub fn from_str(s: &str) -> Self {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "stdout" => OutputStream::Stdout,
-            "stderr" => OutputStream::Stderr,
-            "acp" => OutputStream::Acp,
-            "permission_request" => OutputStream::PermissionRequest,
-            "permission_response" => OutputStream::PermissionResponse,
-            _ => OutputStream::System,
+            "stdout" => Ok(OutputStream::Stdout),
+            "stderr" => Ok(OutputStream::Stderr),
+            "system" => Ok(OutputStream::System),
+            "acp" => Ok(OutputStream::Acp),
+            "permission_request" => Ok(OutputStream::PermissionRequest),
+            "permission_response" => Ok(OutputStream::PermissionResponse),
+            _ => Err(()),
         }
     }
 }
@@ -145,7 +79,7 @@ impl OutputStream {
 // Agent Role
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Schematic)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Schematic, TextEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentRole {
     #[default]
@@ -153,26 +87,6 @@ pub enum AgentRole {
     Business,
     Coding,
     Qa,
-}
-
-impl AgentRole {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            AgentRole::General => "general",
-            AgentRole::Business => "business",
-            AgentRole::Coding => "coding",
-            AgentRole::Qa => "qa",
-        }
-    }
-
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "business" => AgentRole::Business,
-            "coding" => AgentRole::Coding,
-            "qa" => AgentRole::Qa,
-            _ => AgentRole::General,
-        }
-    }
 }
 
 // ============================================================================
@@ -187,12 +101,12 @@ pub struct Agent {
     pub name: String,
     pub workdir: String,
     pub command: String,
-    pub args: String,              // JSON string: ["arg1", "arg2"]
-    pub execution_mode: String,    // "local" or "remote"
-    pub role: String,              // "general", "business", "coding", "qa"
-    pub project_id: Uuid,          // Project this agent belongs to
+    pub args: String,
+    pub execution_mode: ExecutionMode,
+    pub role: AgentRole,
+    pub project_id: Uuid,
     pub relay_id: Option<String>,
-    pub status: String,            // "created", "running", etc.
+    pub status: AgentStatus,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -200,18 +114,6 @@ pub struct Agent {
 impl Agent {
     pub fn args_vec(&self) -> Vec<String> {
         serde_json::from_str(&self.args).unwrap_or_default()
-    }
-
-    pub fn execution_mode_enum(&self) -> ExecutionMode {
-        ExecutionMode::from_str(&self.execution_mode)
-    }
-
-    pub fn role_enum(&self) -> AgentRole {
-        AgentRole::from_str(&self.role)
-    }
-
-    pub fn status_enum(&self) -> AgentStatus {
-        AgentStatus::from_str(&self.status)
     }
 }
 
@@ -221,8 +123,8 @@ pub struct CreateAgent {
     pub workdir: String,
     pub command: String,
     pub args: String,
-    pub execution_mode: String,
-    pub role: String,
+    pub execution_mode: ExecutionMode,
+    pub role: AgentRole,
     pub project_id: Uuid,
     pub relay_id: Option<String>,
 }
@@ -243,8 +145,8 @@ impl CreateAgent {
             workdir,
             command,
             args: serde_json::to_string(&args).unwrap_or_else(|_| "[]".to_string()),
-            execution_mode: execution_mode.as_str().to_string(),
-            role: role.as_str().to_string(),
+            execution_mode,
+            role,
             project_id,
             relay_id,
         }
@@ -262,15 +164,9 @@ pub struct AgentSession {
     pub id: Uuid,
     pub agent_id: Uuid,
     pub relay_id: Option<String>,
-    pub status: String,
+    pub status: SessionStatus,
     pub started_at: DateTime<Utc>,
     pub ended_at: Option<DateTime<Utc>>,
-}
-
-impl AgentSession {
-    pub fn status_enum(&self) -> SessionStatus {
-        SessionStatus::from_str(&self.status)
-    }
 }
 
 #[derive(Debug, Clone, Creatable)]
@@ -292,14 +188,8 @@ pub struct AgentEvent {
     pub session_id: Uuid,
     pub seq: i64,
     pub ts: DateTime<Utc>,
-    pub stream: String,
+    pub stream: OutputStream,
     pub message: String,
-}
-
-impl AgentEvent {
-    pub fn stream_enum(&self) -> OutputStream {
-        OutputStream::from_str(&self.stream)
-    }
 }
 
 #[derive(Debug, Clone, Creatable)]
@@ -307,7 +197,7 @@ pub struct CreateAgentEvent {
     pub agent_id: Uuid,
     pub session_id: Uuid,
     pub seq: i64,
-    pub stream: String,
+    pub stream: OutputStream,
     pub message: String,
 }
 
@@ -323,7 +213,7 @@ impl CreateAgentEvent {
             agent_id,
             session_id,
             seq,
-            stream: stream.as_str().to_string(),
+            stream,
             message,
         }
     }
@@ -357,11 +247,11 @@ impl From<Agent> for AgentResponse {
             workdir: a.workdir.clone(),
             command: a.command.clone(),
             args: a.args_vec(),
-            execution_mode: a.execution_mode_enum(),
-            role: a.role_enum(),
+            execution_mode: a.execution_mode,
+            role: a.role,
             project_id: a.project_id,
             relay_id: a.relay_id.clone(),
-            status: a.status_enum(),
+            status: a.status,
             created_at: a.created_at,
             updated_at: a.updated_at,
         }
@@ -384,7 +274,7 @@ impl From<AgentSession> for AgentSessionResponse {
             id: s.id,
             agent_id: s.agent_id,
             relay_id: s.relay_id.clone(),
-            status: s.status_enum(),
+            status: s.status,
             started_at: s.started_at,
             ended_at: s.ended_at,
         }
@@ -404,7 +294,7 @@ impl From<AgentEvent> for AgentEventResponse {
         Self {
             seq: e.seq,
             ts: e.ts,
-            stream: e.stream_enum(),
+            stream: e.stream,
             message: e.message,
         }
     }
@@ -424,8 +314,8 @@ impl From<Agent> for AgentBriefResponse {
         Self {
             id: a.id,
             name: a.name.clone(),
-            status: a.status_enum(),
-            role: a.role_enum(),
+            status: a.status,
+            role: a.role,
         }
     }
 }

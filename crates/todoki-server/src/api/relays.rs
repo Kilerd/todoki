@@ -161,11 +161,12 @@ async fn handle_relay_connection(socket: WebSocket, db: Db, relays: Relays, broa
                 };
 
                 // Create event
+                let output_stream = stream.parse::<OutputStream>().unwrap_or(OutputStream::System);
                 let create_event = CreateAgentEvent::new(
                     agent_uuid,
                     session_uuid,
                     seq,
-                    OutputStream::from_str(&stream),
+                    output_stream,
                     message.clone(),
                 );
 
