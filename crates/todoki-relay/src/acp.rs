@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
@@ -364,6 +365,9 @@ pub async fn spawn_acp_session(
             tracing::info!(acp_session_id = %acp_session_id, "ACP session created");
             let _ = ready_tx.send(Ok(acp_session_id.clone()));
 
+            // Wrap conn in Rc so it can be shared with spawn_local tasks
+            let conn = Rc::new(conn);
+
             // Command loop
             tracing::debug!(acp_session_id = %acp_session_id, "entering ACP command loop");
             while let Some(cmd) = cmd_rx.recv().await {
@@ -380,22 +384,32 @@ pub async fn spawn_acp_session(
                             prompt = %prompt,
                             "prompt content"
                         );
-                        let request = PromptRequest::new(
-                            acp_session_id.clone(),
-                            vec![ContentBlock::Text(
-                                agent_client_protocol::TextContent::new(prompt.clone()),
-                            )],
-                        );
-                        if let Err(e) = conn.prompt(request).await {
-                            tracing::error!(
-                                acp_session_id = %acp_session_id,
-                                error = %e,
-                                "prompt request failed"
+
+                        // Spawn prompt execution to avoid blocking the command loop
+                        // This allows RespondPermission commands to be processed while
+                        // the prompt is waiting for permission responses
+                        let conn = conn.clone();
+                        let acp_session_id = acp_session_id.clone();
+                        let sink = sink.clone();
+                        let prompt = prompt.clone();
+                        tokio::task::spawn_local(async move {
+                            let request = PromptRequest::new(
+                                acp_session_id.clone(),
+                                vec![ContentBlock::Text(
+                                    agent_client_protocol::TextContent::new(prompt),
+                                )],
                             );
-                            sink.emit_system(format!("prompt error: {}", e)).await;
-                        } else {
-                            tracing::debug!(acp_session_id = %acp_session_id, "prompt request sent");
-                        }
+                            if let Err(e) = conn.prompt(request).await {
+                                tracing::error!(
+                                    acp_session_id = %acp_session_id,
+                                    error = %e,
+                                    "prompt request failed"
+                                );
+                                sink.emit_system(format!("prompt error: {}", e)).await;
+                            } else {
+                                tracing::debug!(acp_session_id = %acp_session_id, "prompt request completed");
+                            }
+                        });
                     }
                     AcpCommand::Cancel => {
                         tracing::info!(acp_session_id = %acp_session_id, "cancelling current operation");
