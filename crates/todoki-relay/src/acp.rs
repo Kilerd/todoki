@@ -53,10 +53,27 @@ impl AcpHandle {
         request_id: String,
         outcome: RequestPermissionOutcome,
     ) -> anyhow::Result<()> {
+        tracing::debug!(
+            acp_session_id = %self.acp_session_id,
+            request_id = %request_id,
+            "AcpHandle::respond_permission: sending to command channel"
+        );
+
         self.tx
-            .send(AcpCommand::RespondPermission { request_id, outcome })
+            .send(AcpCommand::RespondPermission {
+                request_id: request_id.clone(),
+                outcome,
+            })
             .await
-            .map_err(|_| anyhow::anyhow!("acp channel closed"))
+            .map_err(|_| anyhow::anyhow!("acp channel closed"))?;
+
+        tracing::debug!(
+            acp_session_id = %self.acp_session_id,
+            request_id = %request_id,
+            "AcpHandle::respond_permission: sent successfully"
+        );
+
+        Ok(())
     }
 
     /// Wait for prompt completion. Returns true if completed, false if cancelled/dropped.
@@ -236,7 +253,28 @@ impl PermissionManager {
     ) -> anyhow::Result<(String, oneshot::Receiver<RequestPermissionOutcome>)> {
         let request_id = uuid::Uuid::new_v4().to_string();
 
-        // Send permission request to server
+        tracing::info!(
+            session_id = %self.session_id,
+            request_id = %request_id,
+            tool_call_id = %args.tool_call.tool_call_id,
+            "PermissionManager::create_request: creating permission request"
+        );
+
+        // IMPORTANT: Register in pending BEFORE sending to server to avoid race condition
+        // where response arrives before we're ready to receive it
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut pending = self.pending.lock().await;
+            pending.insert(request_id.clone(), tx);
+            tracing::debug!(
+                session_id = %self.session_id,
+                request_id = %request_id,
+                pending_count = pending.len(),
+                "PermissionManager::create_request: request registered in pending"
+            );
+        }
+
+        // Now send permission request to server
         let msg = RelayToServer::PermissionRequest {
             request_id: request_id.clone(),
             agent_id: self.agent_id.clone(),
@@ -245,20 +283,57 @@ impl PermissionManager {
             options: serde_json::to_value(&args.options).unwrap_or_default(),
             tool_call: serde_json::to_value(&args.tool_call).unwrap_or_default(),
         };
-        let _ = self.output_tx.send(msg).await;
 
-        // Create response channel
-        let (tx, rx) = oneshot::channel();
-        let mut pending = self.pending.lock().await;
-        pending.insert(request_id.clone(), tx);
+        if let Err(e) = self.output_tx.send(msg).await {
+            // If send fails, remove from pending and return error
+            let mut pending = self.pending.lock().await;
+            pending.remove(&request_id);
+            return Err(anyhow::anyhow!("failed to send permission request: {}", e));
+        }
+
+        tracing::debug!(
+            session_id = %self.session_id,
+            request_id = %request_id,
+            "PermissionManager::create_request: sent to server"
+        );
 
         Ok((request_id, rx))
     }
 
     async fn respond(&self, request_id: &str, outcome: RequestPermissionOutcome) {
+        tracing::debug!(
+            session_id = %self.session_id,
+            request_id = %request_id,
+            "PermissionManager::respond: acquiring pending lock"
+        );
+
         let mut pending = self.pending.lock().await;
+
+        tracing::debug!(
+            session_id = %self.session_id,
+            request_id = %request_id,
+            pending_count = pending.len(),
+            "PermissionManager::respond: lock acquired"
+        );
+
         if let Some(tx) = pending.remove(request_id) {
+            tracing::debug!(
+                session_id = %self.session_id,
+                request_id = %request_id,
+                "PermissionManager::respond: found pending request, sending response"
+            );
             let _ = tx.send(outcome);
+            tracing::debug!(
+                session_id = %self.session_id,
+                request_id = %request_id,
+                "PermissionManager::respond: response sent"
+            );
+        } else {
+            tracing::warn!(
+                session_id = %self.session_id,
+                request_id = %request_id,
+                "PermissionManager::respond: no pending request found"
+            );
         }
     }
 }

@@ -270,12 +270,36 @@ impl SessionManager {
         request_id: String,
         outcome: RequestPermissionOutcome,
     ) -> anyhow::Result<()> {
-        let sessions = self.sessions.lock().await;
-        let session = sessions
-            .get(session_id)
-            .ok_or_else(|| anyhow::anyhow!("session not found: {}", session_id))?;
+        tracing::debug!(
+            session_id = %session_id,
+            request_id = %request_id,
+            "respond_permission: acquiring sessions lock"
+        );
 
-        session.acp_handle.respond_permission(request_id, outcome).await?;
+        // Get the acp_handle while holding the lock, then release the lock
+        // before doing async operations to avoid blocking other session operations
+        let acp_handle = {
+            let sessions = self.sessions.lock().await;
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| anyhow::anyhow!("session not found: {}", session_id))?;
+            session.acp_handle.clone()
+        };
+
+        tracing::debug!(
+            session_id = %session_id,
+            request_id = %request_id,
+            "respond_permission: lock released, sending to ACP"
+        );
+
+        acp_handle.respond_permission(request_id.clone(), outcome).await?;
+
+        tracing::debug!(
+            session_id = %session_id,
+            request_id = %request_id,
+            "respond_permission: sent to ACP successfully"
+        );
+
         Ok(())
     }
 
