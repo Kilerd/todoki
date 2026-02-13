@@ -248,6 +248,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .get("/ws/relays", relays::ws_relay)
         .get("/api/relays", relays::list_relays)
         .get("/api/relays/:relay_id", relays::get_relay)
+        .get("/api/projects/:project_id/relays", relays::list_relays_by_project)
         // Agent stream WebSocket (for frontend real-time updates)
         .get("/ws/agents/:agent_id/stream", agent_stream::ws_agent_stream)
         .layer(gotcha::axum::middleware::from_fn_with_state(

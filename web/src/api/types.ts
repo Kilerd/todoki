@@ -27,3 +27,16 @@ export type TaskUpdateRequest =
 
 // Task status type (lowercase values used in UI)
 export type TaskStatus = operations["create_task"]["requestBody"]["content"]["application/json"]["status"];
+
+// Relay info type for API responses
+export interface RelayInfo {
+    relay_id: string;
+    name: string;
+    role: string;
+    safe_paths: string[];
+    labels: Record<string, string>;
+    projects: string[];
+    setup_script: string | null;
+    connected_at: number;
+    active_session_count: number;
+}

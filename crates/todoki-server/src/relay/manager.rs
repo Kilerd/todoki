@@ -310,7 +310,7 @@ impl RelayManager {
             .map(|conn| RelayInfo {
                 relay_id: conn.relay_id.clone(),
                 name: conn.name.clone(),
-                role: conn.role,
+                role: conn.role.as_str().to_string(),
                 safe_paths: conn.safe_paths.clone(),
                 labels: conn.labels.clone(),
                 projects: conn.projects.iter().copied().collect(),
@@ -327,7 +327,7 @@ impl RelayManager {
         relays.get(relay_id).map(|conn| RelayInfo {
             relay_id: conn.relay_id.clone(),
             name: conn.name.clone(),
-            role: conn.role,
+            role: conn.role.as_str().to_string(),
             safe_paths: conn.safe_paths.clone(),
             labels: conn.labels.clone(),
             projects: conn.projects.iter().copied().collect(),
@@ -347,6 +347,29 @@ impl RelayManager {
     pub async fn relay_count(&self) -> usize {
         let relays = self.relays.read().await;
         relays.len()
+    }
+
+    /// List connected relays for a specific project
+    /// Returns relays that either:
+    /// - Have empty projects list (universal relays)
+    /// - Have the specified project in their projects list
+    pub async fn list_relays_by_project(&self, project_id: Uuid) -> Vec<RelayInfo> {
+        let relays = self.relays.read().await;
+        relays
+            .values()
+            .filter(|conn| conn.projects.is_empty() || conn.projects.contains(&project_id))
+            .map(|conn| RelayInfo {
+                relay_id: conn.relay_id.clone(),
+                name: conn.name.clone(),
+                role: conn.role.as_str().to_string(),
+                safe_paths: conn.safe_paths.clone(),
+                labels: conn.labels.clone(),
+                projects: conn.projects.iter().copied().collect(),
+                setup_script: conn.setup_script.clone(),
+                connected_at: conn.connected_at,
+                active_session_count: conn.active_sessions.len(),
+            })
+            .collect()
     }
 
     /// Store a pending permission request
@@ -636,5 +659,76 @@ mod tests {
             .select_relay(None, None, Some(project_b))
             .await;
         assert_eq!(selected, None);
+    }
+
+    #[tokio::test]
+    async fn test_list_relays_by_project() {
+        let manager = RelayManager::new();
+        let (tx, _rx) = mpsc::channel(1);
+
+        let project_a = Uuid::new_v4();
+        let project_b = Uuid::new_v4();
+
+        // Register a relay bound to project_a
+        manager
+            .register(
+                "relay-a".to_string(),
+                "Relay A".to_string(),
+                RelayRole::General,
+                vec![],
+                HashMap::new(),
+                vec![project_a],
+                None,
+                tx.clone(),
+            )
+            .await;
+
+        // Register a relay bound to project_b
+        manager
+            .register(
+                "relay-b".to_string(),
+                "Relay B".to_string(),
+                RelayRole::Coding,
+                vec![],
+                HashMap::new(),
+                vec![project_b],
+                None,
+                tx.clone(),
+            )
+            .await;
+
+        // Register a universal relay (empty projects)
+        manager
+            .register(
+                "relay-universal".to_string(),
+                "Universal Relay".to_string(),
+                RelayRole::General,
+                vec![],
+                HashMap::new(),
+                vec![],
+                None,
+                tx.clone(),
+            )
+            .await;
+
+        // List relays for project_a - should return relay-a and relay-universal
+        let relays_for_a = manager.list_relays_by_project(project_a).await;
+        assert_eq!(relays_for_a.len(), 2);
+        let relay_ids: Vec<&str> = relays_for_a.iter().map(|r| r.relay_id.as_str()).collect();
+        assert!(relay_ids.contains(&"relay-a"));
+        assert!(relay_ids.contains(&"relay-universal"));
+
+        // List relays for project_b - should return relay-b and relay-universal
+        let relays_for_b = manager.list_relays_by_project(project_b).await;
+        assert_eq!(relays_for_b.len(), 2);
+        let relay_ids: Vec<&str> = relays_for_b.iter().map(|r| r.relay_id.as_str()).collect();
+        assert!(relay_ids.contains(&"relay-b"));
+        assert!(relay_ids.contains(&"relay-universal"));
+
+        // Test with a project that has no specific relays - should return only universal relay
+        let project_c = Uuid::new_v4();
+        let relays_for_c = manager.list_relays_by_project(project_c).await;
+        assert_eq!(relays_for_c.len(), 1);
+        assert_eq!(relays_for_c[0].relay_id, "relay-universal");
     }
 }

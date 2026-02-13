@@ -6,6 +6,7 @@ use std::collections::HashMap;
 pub use broadcaster::{AgentBroadcaster, AgentStreamEvent};
 pub use manager::RelayManager;
 
+use gotcha::Schematic;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -42,11 +43,11 @@ impl From<RpcResult> for RpcResponse {
 // ============================================================================
 
 /// Public info about a relay (for API responses)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Schematic)]
 pub struct RelayInfo {
     pub relay_id: String,
     pub name: String,
-    pub role: RelayRole,
+    pub role: String,
     pub safe_paths: Vec<String>,
     pub labels: HashMap<String, String>,
     pub projects: Vec<Uuid>,

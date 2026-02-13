@@ -20,6 +20,7 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  Radio,
   Trash2,
 } from "lucide-react";
 import { useState } from "react";
@@ -38,6 +39,7 @@ import {
   deleteProject,
   type Project,
 } from "../hooks/useProjects";
+import { useProjectRelays } from "../hooks/useProjectRelays";
 
 const PRESET_COLORS = [
   "#3B82F6", // blue
@@ -276,6 +278,9 @@ function ProjectCard({
   onDelete: () => void;
   onCopyId: () => void;
 }) {
+  const { relays, isLoading: relaysLoading } = useProjectRelays(project.id);
+  const activeRelayCount = relays.length;
+
   return (
     <div
       className={cn(
@@ -289,14 +294,32 @@ function ProjectCard({
           style={{ backgroundColor: project.color }}
         />
         <div className="flex flex-col min-w-0">
-          <span
-            className={cn(
-              "text-sm font-medium text-slate-700",
-              project.archived && "line-through text-slate-400"
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "text-sm font-medium text-slate-700",
+                project.archived && "line-through text-slate-400"
+              )}
+            >
+              {project.name}
+            </span>
+            {!project.archived && (
+              <div className="flex items-center gap-1">
+                <Radio
+                  className={cn(
+                    "h-3 w-3",
+                    activeRelayCount > 0 ? "text-green-500" : "text-slate-300"
+                  )}
+                />
+                <span className={cn(
+                  "text-xs",
+                  activeRelayCount > 0 ? "text-green-600" : "text-slate-400"
+                )}>
+                  {relaysLoading ? "..." : activeRelayCount}
+                </span>
+              </div>
             )}
-          >
-            {project.name}
-          </span>
+          </div>
           <span className="text-xs text-slate-400 font-mono truncate">
             ID: {project.id}
           </span>
