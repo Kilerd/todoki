@@ -3,6 +3,7 @@ use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use futures_util::{SinkExt, StreamExt};
 use gotcha::axum::response::Response;
+use gotcha::tracing::warn;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -68,12 +69,31 @@ pub async fn ws_agent_stream(
     Path(agent_id): Path<Uuid>,
     Query(query): Query<WsAuthQuery>,
 ) -> Response {
-    // Authenticate using query parameter token
-    let is_authenticated = query
-        .token
-        .as_ref()
-        .map(|t| t == &settings.user_token)
-        .unwrap_or(false);
+    // Prefer standard Authorization: Bearer header.
+    // Fallback to ?token= for backward compatibility (but discourage it).
+    let auth_header = ws
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok());
+
+    let bearer = auth_header.and_then(|auth| auth.strip_prefix("Bearer "));
+
+    let is_authenticated = match (bearer, query.token.as_deref()) {
+        (Some(t), _) if t == settings.user_token => true,
+        (Some(_), _) => {
+            warn!("Invalid Bearer token provided for WebSocket");
+            false
+        }
+        (None, Some(t)) if t == settings.user_token => {
+            warn!("WebSocket authenticated via query token; prefer Authorization header");
+            true
+        }
+        (None, Some(_)) => {
+            warn!("Invalid query token provided for WebSocket");
+            false
+        }
+        (None, None) => false,
+    };
 
     if !is_authenticated {
         return crate::api::error::ApiError::unauthorized().into_response();
