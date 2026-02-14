@@ -3,6 +3,7 @@ mod auth;
 mod config;
 mod db;
 mod models;
+mod permission_reviewer;
 mod relay;
 
 use std::ops::Deref;
@@ -22,6 +23,7 @@ use crate::api::{agent_stream, agents, artifacts, projects, relays, report, task
 use crate::auth::auth_middleware;
 use crate::config::Settings;
 use crate::db::DatabaseService;
+use crate::permission_reviewer::PermissionReviewer;
 use crate::relay::{AgentBroadcaster, RelayManager};
 
 // ============================================================================
@@ -58,6 +60,18 @@ pub struct Broadcaster(pub Arc<AgentBroadcaster>);
 
 impl Deref for Broadcaster {
     type Target = AgentBroadcaster;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Permission reviewer wrapper for state extraction
+#[derive(Clone)]
+pub struct Reviewer(pub Option<Arc<PermissionReviewer>>);
+
+impl Deref for Reviewer {
+    type Target = Option<Arc<PermissionReviewer>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -115,6 +129,7 @@ pub struct AppState {
     pub settings: Settings,
     pub relays: Arc<RelayManager>,
     pub broadcaster: Arc<AgentBroadcaster>,
+    pub reviewer: Option<Arc<PermissionReviewer>>,
 }
 
 impl Default for AppState {
@@ -148,6 +163,13 @@ impl FromRef<gotcha::GotchaContext<AppState, Settings>> for Relays {
 impl FromRef<gotcha::GotchaContext<AppState, Settings>> for Broadcaster {
     fn from_ref(ctx: &gotcha::GotchaContext<AppState, Settings>) -> Self {
         Broadcaster(ctx.state.broadcaster.clone())
+    }
+}
+
+// Allow extracting Reviewer from GotchaContext
+impl FromRef<gotcha::GotchaContext<AppState, Settings>> for Reviewer {
+    fn from_ref(ctx: &gotcha::GotchaContext<AppState, Settings>) -> Self {
+        Reviewer(ctx.state.reviewer.clone())
     }
 }
 
@@ -199,12 +221,20 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let relay_manager = Arc::new(RelayManager::new());
     let broadcaster = Arc::new(AgentBroadcaster::new());
 
+    // Initialize permission reviewer if configured
+    let reviewer = PermissionReviewer::new(settings.application.auto_review.clone())
+        .map(Arc::new);
+    if reviewer.is_some() {
+        info!("Permission auto-reviewer initialized");
+    }
+
     let app_settings = settings.application.clone();
     let app_state = AppState {
         db: db.clone(),
         settings: app_settings.clone(),
         relays: relay_manager.clone(),
         broadcaster: broadcaster.clone(),
+        reviewer,
     };
 
     info!("Relay manager and broadcaster initialized");

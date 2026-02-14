@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::response::IntoResponse;
@@ -11,10 +13,9 @@ use uuid::Uuid;
 use crate::config::Settings;
 use crate::models::agent::{CreateAgentEvent, OutputStream};
 use crate::models::{AgentStatus, SessionStatus};
-use crate::relay::{AgentStreamEvent, RelayInfo, RelayToServer, ServerToRelay};
-use crate::Broadcaster;
-use crate::Db;
-use crate::Relays;
+use crate::permission_reviewer::{find_allow_option, PermissionContext, PermissionReviewer, ReviewDecision};
+use crate::relay::{AgentStreamEvent, PermissionOutcome, RelayInfo, RelayToServer, ServerToRelay};
+use crate::{Broadcaster, Db, Relays, Reviewer};
 
 /// Query parameters for WebSocket authentication
 #[derive(Debug, Deserialize)]
@@ -29,6 +30,7 @@ pub async fn ws_relay(
     State(db): State<Db>,
     State(relays): State<Relays>,
     State(broadcaster): State<Broadcaster>,
+    State(reviewer): State<Reviewer>,
     Query(query): Query<WsAuthQuery>,
 ) -> Response {
     dbg!("settings.relay_token", &settings.relay_token);
@@ -44,11 +46,17 @@ pub async fn ws_relay(
         return crate::api::error::ApiError::unauthorized().into_response();
     }
 
-    ws.on_upgrade(move |socket| handle_relay_connection(socket, db, relays, broadcaster))
+    ws.on_upgrade(move |socket| handle_relay_connection(socket, db, relays, broadcaster, reviewer.0))
         .into_response()
 }
 
-async fn handle_relay_connection(socket: WebSocket, db: Db, relays: Relays, broadcaster: Broadcaster) {
+async fn handle_relay_connection(
+    socket: WebSocket,
+    db: Db,
+    relays: Relays,
+    broadcaster: Broadcaster,
+    reviewer: Option<Arc<PermissionReviewer>>,
+) {
     let (mut ws_tx, mut ws_rx) = socket.split();
 
     // Channel for outbound messages to relay
@@ -288,6 +296,80 @@ async fn handle_relay_connection(socket: WebSocket, db: Db, relays: Relays, broa
                         continue;
                     }
                 };
+
+                // AI review hook: check if we can auto-approve/reject
+                if let Some(ref rev) = reviewer {
+                    // Get task context for AI review
+                    let task_goal = match db.get_task_by_agent_id(agent_uuid).await {
+                        Ok(Some(task)) => Some(task.content),
+                        _ => None,
+                    };
+
+                    // Get agent workdir
+                    let workdir = match db.get_agent(agent_uuid).await {
+                        Ok(Some(agent)) => Some(agent.workdir),
+                        _ => None,
+                    };
+
+                    let ctx = PermissionContext {
+                        request_id: request_id.clone(),
+                        agent_id: agent_uuid,
+                        session_id: session_uuid,
+                        tool_call: tool_call.clone(),
+                        options: options.clone(),
+                        task_goal,
+                        workdir,
+                    };
+
+                    match rev.review(&ctx).await {
+                        ReviewDecision::Approve { reason } => {
+                            tracing::info!(
+                                request_id = %request_id,
+                                reason = %reason,
+                                "auto-approved by AI"
+                            );
+                            // Find the allow option and respond directly
+                            if let Some(ref rid) = relay_id {
+                                // Store pending permission first
+                                relays.store_permission_request(rid, &request_id, &session_id).await;
+                                // Auto-respond with allow
+                                if let Some(option_id) = find_allow_option(&options) {
+                                    let outcome = PermissionOutcome::Selected { option_id };
+                                    if let Err(e) = relays.respond_to_permission(&request_id, outcome).await {
+                                        tracing::error!(error = %e, "failed to auto-respond to permission");
+                                    }
+                                } else {
+                                    tracing::warn!(request_id = %request_id, "no allow option found, falling back to manual");
+                                    // Fall through to manual review below
+                                }
+                            }
+                            continue;
+                        }
+                        ReviewDecision::Reject { reason } => {
+                            tracing::warn!(
+                                request_id = %request_id,
+                                reason = %reason,
+                                "auto-rejected by AI"
+                            );
+                            if let Some(ref rid) = relay_id {
+                                relays.store_permission_request(rid, &request_id, &session_id).await;
+                                let outcome = PermissionOutcome::Cancelled;
+                                if let Err(e) = relays.respond_to_permission(&request_id, outcome).await {
+                                    tracing::error!(error = %e, "failed to auto-reject permission");
+                                }
+                            }
+                            continue;
+                        }
+                        ReviewDecision::Manual { reason } => {
+                            tracing::info!(
+                                request_id = %request_id,
+                                reason = %reason,
+                                "forwarded to human review"
+                            );
+                            // Fall through to store and broadcast below
+                        }
+                    }
+                }
 
                 // Build permission request event data
                 let event_data = serde_json::json!({

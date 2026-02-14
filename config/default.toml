@@ -6,3 +6,13 @@ port = 8201
 database_url = "postgres://cafu:cafu@localhost/todoki"
 user_token = "change-me-in-production"
 relay_token = "change-me-in-production"
+
+# Permission auto-review configuration (disabled by default)
+# When enabled, AI reviews permission requests based on the task goal
+# to determine if operations should be auto-approved, rejected, or need human review
+[application.auto_review]
+enabled = false
+openai_api_key = ""
+model = "gpt-4o-mini"
+# openai_base_url = "https://api.openai.com/v1"
+timeout_secs = 30
