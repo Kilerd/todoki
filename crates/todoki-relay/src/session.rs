@@ -1,33 +1,34 @@
-use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 
 use agent_client_protocol::RequestPermissionOutcome;
 use tokio::process::{Child, Command};
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::acp::{spawn_acp_session, AcpHandle};
 use todoki_protocol::{RelayToServer, SendInputParams, SpawnSessionParams, SpawnSessionResult};
 
-/// Manages local agent sessions (subprocesses)
+/// Manages a single local agent session (subprocess).
+/// Only one session can be active at a time.
 pub struct SessionManager {
-    sessions: Arc<Mutex<HashMap<String, Session>>>,
+    active_session: Arc<Mutex<Option<ActiveSession>>>,
     output_tx: mpsc::Sender<RelayToServer>,
     safe_paths: Vec<String>,
 }
 
-struct Session {
-    agent_id: String,
+struct ActiveSession {
     session_id: String,
-    child: Arc<Mutex<Option<Child>>>,
+    child: Child,
     acp_handle: AcpHandle,
+    /// Sender to signal that the session should be terminated
+    kill_tx: Option<oneshot::Sender<()>>,
 }
 
 impl SessionManager {
     pub fn new(output_tx: mpsc::Sender<RelayToServer>, safe_paths: Vec<String>) -> Self {
         Self {
-            sessions: Arc::new(Mutex::new(HashMap::new())),
+            active_session: Arc::new(Mutex::new(None)),
             output_tx,
             safe_paths,
         }
@@ -37,8 +38,8 @@ impl SessionManager {
     pub async fn spawn(&self, params: SpawnSessionParams) -> anyhow::Result<SpawnSessionResult> {
         // Single-task mode: only one session at a time
         {
-            let sessions = self.sessions.lock().await;
-            if !sessions.is_empty() {
+            let session = self.active_session.lock().await;
+            if session.is_some() {
                 anyhow::bail!("relay busy: already running session");
             }
         }
@@ -139,8 +140,6 @@ impl SessionManager {
         let stderr = child.stderr.take();
         let stdin = child.stdin.take();
 
-        let child_arc = Arc::new(Mutex::new(Some(child)));
-
         // Initialize ACP session
         tracing::debug!(session_id = %params.session_id, "initializing ACP session");
         let stdout = stdout.ok_or_else(|| anyhow::anyhow!("no stdout for ACP"))?;
@@ -192,21 +191,24 @@ impl SessionManager {
             "ACP session initialized successfully"
         );
 
-        let session = Session {
-            agent_id: params.agent_id.clone(),
+        // Create kill channel for termination signaling
+        let (kill_tx, kill_rx) = oneshot::channel();
+
+        let session = ActiveSession {
             session_id: params.session_id.clone(),
-            child: child_arc.clone(),
+            child,
             acp_handle,
+            kill_tx: Some(kill_tx),
         };
 
         // Store session
         {
-            let mut sessions = self.sessions.lock().await;
-            sessions.insert(params.session_id.clone(), session);
+            let mut active = self.active_session.lock().await;
+            *active = Some(session);
         }
 
         // Spawn exit watcher
-        self.spawn_exit_watcher(params.agent_id.clone(), params.session_id.clone(), child_arc);
+        self.spawn_exit_watcher(params.session_id.clone(), kill_rx);
 
         tracing::info!(
             session_id = %params.session_id,
@@ -216,8 +218,8 @@ impl SessionManager {
         Ok(SpawnSessionResult { pid })
     }
 
-    /// Send input to a session. This consumes the session - after prompt completes,
-    /// the session is removed and no further input can be sent.
+    /// Send input to a session.
+    /// The session remains active until the process exits (handled by exit_watcher).
     pub async fn send_input(&self, params: SendInputParams) -> anyhow::Result<()> {
         tracing::debug!(
             session_id = %params.session_id,
@@ -225,27 +227,29 @@ impl SessionManager {
             "send_input called"
         );
 
-        // Take ownership of the session - remove it from the map immediately
-        // This prevents any further input from being sent to this session
-        let session = {
-            let mut sessions = self.sessions.lock().await;
-            sessions
-                .remove(&params.session_id)
-                .ok_or_else(|| anyhow::anyhow!("session not found: {}", params.session_id))?
+        // Get the acp_handle without removing the session
+        // Session cleanup is handled by exit_watcher when the process exits
+        let acp_handle = {
+            let active = self.active_session.lock().await;
+            let session = active
+                .as_ref()
+                .filter(|s| s.session_id == params.session_id)
+                .ok_or_else(|| anyhow::anyhow!("session not found: {}", params.session_id))?;
+            session.acp_handle.clone()
         };
 
         tracing::debug!(
             session_id = %params.session_id,
-            acp_session_id = %session.acp_handle.acp_session_id,
-            "forwarding input to ACP (session removed from active sessions)"
+            acp_session_id = %acp_handle.acp_session_id,
+            "forwarding input to ACP"
         );
 
-        let done_rx = session.acp_handle.prompt(params.input).await?;
+        let done_rx = acp_handle.prompt(params.input).await?;
         tracing::debug!(session_id = %params.session_id, "input sent to ACP");
 
         // Spawn a task to wait for this specific prompt completion and then terminate the process
         let session_id = params.session_id.clone();
-        let child = session.child.clone();
+        let active_session = self.active_session.clone();
         tokio::spawn(async move {
             tracing::debug!(session_id = %session_id, "waiting for prompt completion");
 
@@ -263,37 +267,14 @@ impl SessionManager {
                 "prompt completed, terminating agent process"
             );
 
-            // Kill the child process and wait for it to exit
-            let mut child_guard = child.lock().await;
-            if let Some(child) = child_guard.as_mut() {
-                tracing::debug!(session_id = %session_id, "sending kill signal to child process");
-                match child.kill().await {
-                    Ok(()) => {
-                        tracing::debug!(session_id = %session_id, "kill signal sent, waiting for process to exit");
-                        // Wait for the process to actually exit
-                        match child.wait().await {
-                            Ok(status) => {
-                                tracing::info!(
-                                    session_id = %session_id,
-                                    exit_status = ?status,
-                                    "child process exited"
-                                );
-                            }
-                            Err(e) => {
-                                tracing::error!(
-                                    session_id = %session_id,
-                                    error = %e,
-                                    "failed to wait for child process"
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!(session_id = %session_id, error = %e, "failed to kill child process");
+            // Signal the exit watcher to kill the process
+            let mut active = active_session.lock().await;
+            if let Some(session) = active.as_mut() {
+                if session.session_id == session_id {
+                    if let Some(kill_tx) = session.kill_tx.take() {
+                        let _ = kill_tx.send(());
                     }
                 }
-            } else {
-                tracing::warn!(session_id = %session_id, "child process already gone");
             }
         });
 
@@ -310,15 +291,16 @@ impl SessionManager {
         tracing::debug!(
             session_id = %session_id,
             request_id = %request_id,
-            "respond_permission: acquiring sessions lock"
+            "respond_permission: acquiring session lock"
         );
 
         // Get the acp_handle while holding the lock, then release the lock
         // before doing async operations to avoid blocking other session operations
         let acp_handle = {
-            let sessions = self.sessions.lock().await;
-            let session = sessions
-                .get(session_id)
+            let active = self.active_session.lock().await;
+            let session = active
+                .as_ref()
+                .filter(|s| s.session_id == session_id)
                 .ok_or_else(|| anyhow::anyhow!("session not found: {}", session_id))?;
             session.acp_handle.clone()
         };
@@ -342,22 +324,24 @@ impl SessionManager {
 
     /// Cancel current operation in a session
     pub async fn cancel(&self, session_id: &str) -> anyhow::Result<()> {
-        let sessions = self.sessions.lock().await;
-        let session = sessions
-            .get(session_id)
+        let active = self.active_session.lock().await;
+        let session = active
+            .as_ref()
+            .filter(|s| s.session_id == session_id)
             .ok_or_else(|| anyhow::anyhow!("session not found: {}", session_id))?;
 
         session.acp_handle.cancel().await?;
         Ok(())
     }
 
-    /// Stop a session
+    /// Stop a session by signaling the kill channel
     pub async fn stop(&self, session_id: &str) -> anyhow::Result<()> {
-        let sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.get(session_id) {
-            let mut child_guard = session.child.lock().await;
-            if let Some(child) = child_guard.as_mut() {
-                let _ = child.kill().await;
+        let mut active = self.active_session.lock().await;
+        if let Some(session) = active.as_mut() {
+            if session.session_id == session_id {
+                if let Some(kill_tx) = session.kill_tx.take() {
+                    let _ = kill_tx.send(());
+                }
             }
         }
         Ok(())
@@ -365,32 +349,41 @@ impl SessionManager {
 
     /// Stop all sessions (on disconnect)
     pub async fn stop_all(&self) {
-        let sessions = self.sessions.lock().await;
-        for session in sessions.values() {
-            let mut child_guard = session.child.lock().await;
-            if let Some(child) = child_guard.as_mut() {
-                let _ = child.kill().await;
+        let mut active = self.active_session.lock().await;
+        if let Some(session) = active.as_mut() {
+            if let Some(kill_tx) = session.kill_tx.take() {
+                let _ = kill_tx.send(());
             }
         }
     }
 
-    fn spawn_exit_watcher(
-        &self,
-        _agent_id: String,
-        session_id: String,
-        child: Arc<Mutex<Option<Child>>>,
-    ) {
+    fn spawn_exit_watcher(&self, session_id: String, kill_rx: oneshot::Receiver<()>) {
         let output_tx = self.output_tx.clone();
-        let sessions = self.sessions.clone();
-        let sid = session_id.clone();
+        let active_session = self.active_session.clone();
 
-        tracing::debug!(session_id = %sid, "spawning exit watcher");
+        tracing::debug!(session_id = %session_id, "spawning exit watcher");
         tokio::spawn(async move {
-            tracing::debug!(session_id = %session_id, "exit watcher waiting for process");
+            tracing::debug!(session_id = %session_id, "exit watcher waiting for kill signal");
+
+            // Wait for kill signal
+            let _ = kill_rx.await;
+
+            tracing::debug!(session_id = %session_id, "kill signal received, terminating process");
+
+            // Take the session and kill the process
             let exit_status = {
-                let mut child_guard = child.lock().await;
-                if let Some(child) = child_guard.as_mut() {
-                    child.wait().await.ok()
+                let mut active = active_session.lock().await;
+                if let Some(mut session) = active.take() {
+                    if session.session_id == session_id {
+                        // Kill the process
+                        let _ = session.child.kill().await;
+                        // Wait for it to exit
+                        session.child.wait().await.ok()
+                    } else {
+                        // Put it back if it's not our session (shouldn't happen)
+                        *active = Some(session);
+                        None
+                    }
                 } else {
                     None
                 }
@@ -409,12 +402,6 @@ impl SessionManager {
                 "process exited"
             );
 
-            // Remove from sessions
-            {
-                let mut sessions = sessions.lock().await;
-                sessions.remove(&session_id);
-            }
-
             // Notify server
             let msg = RelayToServer::SessionStatus {
                 session_id,
@@ -426,7 +413,7 @@ impl SessionManager {
         });
     }
 
-    fn is_path_safe(&self, path: &str) -> bool {
+    pub(crate) fn is_path_safe(&self, path: &str) -> bool {
         if self.safe_paths.is_empty() {
             return true; // No restrictions if no safe paths configured
         }
@@ -470,4 +457,106 @@ fn normalize_path(path: &str) -> String {
         }
     }
     format!("/{}", parts.join("/"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_expand_tilde_home() {
+        // Test ~ alone
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/test".to_string());
+        assert_eq!(expand_tilde("~"), home);
+    }
+
+    #[test]
+    fn test_expand_tilde_with_path() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/test".to_string());
+        assert_eq!(expand_tilde("~/Projects"), format!("{}/Projects", home));
+        assert_eq!(
+            expand_tilde("~/Projects/foo/bar"),
+            format!("{}/Projects/foo/bar", home)
+        );
+    }
+
+    #[test]
+    fn test_expand_tilde_no_tilde() {
+        assert_eq!(expand_tilde("/absolute/path"), "/absolute/path");
+        assert_eq!(expand_tilde("relative/path"), "relative/path");
+        assert_eq!(expand_tilde(""), "");
+    }
+
+    #[test]
+    fn test_normalize_path_basic() {
+        assert_eq!(normalize_path("/foo/bar"), "/foo/bar");
+        assert_eq!(normalize_path("/foo/bar/"), "/foo/bar");
+    }
+
+    #[test]
+    fn test_normalize_path_with_dots() {
+        assert_eq!(normalize_path("/foo/./bar"), "/foo/bar");
+        assert_eq!(normalize_path("/foo/../bar"), "/bar");
+        assert_eq!(normalize_path("/foo/bar/../baz"), "/foo/baz");
+    }
+
+    #[test]
+    fn test_normalize_path_multiple_parent_dirs() {
+        assert_eq!(normalize_path("/foo/bar/baz/../../qux"), "/foo/qux");
+        assert_eq!(normalize_path("/foo/../../bar"), "/bar");
+    }
+
+    #[test]
+    fn test_is_path_safe_empty_safe_paths() {
+        let (manager, _rx) = {
+            let (tx, rx) = tokio::sync::mpsc::channel(1);
+            (SessionManager::new(tx, vec![]), rx)
+        };
+        // Empty safe paths means no restrictions
+        assert!(manager.is_path_safe("/any/path"));
+        assert!(manager.is_path_safe("~/anywhere"));
+    }
+
+    #[test]
+    fn test_is_path_safe_allowed() {
+        let (manager, _rx) = {
+            let (tx, rx) = tokio::sync::mpsc::channel(1);
+            (SessionManager::new(tx, vec!["/allowed".to_string()]), rx)
+        };
+        assert!(manager.is_path_safe("/allowed"));
+        assert!(manager.is_path_safe("/allowed/sub/path"));
+    }
+
+    #[test]
+    fn test_is_path_safe_disallowed() {
+        let (manager, _rx) = {
+            let (tx, rx) = tokio::sync::mpsc::channel(1);
+            (SessionManager::new(tx, vec!["/allowed".to_string()]), rx)
+        };
+        assert!(!manager.is_path_safe("/not-allowed"));
+        assert!(!manager.is_path_safe("/allowed-but-not-really")); // Not a subpath
+    }
+
+    #[test]
+    fn test_is_path_safe_with_tilde() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/test".to_string());
+        let (manager, _rx) = {
+            let (tx, rx) = tokio::sync::mpsc::channel(1);
+            (SessionManager::new(tx, vec!["~".to_string()]), rx)
+        };
+        assert!(manager.is_path_safe(&home));
+        assert!(manager.is_path_safe(&format!("{}/Projects", home)));
+        assert!(manager.is_path_safe("~/Projects"));
+    }
+
+    #[test]
+    fn test_is_path_safe_traversal_attack() {
+        let (manager, _rx) = {
+            let (tx, rx) = tokio::sync::mpsc::channel(1);
+            (SessionManager::new(tx, vec!["/allowed".to_string()]), rx)
+        };
+        // Path traversal should be normalized and rejected
+        assert!(!manager.is_path_safe("/allowed/../etc/passwd"));
+        assert!(!manager.is_path_safe("/allowed/sub/../../etc"));
+    }
 }

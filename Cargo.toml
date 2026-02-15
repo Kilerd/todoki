@@ -4,6 +4,7 @@ members = [
     "crates/todoki-protocol",
     "crates/todoki-server",
     "crates/todoki-relay",
+    "crates/mock-agent",
 ]
 
 [workspace.package]

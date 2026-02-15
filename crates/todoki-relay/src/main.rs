@@ -1,12 +1,7 @@
-mod acp;
-mod config;
-mod relay;
-mod session;
-
 use tracing_subscriber::EnvFilter;
 
-use crate::config::RelayConfig;
-use crate::relay::Relay;
+use todoki_relay::config::RelayConfig;
+use todoki_relay::relay::Relay;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

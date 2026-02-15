@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -214,9 +213,16 @@ impl AcpEventSink {
     }
 }
 
-/// Permission manager for pending requests
+/// Pending permission request state
+struct PendingPermission {
+    request_id: String,
+    response_tx: oneshot::Sender<RequestPermissionOutcome>,
+}
+
+/// Permission manager for a single pending request.
+/// In single-session mode, only one permission request can be pending at a time.
 struct PermissionManager {
-    pending: Mutex<HashMap<String, oneshot::Sender<RequestPermissionOutcome>>>,
+    pending: Mutex<Option<PendingPermission>>,
     output_tx: mpsc::Sender<RelayToServer>,
     agent_id: String,
     session_id: String,
@@ -229,7 +235,7 @@ impl PermissionManager {
         session_id: String,
     ) -> Self {
         Self {
-            pending: Mutex::new(HashMap::new()),
+            pending: Mutex::new(None),
             output_tx,
             agent_id,
             session_id,
@@ -254,12 +260,21 @@ impl PermissionManager {
         let (tx, rx) = oneshot::channel();
         {
             let mut pending = self.pending.lock().await;
-            pending.insert(request_id.clone(), tx);
+            // Replace any existing pending request (shouldn't happen in normal flow)
+            if pending.is_some() {
+                tracing::warn!(
+                    session_id = %self.session_id,
+                    "replacing existing pending permission request"
+                );
+            }
+            *pending = Some(PendingPermission {
+                request_id: request_id.clone(),
+                response_tx: tx,
+            });
             tracing::debug!(
                 session_id = %self.session_id,
                 request_id = %request_id,
-                pending_count = pending.len(),
-                "PermissionManager::create_request: request registered in pending"
+                "PermissionManager::create_request: request registered"
             );
         }
 
@@ -274,9 +289,9 @@ impl PermissionManager {
         };
 
         if let Err(e) = self.output_tx.send(msg).await {
-            // If send fails, remove from pending and return error
+            // If send fails, clear pending and return error
             let mut pending = self.pending.lock().await;
-            pending.remove(&request_id);
+            *pending = None;
             return Err(anyhow::anyhow!("failed to send permission request: {}", e));
         }
 
@@ -301,22 +316,33 @@ impl PermissionManager {
         tracing::debug!(
             session_id = %self.session_id,
             request_id = %request_id,
-            pending_count = pending.len(),
+            has_pending = pending.is_some(),
             "PermissionManager::respond: lock acquired"
         );
 
-        if let Some(tx) = pending.remove(request_id) {
-            tracing::debug!(
-                session_id = %self.session_id,
-                request_id = %request_id,
-                "PermissionManager::respond: found pending request, sending response"
-            );
-            let _ = tx.send(outcome);
-            tracing::debug!(
-                session_id = %self.session_id,
-                request_id = %request_id,
-                "PermissionManager::respond: response sent"
-            );
+        if let Some(perm) = pending.take() {
+            if perm.request_id == request_id {
+                tracing::debug!(
+                    session_id = %self.session_id,
+                    request_id = %request_id,
+                    "PermissionManager::respond: found matching request, sending response"
+                );
+                let _ = perm.response_tx.send(outcome);
+                tracing::debug!(
+                    session_id = %self.session_id,
+                    request_id = %request_id,
+                    "PermissionManager::respond: response sent"
+                );
+            } else {
+                tracing::warn!(
+                    session_id = %self.session_id,
+                    expected_id = %perm.request_id,
+                    actual_id = %request_id,
+                    "PermissionManager::respond: request_id mismatch, ignoring response"
+                );
+                // Put it back since it wasn't for us
+                *pending = Some(perm);
+            }
         } else {
             tracing::warn!(
                 session_id = %self.session_id,
