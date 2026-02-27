@@ -72,6 +72,17 @@ function NavBar() {
           >
             Agents
           </NavLink>
+
+          <NavLink
+            to="/events"
+            className={({ isActive }) =>
+              `decoration-none ${
+                isActive ? "text-3xl text-gray-900" : " text-lg  text-gray-500"
+              }`
+            }
+          >
+            Events
+          </NavLink>
         </div>
       </div>
       <Separator />
