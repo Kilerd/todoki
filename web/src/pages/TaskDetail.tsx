@@ -33,6 +33,7 @@ import {
 } from "../hooks/useTasks";
 import { executeTask } from "../api/tasks";
 import type { TaskEvent, TaskStatus } from "../api/types";
+import { EventTimeline } from "@/components/EventTimeline";
 
 const STATUS_CONFIG: Record<
   string,
@@ -450,6 +451,21 @@ export default function TaskDetail() {
           </div>
         </div>
       </div>
+
+      {/* Real-time Event Stream */}
+      {task.agent && (
+        <div className="mt-8">
+          <h2 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-4">
+            Real-time Events
+          </h2>
+          <EventTimeline
+            kinds={['task.*', 'agent.*', 'artifact.*']}
+            taskId={id}
+            showStatus={false}
+            maxEvents={20}
+          />
+        </div>
+      )}
     </div>
   );
 }
