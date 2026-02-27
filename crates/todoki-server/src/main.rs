@@ -2,6 +2,7 @@ mod api;
 mod auth;
 mod config;
 mod db;
+mod event_bus;
 mod models;
 mod permission_reviewer;
 mod relay;
@@ -78,6 +79,30 @@ impl Deref for Reviewer {
     }
 }
 
+/// Event Publisher wrapper for state extraction
+#[derive(Clone)]
+pub struct Publisher(pub Arc<event_bus::EventPublisher>);
+
+impl Deref for Publisher {
+    type Target = Arc<event_bus::EventPublisher>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Event Subscriber wrapper for state extraction
+#[derive(Clone)]
+pub struct Subscriber(pub Arc<event_bus::EventSubscriber>);
+
+impl Deref for Subscriber {
+    type Target = Arc<event_bus::EventSubscriber>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 // ============================================================================
 // Error types
 // ============================================================================
@@ -130,6 +155,8 @@ pub struct AppState {
     pub relays: Arc<RelayManager>,
     pub broadcaster: Arc<AgentBroadcaster>,
     pub reviewer: Option<Arc<PermissionReviewer>>,
+    pub event_publisher: Arc<event_bus::EventPublisher>,
+    pub event_subscriber: Arc<event_bus::EventSubscriber>,
 }
 
 impl Default for AppState {
@@ -170,6 +197,20 @@ impl FromRef<gotcha::GotchaContext<AppState, Settings>> for Broadcaster {
 impl FromRef<gotcha::GotchaContext<AppState, Settings>> for Reviewer {
     fn from_ref(ctx: &gotcha::GotchaContext<AppState, Settings>) -> Self {
         Reviewer(ctx.state.reviewer.clone())
+    }
+}
+
+// Allow extracting Publisher from GotchaContext
+impl FromRef<gotcha::GotchaContext<AppState, Settings>> for Publisher {
+    fn from_ref(ctx: &gotcha::GotchaContext<AppState, Settings>) -> Self {
+        Publisher(ctx.state.event_publisher.clone())
+    }
+}
+
+// Allow extracting Subscriber from GotchaContext
+impl FromRef<gotcha::GotchaContext<AppState, Settings>> for Subscriber {
+    fn from_ref(ctx: &gotcha::GotchaContext<AppState, Settings>) -> Self {
+        Subscriber(ctx.state.event_subscriber.clone())
     }
 }
 
@@ -217,9 +258,15 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     info!("Running database migrations...");
     db_service.migrate().await?;
 
-    let db = Db(db_service);
+    let db = Db(db_service.clone());
     let relay_manager = Arc::new(RelayManager::new());
     let broadcaster = Arc::new(AgentBroadcaster::new());
+
+    // Initialize Event Bus
+    info!("Initializing Event Bus...");
+    let event_store = Arc::new(event_bus::PgEventStore::new(db_service.pool()));
+    let event_publisher = Arc::new(event_bus::EventPublisher::new(event_store.clone()));
+    let event_subscriber = Arc::new(event_bus::EventSubscriber::new(event_store.clone()));
 
     // Initialize permission reviewer if configured
     let reviewer = PermissionReviewer::new(settings.application.auto_review.clone())
@@ -228,6 +275,18 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         info!("Permission auto-reviewer initialized");
     }
 
+    // Initialize Event Orchestrator (Phase 2)
+    info!("Initializing Event Orchestrator...");
+    let orchestrator = Arc::new(event_bus::EventOrchestrator::new(
+        event_publisher.clone(),
+        db_service.clone(),
+        relay_manager.clone(),
+    ));
+
+    // Start orchestrator in background
+    orchestrator.start().await?;
+    info!("Event orchestrator started");
+
     let app_settings = settings.application.clone();
     let app_state = AppState {
         db: db.clone(),
@@ -235,6 +294,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         relays: relay_manager.clone(),
         broadcaster: broadcaster.clone(),
         reviewer,
+        event_publisher: event_publisher.clone(),
+        event_subscriber: event_subscriber.clone(),
     };
 
     info!("Relay manager and broadcaster initialized");
@@ -302,6 +363,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         )
         // Agent stream WebSocket (for frontend real-time updates)
         .get("/ws/agents/:agent_id/stream", agent_stream::ws_agent_stream)
+        // Event Bus routes
+        .get("/api/event-bus", api::event_bus::query_events)
+        .get("/api/event-bus/latest", api::event_bus::get_latest_cursor)
+        .post("/api/event-bus/replay", api::event_bus::replay_events)
+        .post("/api/event-bus/emit", api::event_bus::emit_event)
         .layer(gotcha::axum::middleware::from_fn_with_state(
             app_settings,
             auth_middleware,

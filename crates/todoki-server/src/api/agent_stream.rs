@@ -1,6 +1,7 @@
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
+use axum::http::HeaderMap;
 use futures_util::{SinkExt, StreamExt};
 use gotcha::axum::response::Response;
 use gotcha::tracing::warn;
@@ -62,6 +63,7 @@ pub struct AgentEventMessage {
 /// WebSocket handler for agent stream
 pub async fn ws_agent_stream(
     ws: WebSocketUpgrade,
+    headers: HeaderMap,
     State(settings): State<Settings>,
     State(db): State<Db>,
     State(relays): State<Relays>,
@@ -71,8 +73,7 @@ pub async fn ws_agent_stream(
 ) -> Response {
     // Prefer standard Authorization: Bearer header.
     // Fallback to ?token= for backward compatibility (but discourage it).
-    let auth_header = ws
-        .headers()
+    let auth_header = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
 

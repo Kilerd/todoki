@@ -33,6 +33,11 @@ impl DatabaseService {
         })
     }
 
+    /// Get the underlying connection pool (for Event Bus)
+    pub fn pool(&self) -> Arc<PooledConnection> {
+        self.pool.clone()
+    }
+
     /// Run database migrations
     pub async fn migrate(&self) -> crate::Result<()> {
         let migrator = Migrator::from_path("./migrations")?;
@@ -829,6 +834,9 @@ impl DatabaseService {
             status: r.get::<_, SqlTypeWrapper<AgentStatus>>("status").0,
             created_at: r.get("created_at"),
             updated_at: r.get("updated_at"),
+            subscribed_events: r.get::<_, Vec<String>>("subscribed_events"),
+            last_cursor: r.get::<_, i64>("last_cursor"),
+            auto_trigger: r.get::<_, bool>("auto_trigger"),
         }))
     }
 
@@ -1246,5 +1254,85 @@ impl DatabaseService {
                 updated_at: row.get("updated_at"),
             })
             .collect())
+    }
+
+    // ========================================================================
+    // Phase 2: Event-driven agent subscription queries
+    // ========================================================================
+
+    /// Find agents subscribed to a given event kind
+    /// Supports exact match and wildcard patterns (e.g., "task.*")
+    pub async fn list_agents_by_subscription(
+        &self,
+        event_kind: &str,
+    ) -> Result<Vec<Agent>, crate::TodokiError> {
+        let rows = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?
+            .query(
+                r#"
+                SELECT *
+                FROM agents
+                WHERE (
+                    -- Exact match
+                    $1 = ANY(subscribed_events)
+                    OR
+                    -- Wildcard match: "task.*" matches "task.created"
+                    EXISTS (
+                        SELECT 1
+                        FROM unnest(subscribed_events) AS pattern
+                        WHERE (
+                            pattern LIKE '%*'
+                            AND $1 LIKE REPLACE(pattern, '*', '%')
+                        )
+                    )
+                )
+                "#,
+                &[&event_kind],
+            )
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Ok(rows
+            .iter()
+            .map(|r| Agent {
+                id: r.get("id"),
+                name: r.get("name"),
+                workdir: r.get("workdir"),
+                command: r.get("command"),
+                args: r.get("args"),
+                execution_mode: r.get::<_, SqlTypeWrapper<ExecutionMode>>("execution_mode").0,
+                role: r.get::<_, SqlTypeWrapper<AgentRole>>("role").0,
+                project_id: r.get("project_id"),
+                relay_id: r.get("relay_id"),
+                status: r.get::<_, SqlTypeWrapper<AgentStatus>>("status").0,
+                created_at: r.get("created_at"),
+                updated_at: r.get("updated_at"),
+                subscribed_events: r.get("subscribed_events"),
+                last_cursor: r.get("last_cursor"),
+                auto_trigger: r.get("auto_trigger"),
+            })
+            .collect())
+    }
+
+    /// Update agent's last processed cursor
+    pub async fn update_agent_cursor(
+        &self,
+        agent_id: Uuid,
+        cursor: i64,
+    ) -> Result<(), crate::TodokiError> {
+        self.pool
+            .get()
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?
+            .execute(
+                "UPDATE agents SET last_cursor = $1 WHERE id = $2",
+                &[&cursor, &agent_id],
+            )
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+        Ok(())
     }
 }

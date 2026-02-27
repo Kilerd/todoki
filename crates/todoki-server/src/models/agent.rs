@@ -110,11 +110,38 @@ pub struct Agent {
     pub status: AgentStatus,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+
+    // Phase 2: Event subscription fields
+    pub subscribed_events: Vec<String>,
+    pub last_cursor: i64,
+    pub auto_trigger: bool,
 }
 
 impl Agent {
     pub fn args_vec(&self) -> Vec<String> {
         serde_json::from_str(&self.args).unwrap_or_default()
+    }
+
+    /// Check if agent subscribes to a given event kind
+    /// Supports wildcard matching (e.g., "task.*" matches "task.created")
+    pub fn subscribes_to(&self, event_kind: &str) -> bool {
+        self.subscribed_events.iter().any(|pattern| {
+            if pattern.ends_with('*') {
+                // Wildcard matching: "task.*" matches "task.created"
+                let prefix = pattern.trim_end_matches('*');
+                event_kind.starts_with(prefix)
+            } else {
+                // Exact matching
+                event_kind == pattern
+            }
+        })
+    }
+
+    /// Check if agent should be triggered for this event
+    pub fn should_trigger(&self, event_kind: &str) -> bool {
+        self.auto_trigger
+            && self.status != AgentStatus::Running
+            && self.subscribes_to(event_kind)
     }
 }
 
@@ -128,6 +155,8 @@ pub struct CreateAgent {
     pub role: AgentRole,
     pub project_id: Uuid,
     pub relay_id: Option<String>,
+    pub subscribed_events: Vec<String>,
+    pub auto_trigger: bool,
 }
 
 impl CreateAgent {
@@ -150,6 +179,8 @@ impl CreateAgent {
             role,
             project_id,
             relay_id,
+            subscribed_events: vec![],
+            auto_trigger: false,
         }
     }
 }
@@ -238,6 +269,9 @@ pub struct AgentResponse {
     pub status: AgentStatus,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub subscribed_events: Vec<String>,
+    pub last_cursor: i64,
+    pub auto_trigger: bool,
 }
 
 impl From<Agent> for AgentResponse {
@@ -255,6 +289,9 @@ impl From<Agent> for AgentResponse {
             status: a.status,
             created_at: a.created_at,
             updated_at: a.updated_at,
+            subscribed_events: a.subscribed_events.clone(),
+            last_cursor: a.last_cursor,
+            auto_trigger: a.auto_trigger,
         }
     }
 }

@@ -5,9 +5,11 @@
 //! - Basic initialization and session creation
 //! - Simple prompts that complete immediately
 //! - Prompts containing "permission" that trigger permission requests
+//! - Event-driven task processing
 //! - Cancellation handling
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use agent_client_protocol::{
     Agent, AgentSideConnection, AuthenticateRequest, AuthenticateResponse, CancelNotification,
@@ -16,8 +18,22 @@ use agent_client_protocol::{
     NewSessionResponse, PromptRequest, PromptResponse, SessionId, SetSessionConfigOptionRequest,
     SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse, StopReason,
 };
-use serde_json::value::RawValue;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, value::RawValue};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+use tracing::{debug, error, info};
+
+/// Event structure matching server-side Event
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct Event {
+    cursor: i64,
+    kind: String,
+    time: String,
+    agent_id: String,
+    session_id: Option<String>,
+    task_id: Option<String>,
+    data: serde_json::Value,
+}
 
 /// Mock agent state
 #[derive(Clone)]
@@ -32,6 +48,67 @@ impl MockAgent {
             sessions: Arc::new(Mutex::new(Vec::new())),
             cancelled: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    /// Handle task.created event
+    async fn handle_task_created(event: Event) -> Result<(), Box<dyn std::error::Error>> {
+        let content = event
+            .data
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or("(no content)");
+
+        info!("🤖 Analyzing task: {}", content);
+
+        // Simulate analysis
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        // Emit analysis result
+        let result = json!({
+            "plan": format!("Analysis of '{}': Step 1, Step 2, Step 3", content),
+            "estimated_effort": "medium",
+            "breakdown": [
+                {"subtask": "Research", "assignee": "ba-agent"},
+                {"subtask": "Implementation", "assignee": "coding-agent"},
+            ]
+        });
+
+        info!(
+            "📤 Emitting agent.requirement_analyzed event for task: {:?}",
+            event.task_id
+        );
+
+        // Note: In real implementation, this would be sent via connection
+        // For now, we just log the event that would be emitted
+        debug!(
+            "Would emit event: {}",
+            serde_json::to_string(&json!({
+                "kind": "agent.requirement_analyzed",
+                "data": result,
+                "task_id": event.task_id,
+            }))?
+        );
+
+        Ok(())
+    }
+
+    /// Handle agent.requirement_analyzed event
+    async fn handle_requirement_analyzed(
+        event: Event,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let plan = event
+            .data
+            .get("plan")
+            .and_then(|v| v.as_str())
+            .unwrap_or("(no plan)");
+
+        info!("📋 Received analysis: {}", plan);
+
+        // BA agent would load business context here
+        // For now, just acknowledge
+        info!("✅ Business context loaded");
+
+        Ok(())
     }
 }
 
@@ -58,10 +135,7 @@ impl Agent for MockAgent {
     ) -> agent_client_protocol::Result<NewSessionResponse> {
         let session_id = SessionId::new(format!("mock-session-{}", uuid_simple()));
         self.sessions.lock().unwrap().push(session_id.clone());
-        eprintln!(
-            "[mock-agent] new_session created: {} at {:?}",
-            session_id.0, args.cwd
-        );
+        info!("new_session created: {} at {:?}", session_id.0, args.cwd);
         Ok(NewSessionResponse::new(session_id))
     }
 
@@ -83,10 +157,7 @@ impl Agent for MockAgent {
         &self,
         args: PromptRequest,
     ) -> agent_client_protocol::Result<PromptResponse> {
-        eprintln!(
-            "[mock-agent] prompt received for session: {}",
-            args.session_id.0
-        );
+        info!("prompt received for session: {}", args.session_id.0);
 
         // Extract prompt text
         let prompt_text = args
@@ -99,11 +170,11 @@ impl Agent for MockAgent {
             .collect::<Vec<_>>()
             .join(" ");
 
-        eprintln!("[mock-agent] prompt text: {}", prompt_text);
+        debug!("prompt text: {}", prompt_text);
 
         // Check if prompt contains "permission" - if so, request permission
         if prompt_text.to_lowercase().contains("permission") {
-            eprintln!("[mock-agent] requesting permission...");
+            info!("requesting permission...");
 
             // We need to get the connection to request permission
             // This is handled via the Client trait implementation on the connection
@@ -117,7 +188,7 @@ impl Agent for MockAgent {
             // 4. Complete the tool call
         }
 
-        eprintln!("[mock-agent] prompt completed");
+        info!("prompt completed");
         Ok(PromptResponse::new(StopReason::EndTurn))
     }
 
@@ -125,7 +196,7 @@ impl Agent for MockAgent {
         &self,
         args: CancelNotification,
     ) -> agent_client_protocol::Result<()> {
-        eprintln!("[mock-agent] cancel received for session: {}", args.session_id.0);
+        info!("cancel received for session: {}", args.session_id.0);
         self.cancelled.lock().unwrap().push(args.session_id);
         Ok(())
     }
@@ -146,8 +217,36 @@ impl Agent for MockAgent {
 
     async fn ext_notification(
         &self,
-        _args: ExtNotification,
+        args: ExtNotification,
     ) -> agent_client_protocol::Result<()> {
+        // Check if this is an event notification
+        if args.method.as_ref() == "event" {
+            match serde_json::from_str::<Event>(args.params.get()) {
+                Ok(event) => {
+                    info!("Received event: {} (cursor: {})", event.kind, event.cursor);
+
+                    // Handle different event kinds
+                    match event.kind.as_str() {
+                        "task.created" => {
+                            if let Err(e) = Self::handle_task_created(event).await {
+                                error!("Failed to handle task.created: {}", e);
+                            }
+                        }
+                        "agent.requirement_analyzed" => {
+                            if let Err(e) = Self::handle_requirement_analyzed(event).await {
+                                error!("Failed to handle requirement_analyzed: {}", e);
+                            }
+                        }
+                        _ => {
+                            debug!("Ignoring event kind: {}", event.kind);
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to parse event: {}", e);
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -164,7 +263,16 @@ fn uuid_simple() -> String {
 
 #[tokio::main]
 async fn main() {
-    eprintln!("[mock-agent] starting...");
+    // Initialize tracing
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(tracing::Level::INFO.into()),
+        )
+        .with_writer(std::io::stderr)
+        .init();
+
+    info!("Mock agent starting...");
 
     let local = tokio::task::LocalSet::new();
     local
@@ -186,14 +294,14 @@ async fn main() {
             // Spawn IO task
             tokio::task::spawn_local(async move {
                 if let Err(e) = io_task.await {
-                    eprintln!("[mock-agent] IO error: {}", e);
+                    error!("IO error: {}", e);
                 }
-                eprintln!("[mock-agent] IO task ended");
+                info!("IO task ended");
             });
 
             // Keep the connection alive
             // The connection is driven by the IO task, we just need to keep this task running
-            eprintln!("[mock-agent] ready, waiting for commands...");
+            info!("ready, waiting for commands...");
 
             // Keep running until stdin closes
             loop {
