@@ -3,6 +3,7 @@ pub mod agents;
 pub mod artifacts;
 pub mod error;
 pub mod event_bus;
+pub mod event_bus_ws;
 pub mod projects;
 pub mod relays;
 pub mod report;

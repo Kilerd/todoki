@@ -368,6 +368,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .get("/api/event-bus/latest", api::event_bus::get_latest_cursor)
         .post("/api/event-bus/replay", api::event_bus::replay_events)
         .post("/api/event-bus/emit", api::event_bus::emit_event)
+        // Event Bus WebSocket (for real-time event streaming)
+        .get("/ws/event-bus", api::event_bus_ws::event_bus_websocket)
         .layer(gotcha::axum::middleware::from_fn_with_state(
             app_settings,
             auth_middleware,
