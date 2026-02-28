@@ -17,7 +17,6 @@ use crate::models::{
     TaskStatusUpdateRequest, TaskUpdateRequest,
 };
 use crate::event_bus::kinds::EventKind;
-use crate::relay::RelayRole;
 use crate::Db;
 use crate::Publisher;
 use crate::Relays;
@@ -327,7 +326,7 @@ pub async fn execute_task(
     }
 
     // 4. Select relay based on role and project
-    let required_role = Some(RelayRole::Coding); // Default to coding role for task execution
+    let required_role = Some(AgentRole::Coding.into()); // Default to coding role for task execution
     let relay_id = relays
         .select_relay(payload.relay_id.as_deref(), required_role, Some(project.id))
         .await
@@ -364,13 +363,12 @@ pub async fn execute_task(
         ExecutionMode::Remote,
         agent_role,
         project.id,
-        Some(relay_id.clone()),
     );
 
     let agent = db.create_agent(create_agent).await?;
 
     // 8. Create session
-    let session = db.create_agent_session(agent.id, Some(&relay_id)).await?;
+    let session = db.create_agent_session(agent.id).await?;
 
     // 9. Update agent status to running
     db.update_agent_status(agent.id, AgentStatus::Running).await?;

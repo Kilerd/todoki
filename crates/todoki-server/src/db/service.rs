@@ -1,7 +1,7 @@
 use crate::models::{
     agent::{
-        Agent, AgentBriefResponse, AgentEvent, AgentSession, AgentRole, AgentStatus, CreateAgent,
-        CreateAgentEvent, CreateAgentSession, ExecutionMode, OutputStream, SessionStatus,
+        Agent, AgentBriefResponse, AgentSession, AgentStatus, CreateAgent, CreateAgentSession,
+        SessionStatus,
     },
     artifact::{Artifact, CreateArtifact},
     project::{CreateProject, Project},
@@ -844,15 +844,8 @@ impl DatabaseService {
     // ========================================================================
 
     /// Create a new agent session
-    pub async fn create_agent_session(
-        &self,
-        agent_id: Uuid,
-        relay_id: Option<&str>,
-    ) -> crate::Result<AgentSession> {
-        let create = CreateAgentSession {
-            agent_id,
-            relay_id: relay_id.map(|s| s.to_string()),
-        };
+    pub async fn create_agent_session(&self, agent_id: Uuid) -> crate::Result<AgentSession> {
+        let create = CreateAgentSession { agent_id };
 
         let session_id = create
             .insert::<AgentSession>()
@@ -899,7 +892,7 @@ impl DatabaseService {
         let row = conn
             .query_opt(
                 r#"
-                SELECT id, agent_id, relay_id, status, started_at, ended_at
+                SELECT id, agent_id, status, started_at, ended_at
                 FROM agent_sessions
                 WHERE id = $1
                 "#,
@@ -911,7 +904,6 @@ impl DatabaseService {
         Ok(row.map(|r| AgentSession {
             id: r.get("id"),
             agent_id: r.get("agent_id"),
-            relay_id: r.get("relay_id"),
             status: r.get::<_, SqlTypeWrapper<SessionStatus>>("status").0,
             started_at: r.get("started_at"),
             ended_at: r.get("ended_at"),
@@ -929,7 +921,7 @@ impl DatabaseService {
         let rows = conn
             .query(
                 r#"
-                SELECT id, agent_id, relay_id, status, started_at, ended_at
+                SELECT id, agent_id, status, started_at, ended_at
                 FROM agent_sessions
                 WHERE agent_id = $1
                 ORDER BY started_at DESC
@@ -944,125 +936,9 @@ impl DatabaseService {
             .map(|row| AgentSession {
                 id: row.get("id"),
                 agent_id: row.get("agent_id"),
-                relay_id: row.get("relay_id"),
                 status: row.get::<_, SqlTypeWrapper<SessionStatus>>("status").0,
                 started_at: row.get("started_at"),
                 ended_at: row.get("ended_at"),
-            })
-            .collect())
-    }
-
-    // ========================================================================
-    // Agent Event operations
-    // ========================================================================
-
-    /// Insert agent event and return the inserted event with its id
-    pub async fn insert_agent_event(&self, event: CreateAgentEvent) -> crate::Result<AgentEvent> {
-        let id = event
-            .insert::<AgentEvent>()
-            .returning_pk(&*self.pool)
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?;
-
-        AgentEvent::fetch_one_by_pk(&id, &*self.pool)
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))
-    }
-
-    /// Get agent events (ordered by database id for correct insertion order)
-    pub async fn get_agent_events(
-        &self,
-        agent_id: Uuid,
-        limit: i64,
-        before_id: Option<i64>,
-    ) -> crate::Result<Vec<AgentEvent>> {
-        let conn = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?;
-
-        let rows = if let Some(before) = before_id {
-            conn.query(
-                r#"
-                SELECT id, agent_id, session_id, seq, ts, stream, message
-                FROM agent_events
-                WHERE agent_id = $1 AND id < $2
-                ORDER BY id DESC
-                LIMIT $3
-                "#,
-                &[&agent_id, &before, &limit],
-            )
-            .await
-        } else {
-            conn.query(
-                r#"
-                SELECT id, agent_id, session_id, seq, ts, stream, message
-                FROM agent_events
-                WHERE agent_id = $1
-                ORDER BY id DESC
-                LIMIT $2
-                "#,
-                &[&agent_id, &limit],
-            )
-            .await
-        }
-        .map_err(|e| crate::TodokiError::Database(e))?;
-
-        let mut events: Vec<AgentEvent> = rows
-            .iter()
-            .map(|row| AgentEvent {
-                id: row.get("id"),
-                agent_id: row.get("agent_id"),
-                session_id: row.get("session_id"),
-                seq: row.get("seq"),
-                ts: row.get("ts"),
-                stream: row.get::<_, SqlTypeWrapper<OutputStream>>("stream").0,
-                message: row.get("message"),
-            })
-            .collect();
-        // Reverse to get chronological order (ASC by id)
-        events.reverse();
-        Ok(events)
-    }
-
-    /// Get agent events after a given id (for streaming)
-    pub async fn get_agent_events_after_id(
-        &self,
-        agent_id: Uuid,
-        after_id: i64,
-        limit: i64,
-    ) -> crate::Result<Vec<AgentEvent>> {
-        let conn = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?;
-
-        let rows = conn
-            .query(
-                r#"
-                SELECT id, agent_id, session_id, seq, ts, stream, message
-                FROM agent_events
-                WHERE agent_id = $1 AND id > $2
-                ORDER BY id ASC
-                LIMIT $3
-                "#,
-                &[&agent_id, &after_id, &limit],
-            )
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?;
-
-        Ok(rows
-            .iter()
-            .map(|row| AgentEvent {
-                id: row.get("id"),
-                agent_id: row.get("agent_id"),
-                session_id: row.get("session_id"),
-                seq: row.get("seq"),
-                ts: row.get("ts"),
-                stream: row.get::<_, SqlTypeWrapper<OutputStream>>("stream").0,
-                message: row.get("message"),
             })
             .collect())
     }
@@ -1226,83 +1102,4 @@ impl DatabaseService {
             .collect())
     }
 
-    // ========================================================================
-    // Phase 2: Event-driven agent subscription queries
-    // ========================================================================
-
-    /// Find agents subscribed to a given event kind
-    /// Supports exact match and wildcard patterns (e.g., "task.*")
-    pub async fn list_agents_by_subscription(
-        &self,
-        event_kind: &str,
-    ) -> Result<Vec<Agent>, crate::TodokiError> {
-        let rows = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?
-            .query(
-                r#"
-                SELECT *
-                FROM agents
-                WHERE (
-                    -- Exact match
-                    $1 = ANY(subscribed_events)
-                    OR
-                    -- Wildcard match: "task.*" matches "task.created"
-                    EXISTS (
-                        SELECT 1
-                        FROM unnest(subscribed_events) AS pattern
-                        WHERE (
-                            pattern LIKE '%*'
-                            AND $1 LIKE REPLACE(pattern, '*', '%')
-                        )
-                    )
-                )
-                "#,
-                &[&event_kind],
-            )
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?;
-
-        Ok(rows
-            .iter()
-            .map(|r| Agent {
-                id: r.get("id"),
-                name: r.get("name"),
-                workdir: r.get("workdir"),
-                command: r.get("command"),
-                args: r.get("args"),
-                execution_mode: r.get::<_, SqlTypeWrapper<ExecutionMode>>("execution_mode").0,
-                role: r.get::<_, SqlTypeWrapper<AgentRole>>("role").0,
-                project_id: r.get("project_id"),
-                relay_id: r.get("relay_id"),
-                status: r.get::<_, SqlTypeWrapper<AgentStatus>>("status").0,
-                created_at: r.get("created_at"),
-                updated_at: r.get("updated_at"),
-                subscribed_events: r.get("subscribed_events"),
-                last_cursor: r.get("last_cursor"),
-                auto_trigger: r.get("auto_trigger"),
-            })
-            .collect())
-    }
-
-    /// Update agent's last processed cursor
-    pub async fn update_agent_cursor(
-        &self,
-        agent_id: Uuid,
-        cursor: i64,
-    ) -> Result<(), crate::TodokiError> {
-        self.pool
-            .get()
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?
-            .execute(
-                "UPDATE agents SET last_cursor = $1 WHERE id = $2",
-                &[&cursor, &agent_id],
-            )
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?;
-        Ok(())
-    }
 }

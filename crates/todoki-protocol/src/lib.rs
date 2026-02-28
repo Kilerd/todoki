@@ -6,13 +6,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 // ============================================================================
-// Relay Role
+// Agent Role
 // ============================================================================
 
-/// Relay role for task routing
+/// Agent role for task routing
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
-pub enum RelayRole {
+pub enum AgentRole {
     #[default]
     General,
     Business,
@@ -20,22 +20,22 @@ pub enum RelayRole {
     Qa,
 }
 
-impl RelayRole {
+impl AgentRole {
     pub fn as_str(&self) -> &'static str {
         match self {
-            RelayRole::General => "general",
-            RelayRole::Business => "business",
-            RelayRole::Coding => "coding",
-            RelayRole::Qa => "qa",
+            AgentRole::General => "general",
+            AgentRole::Business => "business",
+            AgentRole::Coding => "coding",
+            AgentRole::Qa => "qa",
         }
     }
 
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
-            "business" => RelayRole::Business,
-            "coding" => RelayRole::Coding,
-            "qa" => RelayRole::Qa,
-            _ => RelayRole::General,
+            "business" => AgentRole::Business,
+            "coding" => AgentRole::Coding,
+            "qa" => AgentRole::Qa,
+            _ => AgentRole::General,
         }
     }
 }

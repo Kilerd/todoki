@@ -6,10 +6,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 // Re-export from shared protocol
-pub use todoki_protocol::RelayRole;
+pub use todoki_protocol::AgentRole;
 
-fn parse_relay_role(s: &str) -> Result<RelayRole, String> {
-    Ok(RelayRole::from_str(s))
+fn parse_relay_role(s: &str) -> Result<AgentRole, String> {
+    Ok(AgentRole::from_str(s))
 }
 
 /// Todoki relay agent
@@ -30,7 +30,7 @@ pub struct Args {
 
     /// Relay role for task routing (general, business, coding, qa)
     #[arg(short, long, env = "TODOKI_RELAY_ROLE", default_value = "general", value_parser = parse_relay_role)]
-    pub role: RelayRole,
+    pub role: AgentRole,
 
     /// Allowed working directories (comma-separated)
     #[arg(short, long, env = "TODOKI_SAFE_PATHS", value_delimiter = ',')]
@@ -79,7 +79,7 @@ pub struct ServerConfig {
 pub struct RelaySettings {
     pub name: Option<String>,
     #[serde(default)]
-    pub role: RelayRole,
+    pub role: AgentRole,
     #[serde(default)]
     pub safe_paths: Vec<String>,
     #[serde(default)]
@@ -96,7 +96,7 @@ pub struct RelayConfig {
     pub url: String,
     pub token: String,
     pub name: Option<String>,
-    pub role: RelayRole,
+    pub role: AgentRole,
     pub safe_paths: Vec<String>,
     pub labels: HashMap<String, String>,
     pub projects: Vec<Uuid>,
@@ -125,12 +125,12 @@ impl RelayConfig {
 
         // For role, CLI default is "general", so we only use file if CLI wasn't explicitly set
         // Since clap doesn't distinguish "default" vs "explicitly set", we use file as fallback only if role is General
-        let role = if args.role != RelayRole::General {
+        let role = if args.role != AgentRole::General {
             args.role
-        } else if file_config.relay.role != RelayRole::General {
+        } else if file_config.relay.role != AgentRole::General {
             file_config.relay.role
         } else {
-            RelayRole::General
+            AgentRole::General
         };
 
         // For vec fields, use CLI if non-empty, otherwise file
@@ -206,7 +206,7 @@ impl RelayConfig {
     }
 
     /// Get relay role
-    pub fn role(&self) -> RelayRole {
+    pub fn role(&self) -> AgentRole {
         self.role
     }
 

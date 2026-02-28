@@ -6,15 +6,14 @@ use serde_json::Value;
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
-use super::{RelayInfo, RelayRole};
+use super::{RelayInfo, AgentRole};
 
 /// A set of project UUIDs for efficient lookup
 pub type ProjectSet = HashSet<Uuid>;
 
-/// Pending permission request info
+/// Pending permission request info - only stores session_id, relay_id is derived from active_sessions
 #[derive(Clone)]
 struct PendingPermission {
-    relay_id: String,
     session_id: String,
 }
 
@@ -30,7 +29,7 @@ pub struct RelayManager {
 pub struct RelayConnection {
     pub relay_id: String,
     pub name: String,
-    pub role: RelayRole,
+    pub role: AgentRole,
     pub safe_paths: Vec<String>,
     pub labels: HashMap<String, String>,
     pub projects: ProjectSet,
@@ -56,7 +55,7 @@ impl RelayManager {
         &self,
         relay_id: String,
         name: String,
-        role: RelayRole,
+        role: AgentRole,
         safe_paths: Vec<String>,
         labels: HashMap<String, String>,
         projects: Vec<Uuid>,
@@ -127,16 +126,16 @@ impl RelayManager {
     pub async fn select_relay(
         &self,
         preferred_id: Option<&str>,
-        required_role: Option<RelayRole>,
+        required_role: Option<AgentRole>,
         required_project: Option<Uuid>,
     ) -> Option<String> {
         let relays = self.relays.read().await;
 
         // Helper to check if relay matches role requirement
-        let role_matches = |conn: &RelayConnection, required: Option<RelayRole>| -> bool {
+        let role_matches = |conn: &RelayConnection, required: Option<AgentRole>| -> bool {
             match required {
                 None => true, // No role requirement, any relay works
-                Some(req) => conn.role == req || conn.role == RelayRole::General,
+                Some(req) => conn.role == req || conn.role == AgentRole::General,
             }
         };
 
@@ -255,7 +254,19 @@ impl RelayManager {
             .collect()
     }
 
+    /// Get relay_id for a given session_id by searching active_sessions
+    pub async fn get_relay_for_session(&self, session_id: &str) -> Option<String> {
+        let relays = self.relays.read().await;
+        for conn in relays.values() {
+            if conn.active_sessions.contains(session_id) {
+                return Some(conn.relay_id.clone());
+            }
+        }
+        None
+    }
+
     /// Store a pending permission request
+    /// Note: relay_id is kept in signature for logging but not stored (derived from active_sessions)
     pub async fn store_permission_request(
         &self,
         relay_id: &str,
@@ -266,7 +277,6 @@ impl RelayManager {
         pending.insert(
             request_id.to_string(),
             PendingPermission {
-                relay_id: relay_id.to_string(),
                 session_id: session_id.to_string(),
             },
         );
@@ -279,11 +289,17 @@ impl RelayManager {
     }
 
     /// Get pending permission info without removing it
+    /// Returns (relay_id, session_id) - relay_id is derived from active_sessions
     pub async fn get_pending_permission(&self, request_id: &str) -> Option<(String, String)> {
         let pending = self.pending_permissions.lock().await;
-        pending
-            .get(request_id)
-            .map(|p| (p.relay_id.clone(), p.session_id.clone()))
+        if let Some(p) = pending.get(request_id) {
+            let session_id = p.session_id.clone();
+            drop(pending); // Release lock before calling get_relay_for_session
+            if let Some(relay_id) = self.get_relay_for_session(&session_id).await {
+                return Some((relay_id, session_id));
+            }
+        }
+        None
     }
 
     /// Remove a pending permission request
@@ -352,7 +368,7 @@ mod tests {
             .register(
                 "coding-1".to_string(),
                 "Coding Relay".to_string(),
-                RelayRole::Coding,
+                AgentRole::Coding,
                 vec![],
                 HashMap::new(),
                 vec![],
@@ -365,7 +381,7 @@ mod tests {
             .register(
                 "general-1".to_string(),
                 "General Relay".to_string(),
-                RelayRole::General,
+                AgentRole::General,
                 vec![],
                 HashMap::new(),
                 vec![],
@@ -375,7 +391,7 @@ mod tests {
 
         // Select coding relay - should match coding-1 or general-1 (both work)
         let selected = manager
-            .select_relay(None, Some(RelayRole::Coding), None)
+            .select_relay(None, Some(AgentRole::Coding), None)
             .await;
         assert!(
             selected == Some("coding-1".to_string()) || selected == Some("general-1".to_string()),
@@ -385,7 +401,7 @@ mod tests {
 
         // Select business relay - should match general-1 (General accepts any)
         let selected = manager
-            .select_relay(None, Some(RelayRole::Business), None)
+            .select_relay(None, Some(AgentRole::Business), None)
             .await;
         assert_eq!(selected, Some("general-1".to_string()));
 
@@ -403,7 +419,7 @@ mod tests {
             .register(
                 "coding-1".to_string(),
                 "Coding Relay".to_string(),
-                RelayRole::Coding,
+                AgentRole::Coding,
                 vec![],
                 HashMap::new(),
                 vec![],
@@ -416,7 +432,7 @@ mod tests {
 
         // Try to select - should fail (no idle relay)
         let selected = manager
-            .select_relay(None, Some(RelayRole::Coding), None)
+            .select_relay(None, Some(AgentRole::Coding), None)
             .await;
         assert_eq!(selected, None);
 
@@ -425,7 +441,7 @@ mod tests {
 
         // Now selection should succeed
         let selected = manager
-            .select_relay(None, Some(RelayRole::Coding), None)
+            .select_relay(None, Some(AgentRole::Coding), None)
             .await;
         assert_eq!(selected, Some("coding-1".to_string()));
     }
@@ -439,7 +455,7 @@ mod tests {
             .register(
                 "coding-1".to_string(),
                 "Coding Relay 1".to_string(),
-                RelayRole::Coding,
+                AgentRole::Coding,
                 vec![],
                 HashMap::new(),
                 vec![],
@@ -451,7 +467,7 @@ mod tests {
             .register(
                 "coding-2".to_string(),
                 "Coding Relay 2".to_string(),
-                RelayRole::Coding,
+                AgentRole::Coding,
                 vec![],
                 HashMap::new(),
                 vec![],
@@ -461,14 +477,14 @@ mod tests {
 
         // Select with preferred ID
         let selected = manager
-            .select_relay(Some("coding-2"), Some(RelayRole::Coding), None)
+            .select_relay(Some("coding-2"), Some(AgentRole::Coding), None)
             .await;
         assert_eq!(selected, Some("coding-2".to_string()));
 
         // Mark preferred as busy, should fall back to other
         manager.add_active_session("coding-2", "session-1").await;
         let selected = manager
-            .select_relay(Some("coding-2"), Some(RelayRole::Coding), None)
+            .select_relay(Some("coding-2"), Some(AgentRole::Coding), None)
             .await;
         assert_eq!(selected, Some("coding-1".to_string()));
     }
@@ -485,7 +501,7 @@ mod tests {
             .register(
                 "relay-a".to_string(),
                 "Relay A".to_string(),
-                RelayRole::General,
+                AgentRole::General,
                 vec![],
                 HashMap::new(),
                 vec![project_a],
@@ -498,7 +514,7 @@ mod tests {
             .register(
                 "relay-universal".to_string(),
                 "Universal Relay".to_string(),
-                RelayRole::General,
+                AgentRole::General,
                 vec![],
                 HashMap::new(),
                 vec![],
@@ -553,7 +569,7 @@ mod tests {
             .register(
                 "relay-a".to_string(),
                 "Relay A".to_string(),
-                RelayRole::General,
+                AgentRole::General,
                 vec![],
                 HashMap::new(),
                 vec![project_a],
@@ -566,7 +582,7 @@ mod tests {
             .register(
                 "relay-b".to_string(),
                 "Relay B".to_string(),
-                RelayRole::Coding,
+                AgentRole::Coding,
                 vec![],
                 HashMap::new(),
                 vec![project_b],
@@ -579,7 +595,7 @@ mod tests {
             .register(
                 "relay-universal".to_string(),
                 "Universal Relay".to_string(),
-                RelayRole::General,
+                AgentRole::General,
                 vec![],
                 HashMap::new(),
                 vec![],

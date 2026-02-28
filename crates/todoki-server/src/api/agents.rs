@@ -1,7 +1,5 @@
-use chrono::Utc;
 use gotcha::axum::extract::Extension;
 use gotcha::axum::extract::Path;
-use gotcha::axum::extract::Query;
 use gotcha::axum::extract::State;
 use gotcha::{Json, Schematic};
 use serde::{Deserialize, Serialize};
@@ -12,13 +10,10 @@ use std::time::Duration;
 use crate::api::error::ApiError;
 use crate::auth::AuthContext;
 use crate::event_bus::kinds::EventKind;
-use todoki_protocol::{event_kind, EventPermissionOutcome, PermissionRespondedData};
 use crate::models::agent::{
-    AgentEventResponse, AgentResponse, AgentRole, AgentSessionResponse, AgentStatus, CreateAgent,
-    CreateAgentEvent, ExecutionMode, OutputStream, SessionStatus,
+    AgentResponse, AgentRole, AgentSessionResponse, AgentStatus, CreateAgent, ExecutionMode,
+    SessionStatus,
 };
-use crate::relay::{AgentStreamEvent, RelayRole};
-use crate::Broadcaster;
 use crate::Db;
 use crate::Publisher;
 use crate::Relays;
@@ -76,7 +71,6 @@ pub struct CreateAgentRequest {
     #[serde(default)]
     pub role: AgentRole,
     pub project_id: Uuid,
-    pub relay_id: Option<String>,
     /// If true, automatically start the agent after creation
     #[serde(default)]
     pub auto_start: bool,
@@ -117,7 +111,6 @@ pub async fn create_agent(
         execution_mode,
         role,
         project_id,
-        req.relay_id,
     );
 
     let agent = db.create_agent(create).await?;
@@ -168,16 +161,6 @@ use crate::db::DatabaseService;
 use crate::models::agent::{Agent, AgentSession};
 use crate::relay::RelayManager;
 
-/// Convert AgentRole to RelayRole for relay selection
-fn agent_role_to_relay_role(role: AgentRole) -> RelayRole {
-    match role {
-        AgentRole::General => RelayRole::General,
-        AgentRole::Business => RelayRole::Business,
-        AgentRole::Coding => RelayRole::Coding,
-        AgentRole::Qa => RelayRole::Qa,
-    }
-}
-
 async fn start_agent_internal(
     db: &DatabaseService,
     relays: &RelayManager,
@@ -192,12 +175,12 @@ async fn start_agent_internal(
     }
 
     // Convert agent role to relay role for selection
-    let required_role = Some(agent_role_to_relay_role(agent.role));
+    let required_role = Some(agent.role.into());
     let required_project = Some(agent.project_id);
 
     // Select relay based on role, project and availability
     let relay_id = relays
-        .select_relay(agent.relay_id.as_deref(), required_role, required_project)
+        .select_relay(None, required_role, required_project)
         .await
         .ok_or_else(|| {
             anyhow::anyhow!(
@@ -208,7 +191,7 @@ async fn start_agent_internal(
         })?;
 
     // Create session
-    let session = db.create_agent_session(agent_id, Some(&relay_id)).await?;
+    let session = db.create_agent_session(agent_id).await?;
 
     // Update agent status
     db.update_agent_status(agent_id, AgentStatus::Running).await?;
@@ -336,13 +319,14 @@ pub async fn stop_agent(
         .find(|s| s.status == SessionStatus::Running);
 
     if let Some(session) = running_session {
-        if let Some(relay_id) = &session.relay_id {
+        // Find relay for this session from RelayManager
+        if let Some(relay_id) = relays.get_relay_for_session(&session.id.to_string()).await {
             // Emit stop command event to Event Bus (fire-and-forget)
             let request_id = Uuid::new_v4().to_string();
             let _ = relays
                 .emit_relay_command(
                     &publisher,
-                    relay_id,
+                    &relay_id,
                     EventKind::RELAY_STOP_REQUESTED,
                     request_id,
                     serde_json::json!({"session_id": session.id.to_string()}),
@@ -350,7 +334,7 @@ pub async fn stop_agent(
                 .await;
 
             relays
-                .remove_active_session(relay_id, &session.id.to_string())
+                .remove_active_session(&relay_id, &session.id.to_string())
                 .await;
         }
 
@@ -382,34 +366,3 @@ pub async fn get_agent_sessions(
     Ok(Json(resp))
 }
 
-// ============================================================================
-// Get agent events
-// ============================================================================
-
-#[derive(Debug, Deserialize, Schematic)]
-pub struct EventsQuery {
-    #[serde(default = "default_limit")]
-    pub limit: i64,
-    pub before_seq: Option<i64>,
-}
-
-fn default_limit() -> i64 {
-    100
-}
-
-/// GET /api/agents/:agent_id/events - Get agent events
-#[gotcha::api]
-pub async fn get_agent_events(
-    Extension(auth): Extension<AuthContext>,
-    State(db): State<Db>,
-    Path(agent_id): Path<Uuid>,
-    Query(query): Query<EventsQuery>,
-) -> Result<Json<Vec<AgentEventResponse>>, ApiError> {
-    auth.require_auth().map_err(|_| ApiError::unauthorized())?;
-
-    let events = db
-        .get_agent_events(agent_id, query.limit, query.before_seq)
-        .await?;
-    let resp: Vec<AgentEventResponse> = events.into_iter().map(Into::into).collect();
-    Ok(Json(resp))
-}

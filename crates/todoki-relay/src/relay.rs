@@ -178,8 +178,7 @@ impl Relay {
             match ws_read.next().await {
                 Some(Ok(Message::Text(text))) => {
                     if let Ok(msg) = serde_json::from_str::<ServerMessage>(&text) {
-                        if let ServerMessage::Subscribed { kinds, cursor } = msg {
-                            dbg!(kinds, cursor);
+                        if let ServerMessage::Subscribed { kinds: _, cursor: _ } = msg {
                             subscribed = true;
                             tracing::debug!("received subscription acknowledgment");
                         }

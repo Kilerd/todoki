@@ -1,6 +1,6 @@
 use crate::api::error::ApiError;
 use crate::event_bus::Event;
-use crate::{Publisher, Subscriber};
+use crate::{Publisher, Relays, Subscriber};
 use gotcha::axum::extract::{Query, State};
 use gotcha::{Json, Schematic};
 use serde::{Deserialize, Serialize};
@@ -139,8 +139,21 @@ pub async fn replay_events(
 #[gotcha::api]
 pub async fn emit_event(
     State(publisher): State<Publisher>,
-    Json(req): Json<EmitEventRequest>,
+    State(relays): State<Relays>,
+    Json(mut req): Json<EmitEventRequest>,
 ) -> Result<Json<i64>, ApiError> {
+    // For permission.responded events, inject relay_id from pending permissions
+    // This fixes the routing bug where frontend sends permission responses without relay_id
+    if req.kind == "permission.responded" {
+        if let Some(request_id) = req.data.get("request_id").and_then(|v| v.as_str()) {
+            if let Some((relay_id, _session_id)) = relays.get_pending_permission(request_id).await {
+                if let Some(obj) = req.data.as_object_mut() {
+                    obj.insert("relay_id".to_string(), serde_json::Value::String(relay_id));
+                }
+            }
+        }
+    }
+
     // Use provided agent_id, or default to System agent (nil UUID)
     let agent_id = req.agent_id.unwrap_or(Uuid::nil());
 

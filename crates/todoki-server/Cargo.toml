@@ -11,9 +11,6 @@ path = "src/main.rs"
 # Shared protocol
 todoki-protocol.workspace = true
 
-# OpenAI for permission auto-review
-async-openai = { version = "0.32.4", features = ["chat-completion"] }
-
 # Web framework
 gotcha = { git = "https://github.com/Kilerd/gotcha.git", branch = "main", features = ["cors", "openapi"] }
 axum = { version = "0.7", features = ["ws"] }

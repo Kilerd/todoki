@@ -4,7 +4,6 @@ mod config;
 mod db;
 mod event_bus;
 mod models;
-mod permission_reviewer;
 mod relay;
 
 use std::ops::Deref;
@@ -15,17 +14,14 @@ use gotcha::Json;
 use gotcha::axum::extract::FromRef;
 use gotcha::axum::response::{IntoResponse, Response};
 use serde_json::json;
-use specta_typescript::BigIntExportBehavior;
 use thiserror::Error;
 use tracing::{error, info};
 
-use crate::api::agent_stream::{AgentEventMessage, ServerToClient};
-use crate::api::{agent_stream, agents, artifacts, projects, relays, report, tasks};
+use crate::api::{agents, artifacts, projects, relays, report, tasks};
 use crate::auth::auth_middleware;
 use crate::config::Settings;
 use crate::db::DatabaseService;
-use crate::permission_reviewer::PermissionReviewer;
-use crate::relay::{AgentBroadcaster, RelayManager, RequestTracker};
+use crate::relay::{RelayManager, RequestTracker};
 
 // ============================================================================
 // Database wrapper
@@ -49,30 +45,6 @@ pub struct Relays(pub Arc<RelayManager>);
 
 impl Deref for Relays {
     type Target = Arc<RelayManager>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-/// Broadcaster wrapper for state extraction
-#[derive(Clone)]
-pub struct Broadcaster(pub Arc<AgentBroadcaster>);
-
-impl Deref for Broadcaster {
-    type Target = AgentBroadcaster;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-/// Permission reviewer wrapper for state extraction
-#[derive(Clone)]
-pub struct Reviewer(pub Option<Arc<PermissionReviewer>>);
-
-impl Deref for Reviewer {
-    type Target = Option<Arc<PermissionReviewer>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -165,8 +137,6 @@ pub struct AppState {
     pub db: Db,
     pub settings: Settings,
     pub relays: Arc<RelayManager>,
-    pub broadcaster: Arc<AgentBroadcaster>,
-    pub reviewer: Option<Arc<PermissionReviewer>>,
     pub event_publisher: Arc<event_bus::EventPublisher>,
     pub event_subscriber: Arc<event_bus::EventSubscriber>,
     pub request_tracker: Arc<RequestTracker>,
@@ -196,20 +166,6 @@ impl FromRef<gotcha::GotchaContext<AppState, Settings>> for Settings {
 impl FromRef<gotcha::GotchaContext<AppState, Settings>> for Relays {
     fn from_ref(ctx: &gotcha::GotchaContext<AppState, Settings>) -> Self {
         Relays(ctx.state.relays.clone())
-    }
-}
-
-// Allow extracting Broadcaster from GotchaContext
-impl FromRef<gotcha::GotchaContext<AppState, Settings>> for Broadcaster {
-    fn from_ref(ctx: &gotcha::GotchaContext<AppState, Settings>) -> Self {
-        Broadcaster(ctx.state.broadcaster.clone())
-    }
-}
-
-// Allow extracting Reviewer from GotchaContext
-impl FromRef<gotcha::GotchaContext<AppState, Settings>> for Reviewer {
-    fn from_ref(ctx: &gotcha::GotchaContext<AppState, Settings>) -> Self {
-        Reviewer(ctx.state.reviewer.clone())
     }
 }
 
@@ -257,16 +213,6 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting Todoki API Server");
 
-    info!("Exporting Server to Client Event Type Bindings");
-    let mut binding = specta::TypeCollection::default();
-    binding.register::<AgentEventMessage>();
-    binding.register::<ServerToClient>();
-
-    specta_typescript::Typescript::default()
-        .bigint(BigIntExportBehavior::Number)
-        .export_to("./web/src/server-bindings.ts", &binding)
-        .expect("cannot export bindings");
-
     let settings = Settings::new().map_err(|e| {
         error!("Failed to load configuration: {}", e);
         e
@@ -280,20 +226,12 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let db = Db(db_service.clone());
     let relay_manager = Arc::new(RelayManager::new());
-    let broadcaster = Arc::new(AgentBroadcaster::new());
 
     // Initialize Event Bus
     info!("Initializing Event Bus...");
     let event_store = Arc::new(event_bus::PgEventStore::new(db_service.pool()));
     let event_publisher = Arc::new(event_bus::EventPublisher::new(event_store.clone()));
     let event_subscriber = Arc::new(event_bus::EventSubscriber::new(event_store.clone()));
-
-    // Initialize permission reviewer if configured
-    let reviewer = PermissionReviewer::new(settings.application.auto_review.clone())
-        .map(Arc::new);
-    if reviewer.is_some() {
-        info!("Permission auto-reviewer initialized");
-    }
 
     // Initialize Request Tracker for async request-response pattern
     let request_tracker = Arc::new(RequestTracker::new());
@@ -315,14 +253,12 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         db: db.clone(),
         settings: app_settings.clone(),
         relays: relay_manager.clone(),
-        broadcaster: broadcaster.clone(),
-        reviewer,
         event_publisher: event_publisher.clone(),
         event_subscriber: event_subscriber.clone(),
         request_tracker: request_tracker.clone(),
     };
 
-    info!("Relay manager and broadcaster initialized");
+    info!("Relay manager initialized");
 
     let addr = format!("{}:{}", &settings.basic.host, &settings.basic.port);
     info!("Starting server on http://{}", addr);
@@ -371,7 +307,6 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .post("/api/agents/:agent_id/start", agents::start_agent)
         .post("/api/agents/:agent_id/stop", agents::stop_agent)
         .get("/api/agents/:agent_id/sessions", agents::get_agent_sessions)
-        .get("/api/agents/:agent_id/events", agents::get_agent_events)
         // Relay routes
         // Note: Relay WebSocket connections now use /ws/event-bus with relay_id parameter
         .get("/api/relays", relays::list_relays)
@@ -380,8 +315,6 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             "/api/projects/:project_id/relays",
             relays::list_relays_by_project,
         )
-        // Agent stream WebSocket (for frontend real-time updates)
-        .get("/ws/agents/:agent_id/stream", agent_stream::ws_agent_stream)
         // Event Bus routes
         .get("/api/event-bus", api::event_bus::query_events)
         .get("/api/event-bus/latest", api::event_bus::get_latest_cursor)

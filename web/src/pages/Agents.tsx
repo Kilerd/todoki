@@ -19,8 +19,8 @@ import {
   startAgent,
   stopAgent,
   deleteAgent,
-  respondPermission,
 } from "../api/agents";
+import { emitEvent } from "../api/eventBus";
 import type { operations } from "../api/schema";
 
 type Agent = operations["list_agents"]["responses"]["200"]["content"]["application/json"][number];
@@ -50,11 +50,9 @@ interface PermissionRequest {
 
 function PermissionRequestCard({
   request,
-  agentId,
   onResponded,
 }: {
   request: PermissionRequest;
-  agentId: string;
   onResponded: () => void;
 }) {
   const [isResponding, setIsResponding] = useState(false);
@@ -62,12 +60,11 @@ function PermissionRequestCard({
   const handleSelect = async (optionId: string) => {
     setIsResponding(true);
     try {
-      await respondPermission({
-        agent_id: agentId,
-        request_id: request.request_id,
-        outcome: {
-          type: "selected",
-          option_id: optionId,
+      await emitEvent({
+        kind: "permission.responded",
+        data: {
+          request_id: request.request_id,
+          outcome: { type: "selected", selected: optionId },
         },
       });
       onResponded();
@@ -81,11 +78,11 @@ function PermissionRequestCard({
   const handleCancel = async () => {
     setIsResponding(true);
     try {
-      await respondPermission({
-        agent_id: agentId,
-        request_id: request.request_id,
-        outcome: {
-          type: "cancelled",
+      await emitEvent({
+        kind: "permission.responded",
+        data: {
+          request_id: request.request_id,
+          outcome: { type: "cancelled" },
         },
       });
       onResponded();
@@ -456,7 +453,6 @@ function AgentOutput({
             <PermissionRequestCard
               key={request.request_id}
               request={request}
-              agentId={agentId}
               onResponded={() => handlePermissionResponded(request.request_id)}
             />
           ))}

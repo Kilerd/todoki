@@ -4,7 +4,6 @@ use gotcha::Schematic;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use specta::{Type};
 // ============================================================================
 // Execution Mode
 // ============================================================================
@@ -46,37 +45,6 @@ pub enum SessionStatus {
 }
 
 // ============================================================================
-// Output Stream
-// ============================================================================
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Schematic, TextEnum, Type)]
-#[serde(rename_all = "snake_case")]
-pub enum OutputStream {
-    Stdout,
-    Stderr,
-    System,
-    Acp,
-    PermissionRequest,
-    PermissionResponse,
-}
-
-impl std::str::FromStr for OutputStream {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "stdout" => Ok(OutputStream::Stdout),
-            "stderr" => Ok(OutputStream::Stderr),
-            "system" => Ok(OutputStream::System),
-            "acp" => Ok(OutputStream::Acp),
-            "permission_request" => Ok(OutputStream::PermissionRequest),
-            "permission_response" => Ok(OutputStream::PermissionResponse),
-            _ => Err(()),
-        }
-    }
-}
-
-// ============================================================================
 // Agent Role
 // ============================================================================
 
@@ -88,6 +56,17 @@ pub enum AgentRole {
     Business,
     Coding,
     Qa,
+}
+
+impl From<AgentRole> for todoki_protocol::AgentRole {
+    fn from(role: AgentRole) -> Self {
+        match role {
+            AgentRole::General => todoki_protocol::AgentRole::General,
+            AgentRole::Business => todoki_protocol::AgentRole::Business,
+            AgentRole::Coding => todoki_protocol::AgentRole::Coding,
+            AgentRole::Qa => todoki_protocol::AgentRole::Qa,
+        }
+    }
 }
 
 // ============================================================================
@@ -106,42 +85,14 @@ pub struct Agent {
     pub execution_mode: ExecutionMode,
     pub role: AgentRole,
     pub project_id: Uuid,
-    pub relay_id: Option<String>,
     pub status: AgentStatus,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-
-    // Phase 2: Event subscription fields
-    pub subscribed_events: Vec<String>,
-    pub last_cursor: i64,
-    pub auto_trigger: bool,
 }
 
 impl Agent {
     pub fn args_vec(&self) -> Vec<String> {
         serde_json::from_str(&self.args).unwrap_or_default()
-    }
-
-    /// Check if agent subscribes to a given event kind
-    /// Supports wildcard matching (e.g., "task.*" matches "task.created")
-    pub fn subscribes_to(&self, event_kind: &str) -> bool {
-        self.subscribed_events.iter().any(|pattern| {
-            if pattern.ends_with('*') {
-                // Wildcard matching: "task.*" matches "task.created"
-                let prefix = pattern.trim_end_matches('*');
-                event_kind.starts_with(prefix)
-            } else {
-                // Exact matching
-                event_kind == pattern
-            }
-        })
-    }
-
-    /// Check if agent should be triggered for this event
-    pub fn should_trigger(&self, event_kind: &str) -> bool {
-        self.auto_trigger
-            && self.status != AgentStatus::Running
-            && self.subscribes_to(event_kind)
     }
 }
 
@@ -154,9 +105,6 @@ pub struct CreateAgent {
     pub execution_mode: ExecutionMode,
     pub role: AgentRole,
     pub project_id: Uuid,
-    pub relay_id: Option<String>,
-    pub subscribed_events: Vec<String>,
-    pub auto_trigger: bool,
 }
 
 impl CreateAgent {
@@ -168,7 +116,6 @@ impl CreateAgent {
         execution_mode: ExecutionMode,
         role: AgentRole,
         project_id: Uuid,
-        relay_id: Option<String>,
     ) -> Self {
         Self {
             name,
@@ -178,9 +125,6 @@ impl CreateAgent {
             execution_mode,
             role,
             project_id,
-            relay_id,
-            subscribed_events: vec![],
-            auto_trigger: false,
         }
     }
 }
@@ -195,7 +139,6 @@ pub struct AgentSession {
     #[domain(primary_key)]
     pub id: Uuid,
     pub agent_id: Uuid,
-    pub relay_id: Option<String>,
     pub status: SessionStatus,
     pub started_at: DateTime<Utc>,
     pub ended_at: Option<DateTime<Utc>>,
@@ -204,51 +147,6 @@ pub struct AgentSession {
 #[derive(Debug, Clone, Creatable)]
 pub struct CreateAgentSession {
     pub agent_id: Uuid,
-    pub relay_id: Option<String>,
-}
-
-// ============================================================================
-// Agent Event (Database Model)
-// ============================================================================
-
-#[derive(Debug, Clone, Domain)]
-#[domain(table = "agent_events")]
-pub struct AgentEvent {
-    #[domain(primary_key)]
-    pub id: i64,
-    pub agent_id: Uuid,
-    pub session_id: Uuid,
-    pub seq: i64,
-    pub ts: DateTime<Utc>,
-    pub stream: OutputStream,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Creatable)]
-pub struct CreateAgentEvent {
-    pub agent_id: Uuid,
-    pub session_id: Uuid,
-    pub seq: i64,
-    pub stream: OutputStream,
-    pub message: String,
-}
-
-impl CreateAgentEvent {
-    pub fn new(
-        agent_id: Uuid,
-        session_id: Uuid,
-        seq: i64,
-        stream: OutputStream,
-        message: String,
-    ) -> Self {
-        Self {
-            agent_id,
-            session_id,
-            seq,
-            stream,
-            message,
-        }
-    }
 }
 
 // ============================================================================
@@ -265,13 +163,9 @@ pub struct AgentResponse {
     pub execution_mode: ExecutionMode,
     pub role: AgentRole,
     pub project_id: Uuid,
-    pub relay_id: Option<String>,
     pub status: AgentStatus,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub subscribed_events: Vec<String>,
-    pub last_cursor: i64,
-    pub auto_trigger: bool,
 }
 
 impl From<Agent> for AgentResponse {
@@ -285,13 +179,9 @@ impl From<Agent> for AgentResponse {
             execution_mode: a.execution_mode,
             role: a.role,
             project_id: a.project_id,
-            relay_id: a.relay_id.clone(),
             status: a.status,
             created_at: a.created_at,
             updated_at: a.updated_at,
-            subscribed_events: a.subscribed_events.clone(),
-            last_cursor: a.last_cursor,
-            auto_trigger: a.auto_trigger,
         }
     }
 }
@@ -300,7 +190,6 @@ impl From<Agent> for AgentResponse {
 pub struct AgentSessionResponse {
     pub id: Uuid,
     pub agent_id: Uuid,
-    pub relay_id: Option<String>,
     pub status: SessionStatus,
     pub started_at: DateTime<Utc>,
     pub ended_at: Option<DateTime<Utc>>,
@@ -311,29 +200,9 @@ impl From<AgentSession> for AgentSessionResponse {
         Self {
             id: s.id,
             agent_id: s.agent_id,
-            relay_id: s.relay_id.clone(),
             status: s.status,
             started_at: s.started_at,
             ended_at: s.ended_at,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Schematic)]
-pub struct AgentEventResponse {
-    pub seq: i64,
-    pub ts: DateTime<Utc>,
-    pub stream: OutputStream,
-    pub message: String,
-}
-
-impl From<AgentEvent> for AgentEventResponse {
-    fn from(e: AgentEvent) -> Self {
-        Self {
-            seq: e.seq,
-            ts: e.ts,
-            stream: e.stream,
-            message: e.message,
         }
     }
 }

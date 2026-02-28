@@ -30,12 +30,10 @@ use crate::config::Settings;
 use crate::db::DatabaseService;
 use crate::event_bus::kinds::EventKind;
 use crate::event_bus::{Event, EventPublisher, EventSubscriber};
-use todoki_protocol::{event_kind, EventPermissionOutcome, PermissionRespondedData};
-use crate::models::agent::{CreateAgentEvent, OutputStream};
 use crate::models::{AgentStatus, SessionStatus};
-use crate::permission_reviewer::{find_allow_option, PermissionContext, PermissionReviewer, ReviewDecision};
-use crate::relay::{AgentBroadcaster, AgentStreamEvent, RelayManager, RelayRole};
-use crate::{Broadcaster, Db, Publisher, Relays, Reviewer, Subscriber};
+use crate::relay::RelayManager;
+use todoki_protocol::AgentRole as ProtocolAgentRole;
+use crate::{Db, Publisher, Relays, Subscriber};
 
 /// WebSocket subscription parameters
 #[derive(Debug, Deserialize)]
@@ -139,8 +137,6 @@ pub async fn event_bus_websocket(
     State(settings): State<Settings>,
     State(relays): State<Relays>,
     State(db): State<Db>,
-    State(broadcaster): State<Broadcaster>,
-    State(reviewer): State<Reviewer>,
     Query(params): Query<WsSubscribeParams>,
 ) -> Response {
     // Authenticate: prefer Bearer token in header, fall back to query parameter
@@ -196,8 +192,6 @@ pub async fn event_bus_websocket(
     let subscriber = subscriber.0.clone();
     let relays = relays.0.clone();
     let db = db.0.clone();
-    let broadcaster = broadcaster.0.clone();
-    let reviewer = reviewer.0.clone();
 
     ws.on_upgrade(move |socket| {
         handle_event_bus_socket(
@@ -208,8 +202,6 @@ pub async fn event_bus_websocket(
             is_authenticated,
             relays,
             db,
-            broadcaster,
-            reviewer,
         )
     })
 }
@@ -222,8 +214,6 @@ async fn handle_event_bus_socket(
     is_authenticated: bool,
     relays: Arc<RelayManager>,
     db: Arc<DatabaseService>,
-    broadcaster: Arc<AgentBroadcaster>,
-    reviewer: Option<Arc<PermissionReviewer>>,
 ) {
     // Close connection if not authenticated
     if !is_authenticated {
@@ -242,8 +232,6 @@ async fn handle_event_bus_socket(
             params,
             relays,
             db,
-            broadcaster,
-            reviewer,
         )
         .await;
     } else {
@@ -260,8 +248,6 @@ async fn handle_relay_mode(
     params: WsSubscribeParams,
     relays: Arc<RelayManager>,
     db: Arc<DatabaseService>,
-    broadcaster: Arc<AgentBroadcaster>,
-    reviewer: Option<Arc<PermissionReviewer>>,
 ) {
     let (mut tx, mut rx) = socket.split();
 
@@ -360,8 +346,6 @@ async fn handle_relay_mode(
                                         &mut is_registered,
                                         &relays,
                                         &db,
-                                        &broadcaster,
-                                        &reviewer,
                                         &publisher,
                                         &mut tx,
                                     ).await;
@@ -456,8 +440,6 @@ async fn handle_relay_event(
     is_registered: &mut bool,
     relays: &Arc<RelayManager>,
     db: &Arc<DatabaseService>,
-    broadcaster: &Arc<AgentBroadcaster>,
-    reviewer: &Option<Arc<PermissionReviewer>>,
     publisher: &Arc<EventPublisher>,
     tx: &mut futures_util::stream::SplitSink<WebSocket, Message>,
 ) -> anyhow::Result<()> {
@@ -466,7 +448,7 @@ async fn handle_relay_event(
             // Register relay
             let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
             let role_str = data.get("role").and_then(|v| v.as_str()).unwrap_or("general");
-            let role = RelayRole::from_str(role_str);
+            let role = ProtocolAgentRole::from_str(role_str);
             let safe_paths: Vec<String> = data.get("safe_paths")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default();
@@ -502,40 +484,7 @@ async fn handle_relay_event(
         }
 
         k if k == EventKind::RELAY_AGENT_OUTPUT => {
-            // Store agent output in database and broadcast
-            let agent_id_str = data.get("agent_id").and_then(|v| v.as_str()).unwrap_or_default();
-            let session_id_str = data.get("session_id").and_then(|v| v.as_str()).unwrap_or_default();
-            let stream = data.get("stream").and_then(|v| v.as_str()).unwrap_or("system");
-            let seq = data.get("seq").and_then(|v| v.as_i64()).unwrap_or(0);
-            let ts = data.get("ts").and_then(|v| v.as_i64()).unwrap_or(0);
-            let message = data.get("message").and_then(|v| v.as_str()).unwrap_or_default();
-
-            let agent_uuid = Uuid::parse_str(agent_id_str)?;
-            let session_uuid = Uuid::parse_str(session_id_str)?;
-
-            let output_stream = stream.parse::<OutputStream>().unwrap_or(OutputStream::System);
-            let create_event = CreateAgentEvent::new(
-                agent_uuid,
-                session_uuid,
-                seq,
-                output_stream,
-                message.to_string(),
-            );
-
-            if let Ok(event) = db.insert_agent_event(create_event).await {
-                let stream_event = AgentStreamEvent {
-                    agent_id: agent_uuid,
-                    session_id: session_uuid,
-                    id: event.id,
-                    seq,
-                    ts: chrono::DateTime::from_timestamp(ts / 1_000_000_000, (ts % 1_000_000_000) as u32)
-                        .map(|dt| dt.to_rfc3339())
-                        .unwrap_or_default(),
-                    stream: stream.to_string(),
-                    message: message.to_string(),
-                };
-                broadcaster.broadcast(stream_event).await;
-            }
+            // Agent output is now handled via Event Bus, no local storage needed
         }
 
         k if k == EventKind::RELAY_SESSION_STATUS => {
@@ -582,110 +531,7 @@ async fn handle_relay_event(
 
         k if k == EventKind::RELAY_PERMISSION_REQUEST => {
             let request_id = data.get("request_id").and_then(|v| v.as_str()).unwrap_or_default();
-            let agent_id_str = data.get("agent_id").and_then(|v| v.as_str()).unwrap_or_default();
             let session_id_str = data.get("session_id").and_then(|v| v.as_str()).unwrap_or_default();
-            let tool_call_id = data.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or_default();
-            let options = data.get("options").cloned().unwrap_or_default();
-            let tool_call = data.get("tool_call").cloned().unwrap_or_default();
-
-            let agent_uuid = Uuid::parse_str(agent_id_str)?;
-            let session_uuid = Uuid::parse_str(session_id_str)?;
-
-            // AI review hook
-            if let Some(rev) = reviewer {
-                let task_goal = match db.get_task_by_agent_id(agent_uuid).await {
-                    Ok(Some(task)) => Some(task.content),
-                    _ => None,
-                };
-                let workdir = match db.get_agent(agent_uuid).await {
-                    Ok(Some(agent)) => Some(agent.workdir),
-                    _ => None,
-                };
-
-                let ctx = PermissionContext {
-                    request_id: request_id.to_string(),
-                    agent_id: agent_uuid,
-                    session_id: session_uuid,
-                    tool_call: tool_call.clone(),
-                    options: options.clone(),
-                    task_goal,
-                    workdir,
-                };
-
-                match rev.review(&ctx).await {
-                    ReviewDecision::Approve { reason } => {
-                        info!(request_id = %request_id, reason = %reason, "Auto-approved by AI");
-                        if let Some(option_id) = find_allow_option(&options) {
-                            relays.store_permission_request(relay_id, request_id, session_id_str).await;
-                            let data = PermissionRespondedData {
-                                relay_id: relay_id.to_string(),
-                                request_id: request_id.to_string(),
-                                session_id: session_id_str.to_string(),
-                                outcome: EventPermissionOutcome::selected(option_id),
-                            };
-                            let event = Event::new(
-                                event_kind::PERMISSION_RESPONDED,
-                                Uuid::nil(),
-                                serde_json::to_value(&data).unwrap_or_default(),
-                            );
-                            publisher.emit(event).await?;
-                            relays.remove_pending_permission(request_id).await;
-                            return Ok(());
-                        }
-                    }
-                    ReviewDecision::Reject { reason } => {
-                        warn!(request_id = %request_id, reason = %reason, "Auto-rejected by AI");
-                        relays.store_permission_request(relay_id, request_id, session_id_str).await;
-                        let data = PermissionRespondedData {
-                            relay_id: relay_id.to_string(),
-                            request_id: request_id.to_string(),
-                            session_id: session_id_str.to_string(),
-                            outcome: EventPermissionOutcome::cancelled(),
-                        };
-                        let event = Event::new(
-                            event_kind::PERMISSION_RESPONDED,
-                            Uuid::nil(),
-                            serde_json::to_value(&data).unwrap_or_default(),
-                        );
-                        publisher.emit(event).await?;
-                        relays.remove_pending_permission(request_id).await;
-                        return Ok(());
-                    }
-                    ReviewDecision::Manual { reason } => {
-                        info!(request_id = %request_id, reason = %reason, "Forwarded to human review");
-                    }
-                }
-            }
-
-            // Store as event for frontend
-            let event_data = serde_json::json!({
-                "request_id": request_id,
-                "tool_call_id": tool_call_id,
-                "options": options,
-                "tool_call": tool_call,
-            });
-
-            let seq = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
-            let create_event = CreateAgentEvent::new(
-                agent_uuid,
-                session_uuid,
-                seq,
-                OutputStream::PermissionRequest,
-                event_data.to_string(),
-            );
-
-            if let Ok(event) = db.insert_agent_event(create_event).await {
-                let stream_event = AgentStreamEvent {
-                    agent_id: agent_uuid,
-                    session_id: session_uuid,
-                    id: event.id,
-                    seq,
-                    ts: chrono::Utc::now().to_rfc3339(),
-                    stream: "permission_request".to_string(),
-                    message: event_data.to_string(),
-                };
-                broadcaster.broadcast(stream_event).await;
-            }
 
             relays.store_permission_request(relay_id, request_id, session_id_str).await;
         }

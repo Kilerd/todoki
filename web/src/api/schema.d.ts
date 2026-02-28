@@ -52,66 +52,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/agents/{agent_id}/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Agent Events
-         * @description GET /api/agents/:agent_id/events - Get agent events
-         */
-        get: operations["get_agent_events"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/agents/{agent_id}/input": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Send Input
-         * @description POST /api/agents/:agent_id/input - Send input to agent
-         */
-        post: operations["send_input"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/agents/{agent_id}/permission": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Respond Permission
-         * @description POST /api/agents/:agent_id/permission - Respond to permission request
-         */
-        post: operations["respond_permission"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/agents/{agent_id}/sessions": {
         parameters: {
             query?: never;
@@ -735,23 +675,19 @@ export interface operations {
                 content: {
                     "application/json": {
                         args: string[];
-                        auto_trigger: boolean;
                         command: string;
                         created_at: string;
                         /** @enum {string} */
                         execution_mode: "local" | "remote";
                         /** Format: uuid */
                         id: string;
-                        last_cursor: number;
                         name: string;
                         /** Format: uuid */
                         project_id: string;
-                        relay_id?: string | null;
                         /** @enum {string} */
                         role: "general" | "business" | "coding" | "qa";
                         /** @enum {string} */
                         status: "created" | "running" | "stopped" | "exited" | "failed";
-                        subscribed_events: string[];
                         updated_at: string;
                         workdir: string;
                     }[];
@@ -778,7 +714,6 @@ export interface operations {
                     name: string;
                     /** Format: uuid */
                     project_id: string;
-                    relay_id?: string | null;
                     /** @enum {string} */
                     role: "general" | "business" | "coding" | "qa";
                     workdir: string;
@@ -795,23 +730,19 @@ export interface operations {
                     "application/json": {
                         agent: {
                             args: string[];
-                            auto_trigger: boolean;
                             command: string;
                             created_at: string;
                             /** @enum {string} */
                             execution_mode: "local" | "remote";
                             /** Format: uuid */
                             id: string;
-                            last_cursor: number;
                             name: string;
                             /** Format: uuid */
                             project_id: string;
-                            relay_id?: string | null;
                             /** @enum {string} */
                             role: "general" | "business" | "coding" | "qa";
                             /** @enum {string} */
                             status: "created" | "running" | "stopped" | "exited" | "failed";
-                            subscribed_events: string[];
                             updated_at: string;
                             workdir: string;
                         };
@@ -822,7 +753,6 @@ export interface operations {
                             ended_at?: string | null;
                             /** Format: uuid */
                             id: string;
-                            relay_id?: string | null;
                             started_at: string;
                             /** @enum {string} */
                             status: "running" | "completed" | "failed" | "cancelled";
@@ -851,23 +781,19 @@ export interface operations {
                 content: {
                     "application/json": {
                         args: string[];
-                        auto_trigger: boolean;
                         command: string;
                         created_at: string;
                         /** @enum {string} */
                         execution_mode: "local" | "remote";
                         /** Format: uuid */
                         id: string;
-                        last_cursor: number;
                         name: string;
                         /** Format: uuid */
                         project_id: string;
-                        relay_id?: string | null;
                         /** @enum {string} */
                         role: "general" | "business" | "coding" | "qa";
                         /** @enum {string} */
                         status: "created" | "running" | "stopped" | "exited" | "failed";
-                        subscribed_events: string[];
                         updated_at: string;
                         workdir: string;
                     };
@@ -885,101 +811,6 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
-        responses: {
-            /** @description default return */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-        };
-    };
-    get_agent_events: {
-        parameters: {
-            query: {
-                limit: number;
-                before_seq?: number | null;
-            };
-            header?: never;
-            path: {
-                agent_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description default return */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        message: string;
-                        seq: number;
-                        /** @enum {string} */
-                        stream: "stdout" | "stderr" | "system" | "acp" | "permission_request" | "permission_response";
-                        ts: string;
-                    }[];
-                };
-            };
-        };
-    };
-    send_input: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agent_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    input: string;
-                };
-            };
-        };
-        responses: {
-            /** @description default return */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-        };
-    };
-    respond_permission: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agent_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    outcome: {
-                        option_id: string;
-                        /** @enum {string} */
-                        type: "selected";
-                    } | {
-                        /** @enum {string} */
-                        type: "cancelled";
-                    };
-                    request_id: string;
-                };
-            };
-        };
         responses: {
             /** @description default return */
             200: {
@@ -1015,7 +846,6 @@ export interface operations {
                         ended_at?: string | null;
                         /** Format: uuid */
                         id: string;
-                        relay_id?: string | null;
                         started_at: string;
                         /** @enum {string} */
                         status: "running" | "completed" | "failed" | "cancelled";
@@ -1047,7 +877,6 @@ export interface operations {
                         ended_at?: string | null;
                         /** Format: uuid */
                         id: string;
-                        relay_id?: string | null;
                         started_at: string;
                         /** @enum {string} */
                         status: "running" | "completed" | "failed" | "cancelled";
@@ -2715,23 +2544,19 @@ export interface operations {
                     "application/json": {
                         agent: {
                             args: string[];
-                            auto_trigger: boolean;
                             command: string;
                             created_at: string;
                             /** @enum {string} */
                             execution_mode: "local" | "remote";
                             /** Format: uuid */
                             id: string;
-                            last_cursor: number;
                             name: string;
                             /** Format: uuid */
                             project_id: string;
-                            relay_id?: string | null;
                             /** @enum {string} */
                             role: "general" | "business" | "coding" | "qa";
                             /** @enum {string} */
                             status: "created" | "running" | "stopped" | "exited" | "failed";
-                            subscribed_events: string[];
                             updated_at: string;
                             workdir: string;
                         };
@@ -2741,7 +2566,6 @@ export interface operations {
                             ended_at?: string | null;
                             /** Format: uuid */
                             id: string;
-                            relay_id?: string | null;
                             started_at: string;
                             /** @enum {string} */
                             status: "running" | "completed" | "failed" | "cancelled";
