@@ -207,3 +207,12 @@ export async function addComment(taskId: string, content: string) {
   await refreshAllTasks();
   return data;
 }
+
+export async function executeTask(taskId: string, relayId?: string) {
+  const { data } = await api.executeTask({
+    task_id: taskId,
+    relay_id: relayId,
+  });
+  await refreshAllTasks();
+  return data;
+}

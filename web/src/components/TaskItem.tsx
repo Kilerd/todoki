@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import dayjs from "dayjs";
 import {
   Archive,
+  Bot,
   Check,
   Clock,
   Inbox,
@@ -26,6 +27,7 @@ import {
   archiveTask,
   deleteTask,
   updateTaskStatus,
+  executeTask,
 } from "../hooks/useTasks";
 import type { TaskResponse, TaskStatus } from "../api/types";
 
@@ -37,6 +39,16 @@ export default function TaskItem(props: Props) {
   const handleStatusChange = async (newStatus: TaskStatus) => {
     setIsLoading(true);
     await updateTaskStatus(props.id, newStatus);
+    setIsLoading(false);
+  };
+
+  const handleExecute = async () => {
+    setIsLoading(true);
+    try {
+      await executeTask(props.id);
+    } catch (e) {
+      console.error("Failed to execute task:", e);
+    }
     setIsLoading(false);
   };
 
@@ -133,6 +145,20 @@ export default function TaskItem(props: Props) {
           >
             <Play className="h-3.5 w-3.5 mr-1" />
             Start
+          </Button>
+        )}
+
+        {/* Active task: Execute with agent */}
+        {isActive && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs text-slate-500 hover:text-violet-600 cursor-pointer"
+            onClick={handleExecute}
+            title="Execute with agent"
+          >
+            <Bot className="h-3.5 w-3.5 mr-1" />
+            Run
           </Button>
         )}
 
