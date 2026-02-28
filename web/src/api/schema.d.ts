@@ -192,6 +192,96 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/event-bus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Query Events
+         * @description GET /api/event-bus
+         *     Query events with cursor-based pagination
+         */
+        get: operations["query_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/event-bus/emit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Emit Event
+         * @description POST /api/event-bus/emit
+         *     Emit a new event to the event bus
+         *
+         *     Used by:
+         *     - Relay for emitting agent events (output_batch, permission_request, artifact, etc.)
+         *     - Standalone agents that connect via HTTP
+         *     - Frontend for user actions (permission responses, etc.)
+         *     - External integrations
+         */
+        post: operations["emit_event"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/event-bus/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Latest Cursor
+         * @description GET /api/event-bus/latest
+         *     Get latest cursor (for initialization)
+         */
+        get: operations["get_latest_cursor"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/event-bus/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replay Events
+         * @description POST /api/event-bus/replay
+         *     Replay historical events (for analysis)
+         */
+        post: operations["replay_events"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -276,6 +366,66 @@ export interface paths {
          * @description GET /api/projects/:project_id/artifacts - List artifacts for a project
          */
         get: operations["list_artifacts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/relays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Relays By Project
+         * @description List connected relays for a specific project
+         */
+        get: operations["list_relays_by_project"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/relays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Relays
+         * @description List all connected relays
+         */
+        get: operations["list_relays"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/relays/{relay_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Relay
+         * @description Get relay by ID
+         */
+        get: operations["get_relay"];
         put?: never;
         post?: never;
         delete?: never;
@@ -585,12 +735,14 @@ export interface operations {
                 content: {
                     "application/json": {
                         args: string[];
+                        auto_trigger: boolean;
                         command: string;
                         created_at: string;
                         /** @enum {string} */
                         execution_mode: "local" | "remote";
                         /** Format: uuid */
                         id: string;
+                        last_cursor: number;
                         name: string;
                         /** Format: uuid */
                         project_id: string;
@@ -599,6 +751,7 @@ export interface operations {
                         role: "general" | "business" | "coding" | "qa";
                         /** @enum {string} */
                         status: "created" | "running" | "stopped" | "exited" | "failed";
+                        subscribed_events: string[];
                         updated_at: string;
                         workdir: string;
                     }[];
@@ -642,12 +795,14 @@ export interface operations {
                     "application/json": {
                         agent: {
                             args: string[];
+                            auto_trigger: boolean;
                             command: string;
                             created_at: string;
                             /** @enum {string} */
                             execution_mode: "local" | "remote";
                             /** Format: uuid */
                             id: string;
+                            last_cursor: number;
                             name: string;
                             /** Format: uuid */
                             project_id: string;
@@ -656,6 +811,7 @@ export interface operations {
                             role: "general" | "business" | "coding" | "qa";
                             /** @enum {string} */
                             status: "created" | "running" | "stopped" | "exited" | "failed";
+                            subscribed_events: string[];
                             updated_at: string;
                             workdir: string;
                         };
@@ -695,12 +851,14 @@ export interface operations {
                 content: {
                     "application/json": {
                         args: string[];
+                        auto_trigger: boolean;
                         command: string;
                         created_at: string;
                         /** @enum {string} */
                         execution_mode: "local" | "remote";
                         /** Format: uuid */
                         id: string;
+                        last_cursor: number;
                         name: string;
                         /** Format: uuid */
                         project_id: string;
@@ -709,6 +867,7 @@ export interface operations {
                         role: "general" | "business" | "coding" | "qa";
                         /** @enum {string} */
                         status: "created" | "running" | "stopped" | "exited" | "failed";
+                        subscribed_events: string[];
                         updated_at: string;
                         workdir: string;
                     };
@@ -762,7 +921,7 @@ export interface operations {
                         message: string;
                         seq: number;
                         /** @enum {string} */
-                        stream: "stdout" | "stderr" | "system" | "acp" | "permission_request";
+                        stream: "stdout" | "stderr" | "system" | "acp" | "permission_request" | "permission_response";
                         ts: string;
                     }[];
                 };
@@ -953,6 +1112,189 @@ export interface operations {
                         task_id: string;
                         updated_at: string;
                     };
+                };
+            };
+        };
+    };
+    query_events: {
+        parameters: {
+            query: {
+                /** @description Starting cursor (returns events with cursor > this value) */
+                cursor: number;
+                /** @description Event kinds to filter (comma-separated, e.g., "task.created,agent.started") */
+                kinds?: string | null;
+                /** @description Filter by agent ID */
+                agent_id?: string | null;
+                /** @description Filter by task ID */
+                task_id?: string | null;
+                /** @description Max events to return (default: 100, max: 1000) */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        events: {
+                            /**
+                             * Format: uuid
+                             * @description Agent ID that emitted this event
+                             *     Use Uuid::nil() for system events
+                             */
+                            agent_id: string;
+                            /**
+                             * @description Global monotonic sequence number (cursor)
+                             *     Used for incremental consumption and replay
+                             */
+                            cursor: number;
+                            /**
+                             * Format: json
+                             * @description Event-specific data (JSON)
+                             */
+                            data: Record<string, never>;
+                            /**
+                             * @description Event kind (semantic type)
+                             *     Examples: "task.created", "agent.started", "artifact.github_pr_opened"
+                             */
+                            kind: string;
+                            /**
+                             * Format: uuid
+                             * @description Optional session ID (for agent execution events)
+                             */
+                            session_id?: string | null;
+                            /**
+                             * Format: uuid
+                             * @description Optional task ID (for task-related events)
+                             */
+                            task_id?: string | null;
+                            /** @description Timestamp (ISO 8601) */
+                            time: string;
+                        }[];
+                        next_cursor: number;
+                    };
+                };
+            };
+        };
+    };
+    emit_event: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: uuid
+                     * @description Agent ID that emits this event. Defaults to System agent (nil UUID) if not provided.
+                     */
+                    agent_id?: string | null;
+                    /** Format: json */
+                    data: Record<string, never>;
+                    kind: string;
+                    /** Format: uuid */
+                    session_id?: string | null;
+                    /** Format: uuid */
+                    task_id?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": number;
+                };
+            };
+        };
+    };
+    get_latest_cursor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": number;
+                };
+            };
+        };
+    };
+    replay_events: {
+        parameters: {
+            query: {
+                from_cursor: number;
+                to_cursor: number;
+                kinds?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * Format: uuid
+                         * @description Agent ID that emitted this event
+                         *     Use Uuid::nil() for system events
+                         */
+                        agent_id: string;
+                        /**
+                         * @description Global monotonic sequence number (cursor)
+                         *     Used for incremental consumption and replay
+                         */
+                        cursor: number;
+                        /**
+                         * Format: json
+                         * @description Event-specific data (JSON)
+                         */
+                        data: Record<string, never>;
+                        /**
+                         * @description Event kind (semantic type)
+                         *     Examples: "task.created", "agent.started", "artifact.github_pr_opened"
+                         */
+                        kind: string;
+                        /**
+                         * Format: uuid
+                         * @description Optional session ID (for agent execution events)
+                         */
+                        session_id?: string | null;
+                        /**
+                         * Format: uuid
+                         * @description Optional task ID (for task-related events)
+                         */
+                        task_id?: string | null;
+                        /** @description Timestamp (ISO 8601) */
+                        time: string;
+                    }[];
                 };
             };
         };
@@ -1213,6 +1555,106 @@ export interface operations {
             };
         };
     };
+    list_relays_by_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        active_session_count: number;
+                        connected_at: number;
+                        labels: {
+                            [key: string]: string;
+                        };
+                        name: string;
+                        projects: string[];
+                        relay_id: string;
+                        role: string;
+                        safe_paths: string[];
+                        setup_script?: string | null;
+                    }[];
+                };
+            };
+        };
+    };
+    list_relays: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        active_session_count: number;
+                        connected_at: number;
+                        labels: {
+                            [key: string]: string;
+                        };
+                        name: string;
+                        projects: string[];
+                        relay_id: string;
+                        role: string;
+                        safe_paths: string[];
+                        setup_script?: string | null;
+                    }[];
+                };
+            };
+        };
+    };
+    get_relay: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                relay_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        active_session_count: number;
+                        connected_at: number;
+                        labels: {
+                            [key: string]: string;
+                        };
+                        name: string;
+                        projects: string[];
+                        relay_id: string;
+                        role: string;
+                        safe_paths: string[];
+                        setup_script?: string | null;
+                    };
+                };
+            };
+        };
+    };
     get_report: {
         parameters: {
             query?: {
@@ -1300,11 +1742,14 @@ export interface operations {
                         create_at: string;
                         events: {
                             datetime: string;
-                            event_type: string;
-                            from_state?: string | null;
+                            /** @enum {string} */
+                            event_type: "Create" | "StatusChange" | "Unarchived" | "Archived" | "CreateComment";
+                            /** @enum {string|null} */
+                            from_state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             id: string;
-                            state?: string | null;
+                            /** @enum {string|null} */
+                            state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             task_id: string;
                         }[];
@@ -1325,7 +1770,8 @@ export interface operations {
                             qa_template?: string | null;
                             updated_at: string;
                         };
-                        status: string;
+                        /** @enum {string} */
+                        status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     }[];
                 };
             };
@@ -1399,11 +1845,14 @@ export interface operations {
                         create_at: string;
                         events: {
                             datetime: string;
-                            event_type: string;
-                            from_state?: string | null;
+                            /** @enum {string} */
+                            event_type: "Create" | "StatusChange" | "Unarchived" | "Archived" | "CreateComment";
+                            /** @enum {string|null} */
+                            from_state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             id: string;
-                            state?: string | null;
+                            /** @enum {string|null} */
+                            state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             task_id: string;
                         }[];
@@ -1424,7 +1873,8 @@ export interface operations {
                             qa_template?: string | null;
                             updated_at: string;
                         };
-                        status: string;
+                        /** @enum {string} */
+                        status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     };
                 };
             };
@@ -1487,11 +1937,14 @@ export interface operations {
                         create_at: string;
                         events: {
                             datetime: string;
-                            event_type: string;
-                            from_state?: string | null;
+                            /** @enum {string} */
+                            event_type: "Create" | "StatusChange" | "Unarchived" | "Archived" | "CreateComment";
+                            /** @enum {string|null} */
+                            from_state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             id: string;
-                            state?: string | null;
+                            /** @enum {string|null} */
+                            state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             task_id: string;
                         }[];
@@ -1512,7 +1965,8 @@ export interface operations {
                             qa_template?: string | null;
                             updated_at: string;
                         };
-                        status: string;
+                        /** @enum {string} */
+                        status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     }[];
                 };
             };
@@ -1575,11 +2029,14 @@ export interface operations {
                         create_at: string;
                         events: {
                             datetime: string;
-                            event_type: string;
-                            from_state?: string | null;
+                            /** @enum {string} */
+                            event_type: "Create" | "StatusChange" | "Unarchived" | "Archived" | "CreateComment";
+                            /** @enum {string|null} */
+                            from_state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             id: string;
-                            state?: string | null;
+                            /** @enum {string|null} */
+                            state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             task_id: string;
                         }[];
@@ -1600,7 +2057,8 @@ export interface operations {
                             qa_template?: string | null;
                             updated_at: string;
                         };
-                        status: string;
+                        /** @enum {string} */
+                        status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     }[];
                 };
             };
@@ -1663,11 +2121,14 @@ export interface operations {
                         create_at: string;
                         events: {
                             datetime: string;
-                            event_type: string;
-                            from_state?: string | null;
+                            /** @enum {string} */
+                            event_type: "Create" | "StatusChange" | "Unarchived" | "Archived" | "CreateComment";
+                            /** @enum {string|null} */
+                            from_state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             id: string;
-                            state?: string | null;
+                            /** @enum {string|null} */
+                            state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             task_id: string;
                         }[];
@@ -1688,7 +2149,8 @@ export interface operations {
                             qa_template?: string | null;
                             updated_at: string;
                         };
-                        status: string;
+                        /** @enum {string} */
+                        status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     }[];
                 };
             };
@@ -1751,11 +2213,14 @@ export interface operations {
                         create_at: string;
                         events: {
                             datetime: string;
-                            event_type: string;
-                            from_state?: string | null;
+                            /** @enum {string} */
+                            event_type: "Create" | "StatusChange" | "Unarchived" | "Archived" | "CreateComment";
+                            /** @enum {string|null} */
+                            from_state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             id: string;
-                            state?: string | null;
+                            /** @enum {string|null} */
+                            state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             task_id: string;
                         }[];
@@ -1776,7 +2241,8 @@ export interface operations {
                             qa_template?: string | null;
                             updated_at: string;
                         };
-                        status: string;
+                        /** @enum {string} */
+                        status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     }[];
                 };
             };
@@ -1839,11 +2305,14 @@ export interface operations {
                         create_at: string;
                         events: {
                             datetime: string;
-                            event_type: string;
-                            from_state?: string | null;
+                            /** @enum {string} */
+                            event_type: "Create" | "StatusChange" | "Unarchived" | "Archived" | "CreateComment";
+                            /** @enum {string|null} */
+                            from_state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             id: string;
-                            state?: string | null;
+                            /** @enum {string|null} */
+                            state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             task_id: string;
                         }[];
@@ -1864,7 +2333,8 @@ export interface operations {
                             qa_template?: string | null;
                             updated_at: string;
                         };
-                        status: string;
+                        /** @enum {string} */
+                        status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     }[];
                 };
             };
@@ -1929,11 +2399,14 @@ export interface operations {
                         create_at: string;
                         events: {
                             datetime: string;
-                            event_type: string;
-                            from_state?: string | null;
+                            /** @enum {string} */
+                            event_type: "Create" | "StatusChange" | "Unarchived" | "Archived" | "CreateComment";
+                            /** @enum {string|null} */
+                            from_state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             id: string;
-                            state?: string | null;
+                            /** @enum {string|null} */
+                            state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             task_id: string;
                         }[];
@@ -1954,7 +2427,8 @@ export interface operations {
                             qa_template?: string | null;
                             updated_at: string;
                         };
-                        status: string;
+                        /** @enum {string} */
+                        status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     };
                 };
             };
@@ -2028,11 +2502,14 @@ export interface operations {
                         create_at: string;
                         events: {
                             datetime: string;
-                            event_type: string;
-                            from_state?: string | null;
+                            /** @enum {string} */
+                            event_type: "Create" | "StatusChange" | "Unarchived" | "Archived" | "CreateComment";
+                            /** @enum {string|null} */
+                            from_state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             id: string;
-                            state?: string | null;
+                            /** @enum {string|null} */
+                            state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             task_id: string;
                         }[];
@@ -2053,7 +2530,8 @@ export interface operations {
                             qa_template?: string | null;
                             updated_at: string;
                         };
-                        status: string;
+                        /** @enum {string} */
+                        status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     };
                 };
             };
@@ -2140,11 +2618,14 @@ export interface operations {
                         create_at: string;
                         events: {
                             datetime: string;
-                            event_type: string;
-                            from_state?: string | null;
+                            /** @enum {string} */
+                            event_type: "Create" | "StatusChange" | "Unarchived" | "Archived" | "CreateComment";
+                            /** @enum {string|null} */
+                            from_state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             id: string;
-                            state?: string | null;
+                            /** @enum {string|null} */
+                            state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             task_id: string;
                         }[];
@@ -2165,7 +2646,8 @@ export interface operations {
                             qa_template?: string | null;
                             updated_at: string;
                         };
-                        status: string;
+                        /** @enum {string} */
+                        status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     };
                 };
             };
@@ -2233,12 +2715,14 @@ export interface operations {
                     "application/json": {
                         agent: {
                             args: string[];
+                            auto_trigger: boolean;
                             command: string;
                             created_at: string;
                             /** @enum {string} */
                             execution_mode: "local" | "remote";
                             /** Format: uuid */
                             id: string;
+                            last_cursor: number;
                             name: string;
                             /** Format: uuid */
                             project_id: string;
@@ -2247,6 +2731,7 @@ export interface operations {
                             role: "general" | "business" | "coding" | "qa";
                             /** @enum {string} */
                             status: "created" | "running" | "stopped" | "exited" | "failed";
+                            subscribed_events: string[];
                             updated_at: string;
                             workdir: string;
                         };
@@ -2332,11 +2817,14 @@ export interface operations {
                         create_at: string;
                         events: {
                             datetime: string;
-                            event_type: string;
-                            from_state?: string | null;
+                            /** @enum {string} */
+                            event_type: "Create" | "StatusChange" | "Unarchived" | "Archived" | "CreateComment";
+                            /** @enum {string|null} */
+                            from_state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             id: string;
-                            state?: string | null;
+                            /** @enum {string|null} */
+                            state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             task_id: string;
                         }[];
@@ -2357,7 +2845,8 @@ export interface operations {
                             qa_template?: string | null;
                             updated_at: string;
                         };
-                        status: string;
+                        /** @enum {string} */
+                        status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     };
                 };
             };
@@ -2422,11 +2911,14 @@ export interface operations {
                         create_at: string;
                         events: {
                             datetime: string;
-                            event_type: string;
-                            from_state?: string | null;
+                            /** @enum {string} */
+                            event_type: "Create" | "StatusChange" | "Unarchived" | "Archived" | "CreateComment";
+                            /** @enum {string|null} */
+                            from_state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             id: string;
-                            state?: string | null;
+                            /** @enum {string|null} */
+                            state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
                             /** Format: uuid */
                             task_id: string;
                         }[];
@@ -2447,7 +2939,8 @@ export interface operations {
                             qa_template?: string | null;
                             updated_at: string;
                         };
-                        status: string;
+                        /** @enum {string} */
+                        status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     };
                 };
             };

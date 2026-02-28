@@ -1,3 +1,4 @@
+import { emitEvent } from "@/api/eventBus";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -14,10 +15,11 @@ import {
   FileText,
   PlayCircle,
   RefreshCw,
+  Shield,
   StopCircle,
   XCircle,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 interface EventTimelineProps {
   /** Event kind patterns to subscribe (e.g., ["task.*", "agent.*"]) */
@@ -66,7 +68,9 @@ function getEventIcon(kind: string) {
   }
 
   if (kind.startsWith("permission.")) {
-    return <Circle className="h-4 w-4 text-orange-500" />;
+    if (kind === "permission.requested") return <Shield className="h-4 w-4 text-orange-500" />;
+    if (kind === "permission.responded") return <Shield className="h-4 w-4 text-green-500" />;
+    return <Shield className="h-4 w-4 text-slate-500" />;
   }
 
   if (kind.startsWith("system.")) {
@@ -85,6 +89,87 @@ function getEventColor(kind: string): string {
   return "border-l-slate-300";
 }
 
+function PermissionActions({ event }: { event: Event }) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [responded, setResponded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleRespond = async (outcome: "allow" | "allow_always" | "reject") => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const { relay_id, request_id, session_id } = event.data as {
+        relay_id?: string;
+        request_id?: string;
+        session_id?: string;
+      };
+
+      if (!relay_id || !request_id || !session_id) {
+        throw new Error("Missing required fields in permission request");
+      }
+
+      await emitEvent({
+        kind: "permission.responded",
+        data: {
+          relay_id,
+          request_id,
+          session_id,
+          outcome: outcome === "reject" ? { cancelled: true } : { selected: outcome },
+        },
+      });
+
+      setResponded(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to respond");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (responded) {
+    return (
+      <Badge variant="outline" className="text-green-600 border-green-300">
+        <CheckCircle2 className="h-3 w-3 mr-1" />
+        Responded
+      </Badge>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 mt-2">
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 text-xs cursor-pointer text-green-600 border-green-300 hover:bg-green-50"
+        onClick={() => handleRespond("allow")}
+        disabled={isLoading}
+      >
+        Allow
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 text-xs cursor-pointer text-blue-600 border-blue-300 hover:bg-blue-50"
+        onClick={() => handleRespond("allow_always")}
+        disabled={isLoading}
+      >
+        Always Allow
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 text-xs cursor-pointer text-red-600 border-red-300 hover:bg-red-50"
+        onClick={() => handleRespond("reject")}
+        disabled={isLoading}
+      >
+        Reject
+      </Button>
+      {error && <span className="text-xs text-red-500">{error}</span>}
+    </div>
+  );
+}
+
 function EventItem({ event }: { event: Event }) {
   const formattedTime = useMemo(
     () => dayjs(event.time).format("HH:mm:ss"),
@@ -92,6 +177,14 @@ function EventItem({ event }: { event: Event }) {
   );
 
   const hasDetails = event.data && Object.keys(event.data).length > 0;
+  const isPermissionRequest = event.kind === "permission.requested";
+
+  // Extract tool call info for permission requests
+  const toolCallInfo = useMemo(() => {
+    if (!isPermissionRequest) return null;
+    const data = event.data as { tool_call?: { title?: string } };
+    return data?.tool_call?.title;
+  }, [event.data, isPermissionRequest]);
 
   return (
     <div
@@ -128,8 +221,18 @@ function EventItem({ event }: { event: Event }) {
             )}
           </div>
 
+          {/* Show tool call title for permission requests */}
+          {toolCallInfo && (
+            <div className="text-xs text-slate-600 bg-slate-50 p-2 rounded mb-2 font-mono">
+              {toolCallInfo}
+            </div>
+          )}
+
+          {/* Permission action buttons */}
+          {isPermissionRequest && <PermissionActions event={event} />}
+
           {hasDetails && (
-            <details className="text-xs text-slate-600">
+            <details className="text-xs text-slate-600 mt-2">
               <summary className="cursor-pointer hover:text-slate-800 select-none">
                 View data
               </summary>
