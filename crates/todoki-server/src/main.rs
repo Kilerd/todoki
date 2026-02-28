@@ -295,18 +295,6 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         info!("Permission auto-reviewer initialized");
     }
 
-    // Initialize Event Orchestrator (Phase 2)
-    info!("Initializing Event Orchestrator...");
-    let orchestrator = Arc::new(event_bus::EventOrchestrator::new(
-        event_publisher.clone(),
-        db_service.clone(),
-        relay_manager.clone(),
-    ));
-
-    // Start orchestrator in background
-    orchestrator.start().await?;
-    info!("Event orchestrator started");
-
     // Initialize Request Tracker for async request-response pattern
     let request_tracker = Arc::new(RequestTracker::new());
 

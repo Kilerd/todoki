@@ -8,11 +8,9 @@ pub mod kinds;
 pub mod store;
 pub mod publisher;
 pub mod subscriber;
-pub mod orchestrator;
 
 pub use types::Event;
 pub use kinds::EventKind;
 pub use store::{EventStore, PgEventStore};
 pub use publisher::EventPublisher;
 pub use subscriber::EventSubscriber;
-pub use orchestrator::EventOrchestrator;
