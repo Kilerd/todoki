@@ -322,6 +322,7 @@ impl Relay {
                                     &session_manager,
                                     &self.relay_id,
                                     &buffer_tx,
+                                    self.config.setup_script(),
                                 )
                                 .await
                                 {
@@ -385,6 +386,7 @@ impl Relay {
         session_manager: &SessionManager,
         relay_id: &str,
         _buffer_tx: &mpsc::Sender<RelayOutput>,
+        setup_script: Option<&str>,
     ) -> Option<RelayOutput> {
         match kind {
             "relay.spawn_requested" => {
@@ -405,7 +407,7 @@ impl Relay {
                     command: command.to_string(),
                     args,
                     env,
-                    setup_script: None,
+                    setup_script: setup_script.map(|s| s.to_string()),
                 };
 
                 match session_manager.spawn(params).await {
