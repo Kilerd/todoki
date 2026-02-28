@@ -133,11 +133,6 @@ impl AcpEventSink {
         }
     }
 
-    async fn emit_acp(&self, value: Value) {
-        let message = value.to_string();
-        self.emit_raw("acp", message).await;
-    }
-
     async fn emit_system(&self, message: String) {
         self.emit_raw("system", message).await;
     }
@@ -146,11 +141,6 @@ impl AcpEventSink {
         let seq = self.seq_counter.fetch_add(1, Ordering::SeqCst);
         let ts = Utc::now().timestamp_nanos_opt().unwrap_or(0);
 
-        // Print output to stdout for debugging
-        println!(
-            "[OUTPUT] session={} stream={} seq={} message={}",
-            self.session_id, stream, seq, message
-        );
         tracing::debug!(
             session_id = %self.session_id,
             stream = %stream,
@@ -235,8 +225,20 @@ impl AcpEventSink {
             self.detect_artifacts(tool_update).await;
         }
 
+        // Determine stream type based on SessionUpdate variant
+        let stream = match &update {
+            SessionUpdate::AgentMessageChunk(_) => "assistant",
+            SessionUpdate::AgentThoughtChunk(_) => "thinking",
+            SessionUpdate::ToolCall(_) => "tool_use",
+            SessionUpdate::ToolCallUpdate(_) => "tool_result",
+            SessionUpdate::UserMessageChunk(_) => "user",
+            SessionUpdate::Plan(_) => "plan",
+            _ => "system",
+        };
+
         if let Some(value) = update_to_event(update) {
-            self.emit_acp(value).await;
+            let message = value.to_string();
+            self.emit_raw(stream, message).await;
         }
     }
 

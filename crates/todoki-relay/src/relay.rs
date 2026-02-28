@@ -9,7 +9,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use crate::config::RelayConfig;
 use crate::session::SessionManager;
-use todoki_protocol::SendInputParams;
+use todoki_protocol::{EventPermissionOutcome, SendInputParams};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(3);
 const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(60);
@@ -481,16 +481,16 @@ impl Relay {
     fn parse_permission_outcome(
         value: &Value,
     ) -> Option<agent_client_protocol::RequestPermissionOutcome> {
-        if let Some(option_id) = value.get("selected").and_then(|v| v.as_str()) {
-            Some(
+        let outcome: EventPermissionOutcome = serde_json::from_value(value.clone()).ok()?;
+        match outcome {
+            EventPermissionOutcome::Selected { selected } => Some(
                 agent_client_protocol::RequestPermissionOutcome::Selected(
-                    agent_client_protocol::SelectedPermissionOutcome::new(option_id.to_string()),
+                    agent_client_protocol::SelectedPermissionOutcome::new(selected),
                 ),
-            )
-        } else if value.get("cancelled").is_some() {
-            Some(agent_client_protocol::RequestPermissionOutcome::Cancelled)
-        } else {
-            None
+            ),
+            EventPermissionOutcome::Cancelled { .. } => {
+                Some(agent_client_protocol::RequestPermissionOutcome::Cancelled)
+            }
         }
     }
 }

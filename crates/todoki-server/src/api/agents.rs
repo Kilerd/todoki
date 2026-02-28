@@ -12,6 +12,7 @@ use std::time::Duration;
 use crate::api::error::ApiError;
 use crate::auth::AuthContext;
 use crate::event_bus::kinds::EventKind;
+use todoki_protocol::{event_kind, EventPermissionOutcome, PermissionRespondedData};
 use crate::models::agent::{
     AgentEventResponse, AgentResponse, AgentRole, AgentSessionResponse, AgentStatus, CreateAgent,
     CreateAgentEvent, ExecutionMode, OutputStream, SessionStatus,
@@ -528,24 +529,24 @@ pub async fn respond_permission(
         .ok_or_else(|| ApiError::not_found("permission request not found"))?;
 
     // Emit permission.responded event to Event Bus (relay will receive via WebSocket)
-    let outcome_data = match &req.outcome {
+    let outcome = match &req.outcome {
         PermissionOutcomeRequest::Selected { option_id } => {
-            serde_json::json!({"selected": option_id})
+            EventPermissionOutcome::selected(option_id)
         }
-        PermissionOutcomeRequest::Cancelled => {
-            serde_json::json!({"cancelled": true})
-        }
+        PermissionOutcomeRequest::Cancelled => EventPermissionOutcome::cancelled(),
+    };
+
+    let event_data = PermissionRespondedData {
+        relay_id: relay_id.clone(),
+        request_id: req.request_id.clone(),
+        session_id: session_id_str.clone(),
+        outcome,
     };
 
     let event = crate::event_bus::Event::new(
-        EventKind::PERMISSION_RESPONDED.to_string(),
+        event_kind::PERMISSION_RESPONDED.to_string(),
         Uuid::nil(),
-        serde_json::json!({
-            "relay_id": relay_id,
-            "request_id": req.request_id,
-            "session_id": session_id_str,
-            "outcome": outcome_data,
-        }),
+        serde_json::to_value(&event_data).unwrap_or_default(),
     );
 
     publisher

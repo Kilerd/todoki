@@ -30,6 +30,7 @@ use crate::config::Settings;
 use crate::db::DatabaseService;
 use crate::event_bus::kinds::EventKind;
 use crate::event_bus::{Event, EventPublisher, EventSubscriber};
+use todoki_protocol::{event_kind, EventPermissionOutcome, PermissionRespondedData};
 use crate::models::agent::{CreateAgentEvent, OutputStream};
 use crate::models::{AgentStatus, SessionStatus};
 use crate::permission_reviewer::{find_allow_option, PermissionContext, PermissionReviewer, ReviewDecision};
@@ -616,15 +617,16 @@ async fn handle_relay_event(
                         info!(request_id = %request_id, reason = %reason, "Auto-approved by AI");
                         if let Some(option_id) = find_allow_option(&options) {
                             relays.store_permission_request(relay_id, request_id, session_id_str).await;
+                            let data = PermissionRespondedData {
+                                relay_id: relay_id.to_string(),
+                                request_id: request_id.to_string(),
+                                session_id: session_id_str.to_string(),
+                                outcome: EventPermissionOutcome::selected(option_id),
+                            };
                             let event = Event::new(
-                                EventKind::PERMISSION_RESPONDED,
+                                event_kind::PERMISSION_RESPONDED,
                                 Uuid::nil(),
-                                serde_json::json!({
-                                    "relay_id": relay_id,
-                                    "request_id": request_id,
-                                    "session_id": session_id_str,
-                                    "outcome": {"selected": option_id},
-                                }),
+                                serde_json::to_value(&data).unwrap_or_default(),
                             );
                             publisher.emit(event).await?;
                             relays.remove_pending_permission(request_id).await;
@@ -634,15 +636,16 @@ async fn handle_relay_event(
                     ReviewDecision::Reject { reason } => {
                         warn!(request_id = %request_id, reason = %reason, "Auto-rejected by AI");
                         relays.store_permission_request(relay_id, request_id, session_id_str).await;
+                        let data = PermissionRespondedData {
+                            relay_id: relay_id.to_string(),
+                            request_id: request_id.to_string(),
+                            session_id: session_id_str.to_string(),
+                            outcome: EventPermissionOutcome::cancelled(),
+                        };
                         let event = Event::new(
-                            EventKind::PERMISSION_RESPONDED,
+                            event_kind::PERMISSION_RESPONDED,
                             Uuid::nil(),
-                            serde_json::json!({
-                                "relay_id": relay_id,
-                                "request_id": request_id,
-                                "session_id": session_id_str,
-                                "outcome": {"cancelled": true},
-                            }),
+                            serde_json::to_value(&data).unwrap_or_default(),
                         );
                         publisher.emit(event).await?;
                         relays.remove_pending_permission(request_id).await;
