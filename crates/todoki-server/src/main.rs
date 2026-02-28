@@ -389,8 +389,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             "/api/agents/:agent_id/permission",
             agents::respond_permission,
         )
-        // Relay routes (before auth middleware so WebSocket can use token in query)
-        .get("/ws/relays", relays::ws_relay)
+        // Relay routes
+        // Note: Relay WebSocket connections now use /ws/event-bus with relay_id parameter
         .get("/api/relays", relays::list_relays)
         .get("/api/relays/:relay_id", relays::get_relay)
         .get(

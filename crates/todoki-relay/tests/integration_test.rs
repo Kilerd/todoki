@@ -11,7 +11,8 @@ use std::time::Duration;
 use agent_client_protocol::RequestPermissionOutcome;
 use tokio::sync::mpsc;
 
-use todoki_protocol::{RelayToServer, SendInputParams, SpawnSessionParams};
+use todoki_protocol::{SendInputParams, SpawnSessionParams};
+use todoki_relay::relay::RelayOutput;
 use todoki_relay::session::SessionManager;
 
 /// Get the path to the mock-agent binary
@@ -25,10 +26,34 @@ fn mock_agent_path() -> String {
 }
 
 /// Create a SessionManager with a receiver for output messages
-fn create_session_manager(safe_paths: Vec<String>) -> (SessionManager, mpsc::Receiver<RelayToServer>) {
+fn create_session_manager(safe_paths: Vec<String>) -> (SessionManager, mpsc::Receiver<RelayOutput>) {
     let (tx, rx) = mpsc::channel(64);
     let manager = SessionManager::new(tx, safe_paths);
     (manager, rx)
+}
+
+/// Check if a RelayOutput message matches session status for the given session
+fn is_session_status_for(msg: &RelayOutput, session_id: &str) -> bool {
+    let RelayOutput::EmitEvent { kind, data } = msg;
+    if kind == "relay.session_status" {
+        if let Some(sid) = data.get("session_id").and_then(|v| v.as_str()) {
+            return sid == session_id;
+        }
+    }
+    false
+}
+
+/// Check if a RelayOutput message matches prompt completed for the given session
+fn is_prompt_completed_for(msg: &RelayOutput, session_id: &str) -> Option<bool> {
+    let RelayOutput::EmitEvent { kind, data } = msg;
+    if kind == "relay.prompt_completed" {
+        if let Some(sid) = data.get("session_id").and_then(|v| v.as_str()) {
+            if sid == session_id {
+                return data.get("success").and_then(|v| v.as_bool());
+            }
+        }
+    }
+    None
 }
 
 #[tokio::test]
@@ -68,10 +93,8 @@ async fn test_spawn_session() {
     // Wait for exit status message
     tokio::time::timeout(Duration::from_secs(5), async {
         while let Some(msg) = rx.recv().await {
-            if let RelayToServer::SessionStatus { session_id, .. } = msg {
-                if session_id == "test-session-1" {
-                    return;
-                }
+            if is_session_status_for(&msg, "test-session-1") {
+                return;
             }
         }
     })
@@ -119,10 +142,8 @@ async fn test_send_input_simple() {
     // Wait for prompt completed message
     let completed = tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(msg) = rx.recv().await {
-            if let RelayToServer::PromptCompleted { session_id, success, .. } = msg {
-                if session_id == "test-session-2" {
-                    return success;
-                }
+            if let Some(success) = is_prompt_completed_for(&msg, "test-session-2") {
+                return success;
             }
         }
         false

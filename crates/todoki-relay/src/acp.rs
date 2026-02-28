@@ -17,7 +17,7 @@ use tokio::process::{ChildStdin, ChildStdout};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use todoki_protocol::RelayToServer;
+use crate::relay::RelayOutput;
 
 /// Regex for detecting GitHub PR URLs
 static PR_REGEX: Lazy<Regex> =
@@ -94,7 +94,7 @@ enum AcpCommand {
 /// Event sink for ACP output
 #[derive(Clone)]
 struct AcpEventSink {
-    output_tx: mpsc::Sender<RelayToServer>,
+    output_tx: mpsc::Sender<RelayOutput>,
     agent_id: String,
     session_id: String,
     seq_counter: Arc<AtomicI64>,
@@ -102,7 +102,7 @@ struct AcpEventSink {
 
 impl AcpEventSink {
     fn new(
-        output_tx: mpsc::Sender<RelayToServer>,
+        output_tx: mpsc::Sender<RelayOutput>,
         agent_id: String,
         session_id: String,
     ) -> Self {
@@ -127,7 +127,7 @@ impl AcpEventSink {
 
     async fn emit_raw(&self, stream: &str, message: String) {
         let seq = self.seq_counter.fetch_add(1, Ordering::SeqCst);
-        let ts = Utc::now().timestamp();
+        let ts = Utc::now().timestamp_nanos_opt().unwrap_or(0);
 
         // Print output to stdout for debugging
         println!(
@@ -142,13 +142,17 @@ impl AcpEventSink {
             "emitting agent output"
         );
 
-        let msg = RelayToServer::AgentOutput {
-            agent_id: self.agent_id.clone(),
-            session_id: self.session_id.clone(),
-            seq,
-            ts,
-            stream: stream.to_string(),
-            message,
+        // Emit via Event Bus
+        let msg = RelayOutput::EmitEvent {
+            kind: "relay.agent_output".to_string(),
+            data: serde_json::json!({
+                "agent_id": self.agent_id,
+                "session_id": self.session_id,
+                "seq": seq,
+                "ts": ts,
+                "stream": stream,
+                "message": message,
+            }),
         };
 
         let _ = self.output_tx.send(msg).await;
@@ -194,15 +198,18 @@ impl AcpEventSink {
                         "detected GitHub PR artifact"
                     );
 
-                    let msg = RelayToServer::Artifact {
-                        session_id: self.session_id.clone(),
-                        agent_id: self.agent_id.clone(),
-                        artifact_type: "github_pr".to_string(),
+                    let msg = RelayOutput::EmitEvent {
+                        kind: "relay.artifact".to_string(),
                         data: serde_json::json!({
-                            "url": url,
-                            "owner": owner,
-                            "repo": repo,
-                            "number": number,
+                            "session_id": self.session_id,
+                            "agent_id": self.agent_id,
+                            "artifact_type": "github_pr",
+                            "data": {
+                                "url": url,
+                                "owner": owner,
+                                "repo": repo,
+                                "number": number,
+                            },
                         }),
                     };
 
@@ -223,14 +230,14 @@ struct PendingPermission {
 /// In single-session mode, only one permission request can be pending at a time.
 struct PermissionManager {
     pending: Mutex<Option<PendingPermission>>,
-    output_tx: mpsc::Sender<RelayToServer>,
+    output_tx: mpsc::Sender<RelayOutput>,
     agent_id: String,
     session_id: String,
 }
 
 impl PermissionManager {
     fn new(
-        output_tx: mpsc::Sender<RelayToServer>,
+        output_tx: mpsc::Sender<RelayOutput>,
         agent_id: String,
         session_id: String,
     ) -> Self {
@@ -278,14 +285,17 @@ impl PermissionManager {
             );
         }
 
-        // Now send permission request to server
-        let msg = RelayToServer::PermissionRequest {
-            request_id: request_id.clone(),
-            agent_id: self.agent_id.clone(),
-            session_id: self.session_id.clone(),
-            tool_call_id: args.tool_call.tool_call_id.to_string(),
-            options: serde_json::to_value(&args.options).unwrap_or_default(),
-            tool_call: serde_json::to_value(&args.tool_call).unwrap_or_default(),
+        // Now send permission request to server via Event Bus
+        let msg = RelayOutput::EmitEvent {
+            kind: "relay.permission_request".to_string(),
+            data: serde_json::json!({
+                "request_id": request_id,
+                "agent_id": self.agent_id,
+                "session_id": self.session_id,
+                "tool_call_id": args.tool_call.tool_call_id.to_string(),
+                "options": serde_json::to_value(&args.options).unwrap_or_default(),
+                "tool_call": serde_json::to_value(&args.tool_call).unwrap_or_default(),
+            }),
         };
 
         if let Err(e) = self.output_tx.send(msg).await {
@@ -432,7 +442,7 @@ fn pick_allow_option(args: &RequestPermissionRequest) -> RequestPermissionOutcom
 
 /// Spawn an ACP session
 pub async fn spawn_acp_session(
-    output_tx: mpsc::Sender<RelayToServer>,
+    output_tx: mpsc::Sender<RelayOutput>,
     agent_id: String,
     session_id: String,
     workdir: String,
@@ -581,11 +591,14 @@ pub async fn spawn_acp_session(
                                 tracing::debug!(acp_session_id = %acp_session_id, "prompt request completed");
                             }
 
-                            // Send prompt completed notification
-                            let msg = RelayToServer::PromptCompleted {
-                                session_id: prompt_completed_session_id,
-                                success,
-                                error,
+                            // Send prompt completed notification via Event Bus
+                            let msg = RelayOutput::EmitEvent {
+                                kind: "relay.prompt_completed".to_string(),
+                                data: serde_json::json!({
+                                    "session_id": prompt_completed_session_id,
+                                    "success": success,
+                                    "error": error,
+                                }),
                             };
                             let _ = prompt_completed_tx.send(msg).await;
 

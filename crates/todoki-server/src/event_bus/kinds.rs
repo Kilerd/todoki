@@ -63,14 +63,29 @@ impl EventKind {
     pub const PERMISSION_DENIED: &'static str = "permission.denied";
 
     // ========================================================================
-    // Relay Commands (Server → Relay)
+    // Relay Lifecycle (Relay → Server via Event Bus)
+    // ========================================================================
+    pub const RELAY_UP: &'static str = "relay.up";
+    pub const RELAY_DOWN: &'static str = "relay.down";
+
+    // ========================================================================
+    // Relay Data Upload (Relay → Server via Event Bus)
+    // ========================================================================
+    pub const RELAY_AGENT_OUTPUT: &'static str = "relay.agent_output";
+    pub const RELAY_SESSION_STATUS: &'static str = "relay.session_status";
+    pub const RELAY_PERMISSION_REQUEST: &'static str = "relay.permission_request";
+    pub const RELAY_ARTIFACT: &'static str = "relay.artifact";
+    pub const RELAY_PROMPT_COMPLETED: &'static str = "relay.prompt_completed";
+
+    // ========================================================================
+    // Relay Commands (Server → Relay via Event Bus)
     // ========================================================================
     pub const RELAY_SPAWN_REQUESTED: &'static str = "relay.spawn_requested";
     pub const RELAY_STOP_REQUESTED: &'static str = "relay.stop_requested";
     pub const RELAY_INPUT_REQUESTED: &'static str = "relay.input_requested";
 
     // ========================================================================
-    // Relay Responses (Relay → Server)
+    // Relay Responses (Relay → Server via Event Bus)
     // ========================================================================
     pub const RELAY_SPAWN_COMPLETED: &'static str = "relay.spawn_completed";
     pub const RELAY_SPAWN_FAILED: &'static str = "relay.spawn_failed";

@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use serde_json::Value;
-use tokio::sync::{Mutex, RwLock, mpsc};
+use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
-use super::{RelayInfo, RelayRole, ServerToRelay};
+use super::{RelayInfo, RelayRole};
 
 /// A set of project UUIDs for efficient lookup
 pub type ProjectSet = HashSet<Uuid>;
@@ -35,7 +35,6 @@ pub struct RelayConnection {
     pub labels: HashMap<String, String>,
     pub projects: ProjectSet,
     pub setup_script: Option<String>,
-    pub tx: mpsc::Sender<ServerToRelay>,
     pub connected_at: i64,
     pub active_sessions: HashSet<String>,
 }
@@ -50,6 +49,9 @@ impl RelayManager {
 
     /// Register a relay connection with a stable ID provided by the relay
     /// If a relay with the same ID is already connected, it will be replaced (reconnect scenario)
+    ///
+    /// In the new Event Bus architecture, relays communicate via the Event Bus WebSocket
+    /// instead of a dedicated channel. The tx channel has been removed.
     pub async fn register(
         &self,
         relay_id: String,
@@ -59,7 +61,6 @@ impl RelayManager {
         labels: HashMap<String, String>,
         projects: Vec<Uuid>,
         setup_script: Option<String>,
-        tx: mpsc::Sender<ServerToRelay>,
     ) -> String {
         let mut relays = self.relays.write().await;
 
@@ -86,7 +87,6 @@ impl RelayManager {
             labels,
             projects: projects_set,
             setup_script,
-            tx,
             connected_at: Utc::now().timestamp(),
             active_sessions: previous_sessions,
         };
@@ -346,7 +346,6 @@ mod tests {
     #[tokio::test]
     async fn test_select_relay_by_role() {
         let manager = RelayManager::new();
-        let (tx, _rx) = mpsc::channel(1);
 
         // Register a coding relay
         manager
@@ -358,7 +357,6 @@ mod tests {
                 HashMap::new(),
                 vec![],
                 None,
-                tx.clone(),
             )
             .await;
 
@@ -372,7 +370,6 @@ mod tests {
                 HashMap::new(),
                 vec![],
                 None,
-                tx.clone(),
             )
             .await;
 
@@ -400,7 +397,6 @@ mod tests {
     #[tokio::test]
     async fn test_select_relay_idle_only() {
         let manager = RelayManager::new();
-        let (tx, _rx) = mpsc::channel(1);
 
         // Register a coding relay
         manager
@@ -412,7 +408,6 @@ mod tests {
                 HashMap::new(),
                 vec![],
                 None,
-                tx.clone(),
             )
             .await;
 
@@ -438,7 +433,6 @@ mod tests {
     #[tokio::test]
     async fn test_select_relay_preferred_id() {
         let manager = RelayManager::new();
-        let (tx, _rx) = mpsc::channel(1);
 
         // Register two coding relays
         manager
@@ -450,7 +444,6 @@ mod tests {
                 HashMap::new(),
                 vec![],
                 None,
-                tx.clone(),
             )
             .await;
 
@@ -463,7 +456,6 @@ mod tests {
                 HashMap::new(),
                 vec![],
                 None,
-                tx.clone(),
             )
             .await;
 
@@ -484,7 +476,6 @@ mod tests {
     #[tokio::test]
     async fn test_select_relay_by_project() {
         let manager = RelayManager::new();
-        let (tx, _rx) = mpsc::channel(1);
 
         let project_a = Uuid::new_v4();
         let project_b = Uuid::new_v4();
@@ -499,7 +490,6 @@ mod tests {
                 HashMap::new(),
                 vec![project_a],
                 None,
-                tx.clone(),
             )
             .await;
 
@@ -513,7 +503,6 @@ mod tests {
                 HashMap::new(),
                 vec![],
                 None,
-                tx.clone(),
             )
             .await;
 
@@ -555,7 +544,6 @@ mod tests {
     #[tokio::test]
     async fn test_list_relays_by_project() {
         let manager = RelayManager::new();
-        let (tx, _rx) = mpsc::channel(1);
 
         let project_a = Uuid::new_v4();
         let project_b = Uuid::new_v4();
@@ -570,7 +558,6 @@ mod tests {
                 HashMap::new(),
                 vec![project_a],
                 None,
-                tx.clone(),
             )
             .await;
 
@@ -584,7 +571,6 @@ mod tests {
                 HashMap::new(),
                 vec![project_b],
                 None,
-                tx.clone(),
             )
             .await;
 
@@ -598,7 +584,6 @@ mod tests {
                 HashMap::new(),
                 vec![],
                 None,
-                tx.clone(),
             )
             .await;
 

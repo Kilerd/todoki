@@ -7,13 +7,14 @@ use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::acp::{spawn_acp_session, AcpHandle};
-use todoki_protocol::{RelayToServer, SendInputParams, SpawnSessionParams, SpawnSessionResult};
+use crate::relay::RelayOutput;
+use todoki_protocol::{SendInputParams, SpawnSessionParams, SpawnSessionResult};
 
 /// Manages a single local agent session (subprocess).
 /// Only one session can be active at a time.
 pub struct SessionManager {
     active_session: Arc<Mutex<Option<ActiveSession>>>,
-    output_tx: mpsc::Sender<RelayToServer>,
+    output_tx: mpsc::Sender<RelayOutput>,
     safe_paths: Vec<String>,
 }
 
@@ -26,7 +27,7 @@ struct ActiveSession {
 }
 
 impl SessionManager {
-    pub fn new(output_tx: mpsc::Sender<RelayToServer>, safe_paths: Vec<String>) -> Self {
+    pub fn new(output_tx: mpsc::Sender<RelayOutput>, safe_paths: Vec<String>) -> Self {
         Self {
             active_session: Arc::new(Mutex::new(None)),
             output_tx,
@@ -402,11 +403,14 @@ impl SessionManager {
                 "process exited"
             );
 
-            // Notify server
-            let msg = RelayToServer::SessionStatus {
-                session_id,
-                status: status.to_string(),
-                exit_code,
+            // Notify server via Event Bus
+            let msg = RelayOutput::EmitEvent {
+                kind: "relay.session_status".to_string(),
+                data: serde_json::json!({
+                    "session_id": session_id,
+                    "status": status,
+                    "exit_code": exit_code,
+                }),
             };
 
             let _ = output_tx.send(msg).await;
@@ -509,7 +513,7 @@ mod tests {
     #[test]
     fn test_is_path_safe_empty_safe_paths() {
         let (manager, _rx) = {
-            let (tx, rx) = tokio::sync::mpsc::channel(1);
+            let (tx, rx) = tokio::sync::mpsc::channel::<RelayOutput>(1);
             (SessionManager::new(tx, vec![]), rx)
         };
         // Empty safe paths means no restrictions
@@ -520,7 +524,7 @@ mod tests {
     #[test]
     fn test_is_path_safe_allowed() {
         let (manager, _rx) = {
-            let (tx, rx) = tokio::sync::mpsc::channel(1);
+            let (tx, rx) = tokio::sync::mpsc::channel::<RelayOutput>(1);
             (SessionManager::new(tx, vec!["/allowed".to_string()]), rx)
         };
         assert!(manager.is_path_safe("/allowed"));
@@ -530,7 +534,7 @@ mod tests {
     #[test]
     fn test_is_path_safe_disallowed() {
         let (manager, _rx) = {
-            let (tx, rx) = tokio::sync::mpsc::channel(1);
+            let (tx, rx) = tokio::sync::mpsc::channel::<RelayOutput>(1);
             (SessionManager::new(tx, vec!["/allowed".to_string()]), rx)
         };
         assert!(!manager.is_path_safe("/not-allowed"));
@@ -541,7 +545,7 @@ mod tests {
     fn test_is_path_safe_with_tilde() {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/home/test".to_string());
         let (manager, _rx) = {
-            let (tx, rx) = tokio::sync::mpsc::channel(1);
+            let (tx, rx) = tokio::sync::mpsc::channel::<RelayOutput>(1);
             (SessionManager::new(tx, vec!["~".to_string()]), rx)
         };
         assert!(manager.is_path_safe(&home));
@@ -552,7 +556,7 @@ mod tests {
     #[test]
     fn test_is_path_safe_traversal_attack() {
         let (manager, _rx) = {
-            let (tx, rx) = tokio::sync::mpsc::channel(1);
+            let (tx, rx) = tokio::sync::mpsc::channel::<RelayOutput>(1);
             (SessionManager::new(tx, vec!["/allowed".to_string()]), rx)
         };
         // Path traversal should be normalized and rejected

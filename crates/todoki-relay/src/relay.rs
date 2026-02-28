@@ -9,13 +9,76 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use crate::config::RelayConfig;
 use crate::session::SessionManager;
-use todoki_protocol::{
-    RelayToServer, SendInputParams, ServerToRelay, SpawnSessionParams,
-};
+use todoki_protocol::SendInputParams;
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(3);
 const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(60);
 const BUFFER_SIZE: usize = 4096;
+
+/// Client → Server message format for Event Bus WebSocket
+#[derive(Debug, serde::Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ClientMessage {
+    /// Emit an event to the Event Bus
+    EmitEvent { kind: String, data: Value },
+    /// Pong response to ping
+    Pong,
+}
+
+/// Server → Client message format from Event Bus WebSocket
+#[derive(Debug, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ServerMessage {
+    /// Event notification
+    Event {
+        #[allow(dead_code)]
+        cursor: i64,
+        kind: String,
+        #[allow(dead_code)]
+        time: String,
+        #[allow(dead_code)]
+        agent_id: String,
+        #[allow(dead_code)]
+        session_id: Option<String>,
+        #[allow(dead_code)]
+        task_id: Option<String>,
+        data: Value,
+    },
+    /// Subscription acknowledged
+    Subscribed {
+        #[allow(dead_code)]
+        kinds: Option<Vec<String>>,
+        #[allow(dead_code)]
+        cursor: i64,
+    },
+    /// Relay registered confirmation
+    Registered {
+        relay_id: String,
+    },
+    /// Error message
+    Error {
+        message: String,
+    },
+    /// Heartbeat ping
+    Ping,
+    /// Heartbeat pong
+    #[allow(dead_code)]
+    Pong,
+    /// Replay complete (ignored)
+    ReplayComplete {
+        #[allow(dead_code)]
+        cursor: i64,
+        #[allow(dead_code)]
+        count: usize,
+    },
+}
+
+/// Internal message type for relay output buffer
+#[derive(Debug, Clone)]
+pub enum RelayOutput {
+    /// Emit event to server
+    EmitEvent { kind: String, data: Value },
+}
 
 pub struct Relay {
     config: RelayConfig,
@@ -31,27 +94,12 @@ impl Relay {
     pub async fn run(&mut self) -> anyhow::Result<()> {
         // Create a persistent buffer channel
         // All session output goes here first, then forwarded to WebSocket
-        let (buffer_tx, buffer_rx) = mpsc::channel::<RelayToServer>(BUFFER_SIZE);
+        let (buffer_tx, buffer_rx) = mpsc::channel::<RelayOutput>(BUFFER_SIZE);
 
         // Create session manager once - persists across reconnects
         let session_manager = Arc::new(SessionManager::new(
             buffer_tx.clone(),
             self.config.safe_paths().to_vec(),
-        ));
-
-        // Start Event Bus stream handler (runs in background)
-        let event_stream_url = format!(
-            "{}/ws/event-bus?kinds=relay.*,permission.responded&relay_id={}&token={}",
-            self.config.server_url().replace("ws://", "ws://").replace("wss://", "wss://"),
-            self.relay_id,
-            self.config.token
-        );
-
-        let _event_handle = tokio::spawn(Self::run_event_stream(
-            event_stream_url,
-            session_manager.clone(),
-            buffer_tx.clone(),
-            self.relay_id.clone(),
         ));
 
         let mut reconnect_delay = RECONNECT_DELAY;
@@ -63,11 +111,10 @@ impl Relay {
             let rx = buffer_rx.take().expect("buffer_rx should be available");
 
             match self
-                .run_connection(session_manager.clone(), buffer_tx.clone(), rx)
+                .run_event_bus_connection(session_manager.clone(), buffer_tx.clone(), rx)
                 .await
             {
                 ConnectionResult::Reconnect(returned_rx) => {
-                    // Put the receiver back for next iteration
                     buffer_rx = Some(returned_rx);
 
                     tracing::info!(
@@ -78,7 +125,6 @@ impl Relay {
                     reconnect_delay = std::cmp::min(reconnect_delay * 2, MAX_RECONNECT_DELAY);
                 }
                 ConnectionResult::ReconnectImmediate(returned_rx) => {
-                    // Successfully ran, reset delay and reconnect immediately
                     buffer_rx = Some(returned_rx);
                     reconnect_delay = RECONNECT_DELAY;
                 }
@@ -91,74 +137,154 @@ impl Relay {
         }
     }
 
-    async fn run_connection(
+    /// Run Event Bus connection - unified communication channel
+    async fn run_event_bus_connection(
         &mut self,
         session_manager: Arc<SessionManager>,
-        buffer_tx: mpsc::Sender<RelayToServer>,
-        mut buffer_rx: mpsc::Receiver<RelayToServer>,
+        buffer_tx: mpsc::Sender<RelayOutput>,
+        mut buffer_rx: mpsc::Receiver<RelayOutput>,
     ) -> ConnectionResult {
-        let url = self.config.server_url();
-        tracing::info!(url = %url, "connecting to server");
+        // Build Event Bus WebSocket URL with relay_id
+        let base_url = self.config.server_url();
+        let event_bus_url = base_url
+            .replace("/ws/relay", "/ws/event-bus")
+            .replace("/ws/relays", "/ws/event-bus");
 
-        // Add token to URL
-        let connect_url = if url.contains('?') {
-            format!("{}&token={}", url, self.config.token)
-        } else {
-            format!("{}?token={}", url, self.config.token)
-        };
+        let url = format!(
+            "{}?relay_id={}&kinds=relay.*,permission.responded&token={}",
+            if event_bus_url.contains("/ws/event-bus") {
+                event_bus_url
+            } else {
+                format!("{}/ws/event-bus", base_url.trim_end_matches('/'))
+            },
+            self.relay_id,
+            self.config.token
+        );
 
-        let (ws_stream, _) = match connect_async(&connect_url).await {
+        tracing::info!(url = %url, relay_id = %self.relay_id, "connecting to event bus");
+
+        let (ws_stream, _) = match connect_async(&url).await {
             Ok(s) => s,
             Err(e) => {
-                tracing::error!(error = %e, "failed to connect");
+                tracing::error!(error = %e, "failed to connect to event bus");
                 return ConnectionResult::Reconnect(buffer_rx);
             }
         };
-        tracing::info!("connected to server");
+        tracing::info!("connected to event bus");
 
         let (mut ws_write, mut ws_read) = ws_stream.split();
 
-        // Send registration with stable relay ID
-        let register_msg = RelayToServer::Register {
-            relay_id: self.relay_id.clone(),
-            name: self.config.relay_name(),
-            role: self.config.role(),
-            safe_paths: self.config.safe_paths().to_vec(),
-            labels: self.config.labels().clone(),
-            projects: self.config.projects().to_vec(),
-            setup_script: self.config.setup_script().map(|s| s.to_string()),
+        // Wait for subscribed acknowledgment first
+        let mut subscribed = false;
+        while !subscribed {
+            match ws_read.next().await {
+                Some(Ok(Message::Text(text))) => {
+                    if let Ok(msg) = serde_json::from_str::<ServerMessage>(&text) {
+                        if matches!(msg, ServerMessage::Subscribed { .. }) {
+                            subscribed = true;
+                            tracing::debug!("received subscription acknowledgment");
+                        }
+                    }
+                }
+                Some(Err(e)) => {
+                    tracing::error!(error = %e, "error waiting for subscription ack");
+                    return ConnectionResult::Reconnect(buffer_rx);
+                }
+                None => {
+                    tracing::error!("connection closed before subscription ack");
+                    return ConnectionResult::Reconnect(buffer_rx);
+                }
+                _ => {}
+            }
+        }
+
+        // Send relay.up registration event
+        let registration_data = serde_json::json!({
+            "relay_id": self.relay_id,
+            "name": self.config.relay_name(),
+            "role": self.config.role().as_str(),
+            "safe_paths": self.config.safe_paths(),
+            "labels": self.config.labels(),
+            "projects": self.config.projects(),
+            "setup_script": self.config.setup_script(),
+        });
+
+        let register_msg = ClientMessage::EmitEvent {
+            kind: "relay.up".to_string(),
+            data: registration_data,
         };
+
         let msg_text = match serde_json::to_string(&register_msg) {
             Ok(t) => t,
             Err(e) => return ConnectionResult::FatalError(e.into()),
         };
+
         if let Err(e) = ws_write.send(Message::Text(msg_text)).await {
-            tracing::error!(error = %e, "failed to send registration");
+            tracing::error!(error = %e, "failed to send relay.up");
             return ConnectionResult::Reconnect(buffer_rx);
         }
-        tracing::info!(
-            relay_id = %self.relay_id,
-            name = %self.config.relay_name(),
-            "registration sent"
-        );
+        tracing::info!(relay_id = %self.relay_id, "sent relay.up registration");
+
+        // Wait for registered confirmation
+        let mut registered = false;
+        let timeout = tokio::time::timeout(Duration::from_secs(30), async {
+            while !registered {
+                match ws_read.next().await {
+                    Some(Ok(Message::Text(text))) => {
+                        if let Ok(msg) = serde_json::from_str::<ServerMessage>(&text) {
+                            match msg {
+                                ServerMessage::Registered { relay_id } => {
+                                    tracing::info!(relay_id = %relay_id, "registered with server");
+                                    registered = true;
+                                }
+                                ServerMessage::Error { message } => {
+                                    tracing::error!(error = %message, "registration error");
+                                    return Err(anyhow::anyhow!("registration error: {}", message));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    Some(Err(e)) => {
+                        return Err(anyhow::anyhow!("websocket error: {}", e));
+                    }
+                    None => {
+                        return Err(anyhow::anyhow!("connection closed"));
+                    }
+                    _ => {}
+                }
+            }
+            Ok(())
+        });
+
+        match timeout.await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                tracing::error!(error = %e, "registration failed");
+                return ConnectionResult::Reconnect(buffer_rx);
+            }
+            Err(_) => {
+                tracing::error!("registration timeout");
+                return ConnectionResult::Reconnect(buffer_rx);
+            }
+        }
 
         // Channel to signal shutdown to forwarder
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
 
-        // Spawn forwarder task: buffer_rx -> WebSocket
+        // Spawn forwarder task: buffer_rx -> WebSocket (via Event Bus emit)
         let forwarder_handle = tokio::spawn(async move {
             loop {
                 tokio::select! {
-                    // Check for shutdown signal
                     _ = shutdown_rx.recv() => {
                         tracing::debug!("forwarder received shutdown signal");
                         break;
                     }
-                    // Forward messages from buffer to WebSocket
                     msg = buffer_rx.recv() => {
                         match msg {
-                            Some(msg) => {
-                                let msg_text = match serde_json::to_string(&msg) {
+                            Some(RelayOutput::EmitEvent { kind, data }) => {
+                                let client_msg = ClientMessage::EmitEvent { kind, data };
+                                let msg_text = match serde_json::to_string(&client_msg) {
                                     Ok(text) => text,
                                     Err(e) => {
                                         tracing::error!(error = %e, "failed to serialize message");
@@ -171,7 +297,6 @@ impl Relay {
                                 }
                             }
                             None => {
-                                // Buffer channel closed (shouldn't happen normally)
                                 tracing::warn!("buffer channel closed");
                                 break;
                             }
@@ -179,18 +304,42 @@ impl Relay {
                     }
                 }
             }
-            // Return the receiver so it can be reused
             buffer_rx
         });
 
-        // Process inbound messages from server
-        let mut was_registered = false;
+        // Process inbound messages from server (events)
         let disconnect_reason = loop {
-            let msg = match ws_read.next().await {
-                Some(Ok(Message::Text(text))) => text,
+            match ws_read.next().await {
+                Some(Ok(Message::Text(text))) => {
+                    if let Ok(msg) = serde_json::from_str::<ServerMessage>(&text) {
+                        match msg {
+                            ServerMessage::Event { kind, data, .. } => {
+                                if let Some(response) = Self::handle_server_event(
+                                    &kind,
+                                    &data,
+                                    &session_manager,
+                                    &self.relay_id,
+                                    &buffer_tx,
+                                )
+                                .await
+                                {
+                                    let _ = buffer_tx.send(response).await;
+                                }
+                            }
+                            ServerMessage::Ping => {
+                                // Server sends JSON-level ping for keep-alive
+                                tracing::debug!("received ping from server");
+                            }
+                            ServerMessage::Error { message } => {
+                                tracing::warn!(error = %message, "received error from server");
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 Some(Ok(Message::Ping(_))) => {
-                    let _ = buffer_tx.send(RelayToServer::Pong).await;
-                    continue;
+                    // WebSocket level ping - handle via buffer for pong
+                    tracing::debug!("received websocket ping");
                 }
                 Some(Ok(Message::Close(_))) => {
                     tracing::info!("server closed connection");
@@ -205,35 +354,6 @@ impl Relay {
                     tracing::info!("websocket stream ended");
                     break "stream ended";
                 }
-            };
-
-            let server_msg: ServerToRelay = match serde_json::from_str(&msg) {
-                Ok(m) => m,
-                Err(e) => {
-                    tracing::warn!(error = %e, msg = %msg, "failed to parse server message");
-                    continue;
-                }
-            };
-
-            match server_msg {
-                ServerToRelay::Registered { relay_id } => {
-                    was_registered = true;
-                    tracing::info!(relay_id = %relay_id, "registered with server");
-                }
-
-                // RpcRequest is deprecated - commands come via Event Bus now
-                ServerToRelay::RpcRequest { id, .. } => {
-                    tracing::warn!(request_id = %id, "received deprecated RpcRequest, ignoring");
-                }
-
-                // PermissionResponse is deprecated - comes via Event Bus now
-                ServerToRelay::PermissionResponse { request_id, .. } => {
-                    tracing::warn!(request_id = %request_id, "received deprecated PermissionResponse, ignoring");
-                }
-
-                ServerToRelay::Ping => {
-                    let _ = buffer_tx.send(RelayToServer::Pong).await;
-                }
             }
         };
 
@@ -247,91 +367,24 @@ impl Relay {
             Ok(rx) => rx,
             Err(e) => {
                 tracing::error!(error = %e, "forwarder task panicked");
-                // Create a new channel pair - we'll lose buffered messages
-                let (new_tx, new_rx) = mpsc::channel::<RelayToServer>(BUFFER_SIZE);
-                // Update session manager with new sender
-                // This is a fallback - shouldn't normally happen
-                drop(new_tx);
+                let (_, new_rx) = mpsc::channel::<RelayOutput>(BUFFER_SIZE);
                 new_rx
             }
         };
 
         tracing::info!("keeping sessions alive, buffered messages will be sent on reconnect");
-
-        if was_registered {
-            ConnectionResult::ReconnectImmediate(returned_rx)
-        } else {
-            ConnectionResult::Reconnect(returned_rx)
-        }
+        ConnectionResult::ReconnectImmediate(returned_rx)
     }
 
-    /// Event Bus stream handler (runs in background)
-    ///
-    /// Connects to /ws/event-bus and processes command events from server
-    async fn run_event_stream(
-        url: String,
-        session_manager: Arc<SessionManager>,
-        buffer_tx: mpsc::Sender<RelayToServer>,
-        relay_id: String,
-    ) {
-        loop {
-            tracing::info!(url = %url, "connecting to event bus");
-
-            match connect_async(&url).await {
-                Ok((ws_stream, _)) => {
-                    tracing::info!("event bus stream connected");
-                    let (mut write, mut read) = ws_stream.split();
-
-                    while let Some(msg_result) = read.next().await {
-                        match msg_result {
-                            Ok(Message::Text(text)) => {
-                                if let Ok(ws_msg) = serde_json::from_str::<WsMessage>(&text) {
-                                    if let Some(response) = Self::handle_event_message(
-                                        ws_msg,
-                                        &session_manager,
-                                        &relay_id,
-                                    )
-                                    .await
-                                    {
-                                        let _ = buffer_tx.send(response).await;
-                                    }
-                                }
-                            }
-                            Ok(Message::Ping(_)) => {
-                                let _ = write.send(Message::Pong(vec![])).await;
-                            }
-                            Ok(Message::Close(_)) | Err(_) => {
-                                tracing::warn!("event stream closed");
-                                break;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, "failed to connect to event bus");
-                }
-            }
-
-            tracing::info!("reconnecting to event bus in 5s");
-            tokio::time::sleep(Duration::from_secs(5)).await;
-        }
-    }
-
-    /// Handle Event Bus WebSocket message
-    async fn handle_event_message(
-        msg: WsMessage,
+    /// Handle server events (commands from server)
+    async fn handle_server_event(
+        kind: &str,
+        data: &Value,
         session_manager: &SessionManager,
         relay_id: &str,
-    ) -> Option<RelayToServer> {
-        if msg.msg_type != "event" {
-            return None;
-        }
-
-        let kind = msg.kind.as_ref()?;
-        let data = msg.data.as_ref()?;
-
-        match kind.as_str() {
+        _buffer_tx: &mpsc::Sender<RelayOutput>,
+    ) -> Option<RelayOutput> {
+        match kind {
             "relay.spawn_requested" => {
                 let request_id = data.get("request_id")?.as_str()?.to_string();
                 let agent_id = data.get("agent_id")?.as_str()?;
@@ -343,7 +396,7 @@ impl Relay {
                 let env: std::collections::HashMap<String, String> =
                     serde_json::from_value(data.get("env")?.clone()).unwrap_or_default();
 
-                let params = SpawnSessionParams {
+                let params = todoki_protocol::SpawnSessionParams {
                     agent_id: agent_id.to_string(),
                     session_id: session_id.to_string(),
                     workdir: workdir.to_string(),
@@ -360,7 +413,7 @@ impl Relay {
                             session_id = %session_id,
                             "spawn succeeded"
                         );
-                        Some(RelayToServer::EmitEvent {
+                        Some(RelayOutput::EmitEvent {
                             kind: "relay.spawn_completed".to_string(),
                             data: serde_json::json!({
                                 "request_id": request_id,
@@ -375,7 +428,7 @@ impl Relay {
                             error = %e,
                             "spawn failed"
                         );
-                        Some(RelayToServer::EmitEvent {
+                        Some(RelayOutput::EmitEvent {
                             kind: "relay.spawn_failed".to_string(),
                             data: serde_json::json!({
                                 "request_id": request_id,
@@ -391,7 +444,7 @@ impl Relay {
             "relay.stop_requested" => {
                 let session_id = data.get("session_id")?.as_str()?;
                 let _ = session_manager.stop(session_id).await;
-                None // Fire-and-forget
+                None
             }
 
             "relay.input_requested" => {
@@ -440,22 +493,11 @@ impl Relay {
     }
 }
 
-/// WebSocket message from Event Bus
-#[derive(Debug, serde::Deserialize)]
-struct WsMessage {
-    #[serde(rename = "type")]
-    msg_type: String,
-    #[allow(dead_code)]
-    cursor: Option<i64>,
-    kind: Option<String>,
-    data: Option<Value>,
-}
-
 enum ConnectionResult {
     /// Reconnect after delay, with the buffer receiver
-    Reconnect(mpsc::Receiver<RelayToServer>),
+    Reconnect(mpsc::Receiver<RelayOutput>),
     /// Reconnect immediately (was connected successfully), reset backoff
-    ReconnectImmediate(mpsc::Receiver<RelayToServer>),
+    ReconnectImmediate(mpsc::Receiver<RelayOutput>),
     /// Fatal error, stop relay
     FatalError(anyhow::Error),
 }
