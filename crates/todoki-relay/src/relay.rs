@@ -52,13 +52,9 @@ enum ServerMessage {
         cursor: i64,
     },
     /// Relay registered confirmation
-    Registered {
-        relay_id: String,
-    },
+    Registered { relay_id: String },
     /// Error message
-    Error {
-        message: String,
-    },
+    Error { message: String },
     /// Heartbeat ping
     Ping,
     /// Heartbeat pong
@@ -313,31 +309,34 @@ impl Relay {
         let disconnect_reason = loop {
             match ws_read.next().await {
                 Some(Ok(Message::Text(text))) => {
-                    if let Ok(msg) = serde_json::from_str::<ServerMessage>(&text) {
-                        match msg {
-                            ServerMessage::Event { kind, data, .. } => {
-                                if let Some(response) = Self::handle_server_event(
-                                    &kind,
-                                    &data,
-                                    &session_manager,
-                                    &self.relay_id,
-                                    &buffer_tx,
-                                    self.config.setup_script(),
-                                )
-                                .await
-                                {
-                                    let _ = buffer_tx.send(response).await;
-                                }
+                    let Ok(msg) = serde_json::from_str::<ServerMessage>(&text) else {
+                        tracing::warn!(text = %text, "failed to parse server message");
+                        continue;
+                    };
+                    match msg {
+                        ServerMessage::Event { kind, data, .. } => {
+                            tracing::info!(kind = %kind, "received server event");
+                            if let Some(response) = Self::handle_server_event(
+                                &kind,
+                                &data,
+                                &session_manager,
+                                &self.relay_id,
+                                &buffer_tx,
+                                self.config.setup_script(),
+                            )
+                            .await
+                            {
+                                let _ = buffer_tx.send(response).await;
                             }
-                            ServerMessage::Ping => {
-                                // Server sends JSON-level ping for keep-alive
-                                tracing::debug!("received ping from server");
-                            }
-                            ServerMessage::Error { message } => {
-                                tracing::warn!(error = %message, "received error from server");
-                            }
-                            _ => {}
                         }
+                        ServerMessage::Ping => {
+                            // Server sends JSON-level ping for keep-alive
+                            tracing::debug!("received ping from server");
+                        }
+                        ServerMessage::Error { message } => {
+                            tracing::warn!(error = %message, "received error from server");
+                        }
+                        _ => {}
                     }
                 }
                 Some(Ok(Message::Ping(_))) => {
@@ -395,8 +394,7 @@ impl Relay {
                 let session_id = data.get("session_id")?.as_str()?;
                 let workdir = data.get("workdir")?.as_str()?;
                 let command = data.get("command")?.as_str()?;
-                let args: Vec<String> =
-                    serde_json::from_value(data.get("args")?.clone()).ok()?;
+                let args: Vec<String> = serde_json::from_value(data.get("args")?.clone()).ok()?;
                 let env: std::collections::HashMap<String, String> =
                     serde_json::from_value(data.get("env")?.clone()).unwrap_or_default();
 
@@ -485,11 +483,11 @@ impl Relay {
     ) -> Option<agent_client_protocol::RequestPermissionOutcome> {
         let outcome: EventPermissionOutcome = serde_json::from_value(value.clone()).ok()?;
         match outcome {
-            EventPermissionOutcome::Selected { selected } => Some(
-                agent_client_protocol::RequestPermissionOutcome::Selected(
+            EventPermissionOutcome::Selected { selected } => {
+                Some(agent_client_protocol::RequestPermissionOutcome::Selected(
                     agent_client_protocol::SelectedPermissionOutcome::new(selected),
-                ),
-            ),
+                ))
+            }
             EventPermissionOutcome::Cancelled { .. } => {
                 Some(agent_client_protocol::RequestPermissionOutcome::Cancelled)
             }
