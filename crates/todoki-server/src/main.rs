@@ -25,7 +25,7 @@ use crate::auth::auth_middleware;
 use crate::config::Settings;
 use crate::db::DatabaseService;
 use crate::permission_reviewer::PermissionReviewer;
-use crate::relay::{AgentBroadcaster, RelayManager};
+use crate::relay::{AgentBroadcaster, RelayManager, RequestTracker};
 
 // ============================================================================
 // Database wrapper
@@ -103,6 +103,18 @@ impl Deref for Subscriber {
     }
 }
 
+/// Request Tracker wrapper for state extraction
+#[derive(Clone)]
+pub struct ReqTracker(pub Arc<RequestTracker>);
+
+impl Deref for ReqTracker {
+    type Target = Arc<RequestTracker>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 // ============================================================================
 // Error types
 // ============================================================================
@@ -157,6 +169,7 @@ pub struct AppState {
     pub reviewer: Option<Arc<PermissionReviewer>>,
     pub event_publisher: Arc<event_bus::EventPublisher>,
     pub event_subscriber: Arc<event_bus::EventSubscriber>,
+    pub request_tracker: Arc<RequestTracker>,
 }
 
 impl Default for AppState {
@@ -211,6 +224,13 @@ impl FromRef<gotcha::GotchaContext<AppState, Settings>> for Publisher {
 impl FromRef<gotcha::GotchaContext<AppState, Settings>> for Subscriber {
     fn from_ref(ctx: &gotcha::GotchaContext<AppState, Settings>) -> Self {
         Subscriber(ctx.state.event_subscriber.clone())
+    }
+}
+
+// Allow extracting ReqTracker from GotchaContext
+impl FromRef<gotcha::GotchaContext<AppState, Settings>> for ReqTracker {
+    fn from_ref(ctx: &gotcha::GotchaContext<AppState, Settings>) -> Self {
+        ReqTracker(ctx.state.request_tracker.clone())
     }
 }
 
@@ -287,6 +307,21 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     orchestrator.start().await?;
     info!("Event orchestrator started");
 
+    // Initialize Request Tracker for async request-response pattern
+    let request_tracker = Arc::new(RequestTracker::new());
+
+    // Start relay response handler in background
+    {
+        let publisher = event_publisher.clone();
+        let db = db_service.clone();
+        let tracker = request_tracker.clone();
+
+        tokio::spawn(async move {
+            handle_relay_responses(publisher, db, tracker).await;
+        });
+        info!("Relay response handler started");
+    }
+
     let app_settings = settings.application.clone();
     let app_state = AppState {
         db: db.clone(),
@@ -296,6 +331,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         reviewer,
         event_publisher: event_publisher.clone(),
         event_subscriber: event_subscriber.clone(),
+        request_tracker: request_tracker.clone(),
     };
 
     info!("Relay manager and broadcaster initialized");
@@ -380,4 +416,108 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     Ok(())
+}
+
+// ============================================================================
+// Background Handlers
+// ============================================================================
+
+/// Handle relay response events from Event Bus
+///
+/// Listens for:
+/// - relay.spawn_completed: Notifies waiting request trackers
+/// - relay.spawn_failed: Notifies waiting request trackers with error
+/// - agent.session_exited: Updates session status in database
+async fn handle_relay_responses(
+    publisher: Arc<event_bus::EventPublisher>,
+    db: Arc<DatabaseService>,
+    tracker: Arc<RequestTracker>,
+) {
+    use tokio::sync::broadcast;
+
+    let mut rx = publisher.subscribe();
+
+    loop {
+        match rx.recv().await {
+            Ok(event) => {
+                match event.kind.as_str() {
+                    "relay.spawn_completed" => {
+                        if let Some(req_id) = event.data.get("request_id").and_then(|v| v.as_str())
+                        {
+                            let result = Ok(serde_json::json!({
+                                "session_id": event.data.get("session_id"),
+                            }));
+                            tracker.complete_request(req_id, result).await;
+                        }
+
+                        // Update session status
+                        if let Some(session_id_str) =
+                            event.data.get("session_id").and_then(|v| v.as_str())
+                        {
+                            if let Ok(session_uuid) = uuid::Uuid::parse_str(session_id_str) {
+                                if let Err(e) =
+                                    db.update_session_status(session_uuid, models::SessionStatus::Running)
+                                        .await
+                                {
+                                    error!(error = %e, session_id = %session_id_str, "failed to update session status");
+                                }
+                            }
+                        }
+                    }
+
+                    "relay.spawn_failed" => {
+                        if let Some(req_id) = event.data.get("request_id").and_then(|v| v.as_str())
+                        {
+                            let error_msg = event
+                                .data
+                                .get("error")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown error");
+                            tracker
+                                .complete_request(req_id, Err(anyhow::anyhow!("{}", error_msg)))
+                                .await;
+                        }
+                    }
+
+                    "agent.session_exited" => {
+                        if let Some(session_id_str) =
+                            event.data.get("session_id").and_then(|v| v.as_str())
+                        {
+                            if let Ok(session_uuid) = uuid::Uuid::parse_str(session_id_str) {
+                                let status_str = event
+                                    .data
+                                    .get("status")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("completed");
+                                let status = match status_str {
+                                    "completed" => models::SessionStatus::Completed,
+                                    "failed" => models::SessionStatus::Failed,
+                                    "cancelled" => models::SessionStatus::Cancelled,
+                                    _ => models::SessionStatus::Completed,
+                                };
+                                if let Err(e) =
+                                    db.update_session_status(session_uuid, status)
+                                        .await
+                                {
+                                    error!(error = %e, session_id = %session_id_str, "failed to update session status");
+                                }
+                            }
+                        }
+                    }
+
+                    _ => {}
+                }
+            }
+            Err(broadcast::error::RecvError::Lagged(n)) => {
+                tracing::warn!(
+                    lagged_events = n,
+                    "relay response handler lagged, some events may be missed"
+                );
+            }
+            Err(_) => {
+                error!("relay response channel closed");
+                break;
+            }
+        }
+    }
 }

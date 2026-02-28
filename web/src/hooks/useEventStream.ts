@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { getToken } from '@/lib/auth';
 
 export interface Event {
   cursor: number;
@@ -86,7 +87,7 @@ export function useEventStream(options: UseEventStreamOptions = {}): UseEventStr
     taskId,
     autoReconnect = true,
     maxReconnectAttempts = 10,
-    token = localStorage.getItem('token') || '',
+    token = getToken() || '',
   } = options;
 
   const [events, setEvents] = useState<Event[]>([]);
@@ -100,7 +101,17 @@ export function useEventStream(options: UseEventStreamOptions = {}): UseEventStr
 
   const buildWebSocketUrl = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = import.meta.env.VITE_WS_URL || window.location.host.replace('5201', '3000');
+    // Use VITE_API_URL from env, extract host from it, or fallback to current host with backend port
+    const apiUrl = import.meta.env.VITE_API_URL;
+    let host: string;
+    if (apiUrl) {
+      // Extract host from VITE_API_URL (e.g., "http://localhost:8201" -> "localhost:8201")
+      const url = new URL(apiUrl);
+      host = url.host;
+    } else {
+      // Fallback: assume backend is on same host with port 8201
+      host = window.location.hostname + ':8201';
+    }
     const params = new URLSearchParams();
 
     if (kinds && kinds.length > 0) {

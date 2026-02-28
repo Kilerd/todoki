@@ -11,11 +11,12 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::config::Settings;
+use crate::event_bus::Event;
 use crate::models::agent::{CreateAgentEvent, OutputStream};
 use crate::models::{AgentStatus, SessionStatus};
 use crate::permission_reviewer::{find_allow_option, PermissionContext, PermissionReviewer, ReviewDecision};
-use crate::relay::{AgentStreamEvent, PermissionOutcome, RelayInfo, RelayToServer, ServerToRelay};
-use crate::{Broadcaster, Db, Relays, Reviewer};
+use crate::relay::{AgentStreamEvent, RelayInfo, RelayToServer, ServerToRelay};
+use crate::{Broadcaster, Db, Publisher, Relays, Reviewer};
 
 /// Query parameters for WebSocket authentication
 #[derive(Debug, Deserialize)]
@@ -31,6 +32,7 @@ pub async fn ws_relay(
     State(relays): State<Relays>,
     State(broadcaster): State<Broadcaster>,
     State(reviewer): State<Reviewer>,
+    State(publisher): State<Publisher>,
     Query(query): Query<WsAuthQuery>,
 ) -> Response {
     dbg!("settings.relay_token", &settings.relay_token);
@@ -46,7 +48,7 @@ pub async fn ws_relay(
         return crate::api::error::ApiError::unauthorized().into_response();
     }
 
-    ws.on_upgrade(move |socket| handle_relay_connection(socket, db, relays, broadcaster, reviewer.0))
+    ws.on_upgrade(move |socket| handle_relay_connection(socket, db, relays, broadcaster, reviewer.0, publisher.0))
         .into_response()
 }
 
@@ -56,6 +58,7 @@ async fn handle_relay_connection(
     relays: Relays,
     broadcaster: Broadcaster,
     reviewer: Option<Arc<PermissionReviewer>>,
+    publisher: Arc<crate::event_bus::EventPublisher>,
 ) {
     let (mut ws_tx, mut ws_rx) = socket.split();
 
@@ -131,9 +134,9 @@ async fn handle_relay_connection(
                 let _ = outbound_tx.send(confirm).await;
             }
 
-            RelayToServer::RpcResponse { id, result } => {
-                tracing::debug!(request_id = %id, "received RPC response from relay");
-                relays.handle_rpc_response(&id, result).await;
+            // RpcResponse is deprecated - relay should use EmitEvent instead
+            RelayToServer::RpcResponse { .. } => {
+                tracing::warn!("received deprecated RpcResponse, ignoring");
             }
 
             RelayToServer::AgentOutput {
@@ -328,16 +331,26 @@ async fn handle_relay_connection(
                                 reason = %reason,
                                 "auto-approved by AI"
                             );
-                            // Find the allow option and respond directly
+                            // Find the allow option and respond via event
                             if let Some(ref rid) = relay_id {
-                                // Store pending permission first
-                                relays.store_permission_request(rid, &request_id, &session_id).await;
-                                // Auto-respond with allow
                                 if let Some(option_id) = find_allow_option(&options) {
-                                    let outcome = PermissionOutcome::Selected { option_id };
-                                    if let Err(e) = relays.respond_to_permission(&request_id, outcome).await {
-                                        tracing::error!(error = %e, "failed to auto-respond to permission");
+                                    // Store pending permission for tracking
+                                    relays.store_permission_request(rid, &request_id, &session_id).await;
+                                    // Emit permission.responded event
+                                    let event = Event::new(
+                                        crate::event_bus::kinds::EventKind::PERMISSION_RESPONDED.to_string(),
+                                        Uuid::nil(),
+                                        serde_json::json!({
+                                            "relay_id": rid,
+                                            "request_id": request_id,
+                                            "session_id": session_id,
+                                            "outcome": {"selected": option_id},
+                                        }),
+                                    );
+                                    if let Err(e) = publisher.emit(event).await {
+                                        tracing::error!(error = %e, "failed to emit auto-approve permission response");
                                     }
+                                    relays.remove_pending_permission(&request_id).await;
                                 } else {
                                     tracing::warn!(request_id = %request_id, "no allow option found, falling back to manual");
                                     // Fall through to manual review below
@@ -352,11 +365,23 @@ async fn handle_relay_connection(
                                 "auto-rejected by AI"
                             );
                             if let Some(ref rid) = relay_id {
+                                // Store pending permission for tracking
                                 relays.store_permission_request(rid, &request_id, &session_id).await;
-                                let outcome = PermissionOutcome::Cancelled;
-                                if let Err(e) = relays.respond_to_permission(&request_id, outcome).await {
-                                    tracing::error!(error = %e, "failed to auto-reject permission");
+                                // Emit permission.responded event with cancelled outcome
+                                let event = Event::new(
+                                    crate::event_bus::kinds::EventKind::PERMISSION_RESPONDED.to_string(),
+                                    Uuid::nil(),
+                                    serde_json::json!({
+                                        "relay_id": rid,
+                                        "request_id": request_id,
+                                        "session_id": session_id,
+                                        "outcome": {"cancelled": true},
+                                    }),
+                                );
+                                if let Err(e) = publisher.emit(event).await {
+                                    tracing::error!(error = %e, "failed to emit auto-reject permission response");
                                 }
+                                relays.remove_pending_permission(&request_id).await;
                             }
                             continue;
                         }
@@ -487,6 +512,19 @@ async fn handle_relay_connection(
                 );
                 // This is informational - the actual session termination
                 // will be handled by SessionStatus when the process exits
+            }
+
+            RelayToServer::EmitEvent { kind, data } => {
+                // Relay is emitting an event to Event Bus
+                tracing::debug!(kind = %kind, "relay emitting event");
+
+                // Create event (use system agent UUID for relay-originated events)
+                let event = Event::new(kind, Uuid::nil(), data);
+
+                // Emit to Event Bus
+                if let Err(e) = publisher.emit(event).await {
+                    tracing::error!(error = %e, "failed to emit relay event");
+                }
             }
         }
     }

@@ -49,11 +49,32 @@ impl EventKind {
     pub const GITHUB_PR_MERGED: &'static str = "artifact.github_pr_merged";
 
     // ========================================================================
+    // Agent Session Events
+    // ========================================================================
+    pub const AGENT_SESSION_STARTED: &'static str = "agent.session_started";
+    pub const AGENT_SESSION_EXITED: &'static str = "agent.session_exited";
+
+    // ========================================================================
     // Permission
     // ========================================================================
     pub const PERMISSION_REQUESTED: &'static str = "permission.requested";
+    pub const PERMISSION_RESPONDED: &'static str = "permission.responded";
     pub const PERMISSION_APPROVED: &'static str = "permission.approved";
     pub const PERMISSION_DENIED: &'static str = "permission.denied";
+
+    // ========================================================================
+    // Relay Commands (Server → Relay)
+    // ========================================================================
+    pub const RELAY_SPAWN_REQUESTED: &'static str = "relay.spawn_requested";
+    pub const RELAY_STOP_REQUESTED: &'static str = "relay.stop_requested";
+    pub const RELAY_INPUT_REQUESTED: &'static str = "relay.input_requested";
+
+    // ========================================================================
+    // Relay Responses (Relay → Server)
+    // ========================================================================
+    pub const RELAY_SPAWN_COMPLETED: &'static str = "relay.spawn_completed";
+    pub const RELAY_SPAWN_FAILED: &'static str = "relay.spawn_failed";
+    pub const RELAY_STOP_COMPLETED: &'static str = "relay.stop_completed";
 
     // ========================================================================
     // System

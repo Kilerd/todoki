@@ -10,8 +10,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use crate::config::RelayConfig;
 use crate::session::SessionManager;
 use todoki_protocol::{
-    PermissionOutcome, RelayToServer, RpcResult, SendInputParams, ServerToRelay,
-    SpawnSessionParams, StopSessionParams,
+    RelayToServer, SendInputParams, ServerToRelay, SpawnSessionParams,
 };
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(3);
@@ -38,6 +37,21 @@ impl Relay {
         let session_manager = Arc::new(SessionManager::new(
             buffer_tx.clone(),
             self.config.safe_paths().to_vec(),
+        ));
+
+        // Start Event Bus stream handler (runs in background)
+        let event_stream_url = format!(
+            "{}/ws/event-bus?kinds=relay.*,permission.responded&relay_id={}&token={}",
+            self.config.server_url().replace("ws://", "ws://").replace("wss://", "wss://"),
+            self.relay_id,
+            self.config.token
+        );
+
+        let _event_handle = tokio::spawn(Self::run_event_stream(
+            event_stream_url,
+            session_manager.clone(),
+            buffer_tx.clone(),
+            self.relay_id.clone(),
         ));
 
         let mut reconnect_delay = RECONNECT_DELAY;
@@ -207,58 +221,14 @@ impl Relay {
                     tracing::info!(relay_id = %relay_id, "registered with server");
                 }
 
-                ServerToRelay::RpcRequest { id, method, params } => {
-                    tracing::debug!(
-                        request_id = %id,
-                        method = %method,
-                        params = %params,
-                        "received RPC request from server"
-                    );
-                    let result =
-                        self.handle_rpc(&method, params, session_manager.clone()).await;
-                    tracing::debug!(
-                        request_id = %id,
-                        result = ?result,
-                        "RPC handler returned, sending response"
-                    );
-                    let response = RelayToServer::RpcResponse { id: id.clone(), result };
-                    if let Err(e) = buffer_tx.send(response).await {
-                        tracing::error!(
-                            request_id = %id,
-                            error = %e,
-                            "failed to send RPC response to buffer"
-                        );
-                    }
+                // RpcRequest is deprecated - commands come via Event Bus now
+                ServerToRelay::RpcRequest { id, .. } => {
+                    tracing::warn!(request_id = %id, "received deprecated RpcRequest, ignoring");
                 }
 
-                ServerToRelay::PermissionResponse {
-                    request_id,
-                    session_id,
-                    outcome,
-                } => {
-                    tracing::debug!(
-                        session_id = %session_id,
-                        request_id = %request_id,
-                        "received permission response"
-                    );
-
-                    let acp_outcome = match outcome {
-                        PermissionOutcome::Selected { option_id } => {
-                            agent_client_protocol::RequestPermissionOutcome::Selected(
-                                agent_client_protocol::SelectedPermissionOutcome::new(option_id),
-                            )
-                        }
-                        PermissionOutcome::Cancelled => {
-                            agent_client_protocol::RequestPermissionOutcome::Cancelled
-                        }
-                    };
-
-                    if let Err(e) = session_manager
-                        .respond_permission(&session_id, request_id, acp_outcome)
-                        .await
-                    {
-                        tracing::error!(error = %e, "failed to respond to permission");
-                    }
+                // PermissionResponse is deprecated - comes via Event Bus now
+                ServerToRelay::PermissionResponse { request_id, .. } => {
+                    tracing::warn!(request_id = %request_id, "received deprecated PermissionResponse, ignoring");
                 }
 
                 ServerToRelay::Ping => {
@@ -295,84 +265,190 @@ impl Relay {
         }
     }
 
-    async fn handle_rpc(
-        &self,
-        method: &str,
-        params: Value,
+    /// Event Bus stream handler (runs in background)
+    ///
+    /// Connects to /ws/event-bus and processes command events from server
+    async fn run_event_stream(
+        url: String,
         session_manager: Arc<SessionManager>,
-    ) -> RpcResult {
-        tracing::debug!(method = %method, "handling RPC");
+        buffer_tx: mpsc::Sender<RelayToServer>,
+        relay_id: String,
+    ) {
+        loop {
+            tracing::info!(url = %url, "connecting to event bus");
 
-        match method {
-            "spawn-session" => {
-                let params: SpawnSessionParams = match serde_json::from_value(params) {
-                    Ok(p) => p,
-                    Err(e) => return RpcResult::error(format!("invalid params: {}", e)),
+            match connect_async(&url).await {
+                Ok((ws_stream, _)) => {
+                    tracing::info!("event bus stream connected");
+                    let (mut write, mut read) = ws_stream.split();
+
+                    while let Some(msg_result) = read.next().await {
+                        match msg_result {
+                            Ok(Message::Text(text)) => {
+                                if let Ok(ws_msg) = serde_json::from_str::<WsMessage>(&text) {
+                                    if let Some(response) = Self::handle_event_message(
+                                        ws_msg,
+                                        &session_manager,
+                                        &relay_id,
+                                    )
+                                    .await
+                                    {
+                                        let _ = buffer_tx.send(response).await;
+                                    }
+                                }
+                            }
+                            Ok(Message::Ping(_)) => {
+                                let _ = write.send(Message::Pong(vec![])).await;
+                            }
+                            Ok(Message::Close(_)) | Err(_) => {
+                                tracing::warn!("event stream closed");
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to connect to event bus");
+                }
+            }
+
+            tracing::info!("reconnecting to event bus in 5s");
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    }
+
+    /// Handle Event Bus WebSocket message
+    async fn handle_event_message(
+        msg: WsMessage,
+        session_manager: &SessionManager,
+        relay_id: &str,
+    ) -> Option<RelayToServer> {
+        if msg.msg_type != "event" {
+            return None;
+        }
+
+        let kind = msg.kind.as_ref()?;
+        let data = msg.data.as_ref()?;
+
+        match kind.as_str() {
+            "relay.spawn_requested" => {
+                let request_id = data.get("request_id")?.as_str()?.to_string();
+                let agent_id = data.get("agent_id")?.as_str()?;
+                let session_id = data.get("session_id")?.as_str()?;
+                let workdir = data.get("workdir")?.as_str()?;
+                let command = data.get("command")?.as_str()?;
+                let args: Vec<String> =
+                    serde_json::from_value(data.get("args")?.clone()).ok()?;
+                let env: std::collections::HashMap<String, String> =
+                    serde_json::from_value(data.get("env")?.clone()).unwrap_or_default();
+
+                let params = SpawnSessionParams {
+                    agent_id: agent_id.to_string(),
+                    session_id: session_id.to_string(),
+                    workdir: workdir.to_string(),
+                    command: command.to_string(),
+                    args,
+                    env,
+                    setup_script: None,
                 };
 
-                tracing::info!(
-                    session_id = %params.session_id,
-                    agent_id = %params.agent_id,
-                    command = %params.command,
-                    workdir = %params.workdir,
-                    "spawning session"
-                );
-
                 match session_manager.spawn(params).await {
-                    Ok(result) => RpcResult::success(result),
+                    Ok(_result) => {
+                        tracing::info!(
+                            request_id = %request_id,
+                            session_id = %session_id,
+                            "spawn succeeded"
+                        );
+                        Some(RelayToServer::EmitEvent {
+                            kind: "relay.spawn_completed".to_string(),
+                            data: serde_json::json!({
+                                "request_id": request_id,
+                                "session_id": session_id,
+                                "relay_id": relay_id,
+                            }),
+                        })
+                    }
                     Err(e) => {
-                        tracing::error!(error = %e, "spawn failed");
-                        RpcResult::error(e.to_string())
+                        tracing::error!(
+                            request_id = %request_id,
+                            error = %e,
+                            "spawn failed"
+                        );
+                        Some(RelayToServer::EmitEvent {
+                            kind: "relay.spawn_failed".to_string(),
+                            data: serde_json::json!({
+                                "request_id": request_id,
+                                "session_id": session_id,
+                                "relay_id": relay_id,
+                                "error": e.to_string(),
+                            }),
+                        })
                     }
                 }
             }
 
-            "send-input" => {
-                let params: SendInputParams = match serde_json::from_value(params) {
-                    Ok(p) => p,
-                    Err(e) => return RpcResult::error(format!("invalid params: {}", e)),
+            "relay.stop_requested" => {
+                let session_id = data.get("session_id")?.as_str()?;
+                let _ = session_manager.stop(session_id).await;
+                None // Fire-and-forget
+            }
+
+            "relay.input_requested" => {
+                let session_id = data.get("session_id")?.as_str()?;
+                let input = data.get("input")?.as_str()?;
+
+                let params = SendInputParams {
+                    session_id: session_id.to_string(),
+                    input: input.to_string(),
                 };
 
-                tracing::info!(
-                    session_id = %params.session_id,
-                    input_len = params.input.len(),
-                    "sending input to session"
-                );
-                tracing::debug!(
-                    session_id = %params.session_id,
-                    input = %params.input,
-                    "input content"
-                );
-
-                // Print input to stdout for debugging
-                println!("[INPUT] session={} input={}", params.session_id, params.input);
-
-                match session_manager.send_input(params).await {
-                    Ok(()) => RpcResult::success(serde_json::json!({})),
-                    Err(e) => RpcResult::error(e.to_string()),
-                }
+                let _ = session_manager.send_input(params).await;
+                None
             }
 
-            "stop-session" => {
-                let params: StopSessionParams = match serde_json::from_value(params) {
-                    Ok(p) => p,
-                    Err(e) => return RpcResult::error(format!("invalid params: {}", e)),
-                };
+            "permission.responded" => {
+                let request_id = data.get("request_id")?.as_str()?;
+                let session_id = data.get("session_id")?.as_str()?;
+                let outcome = Self::parse_permission_outcome(data.get("outcome")?)?;
 
-                tracing::info!(session_id = %params.session_id, "stopping session");
-
-                match session_manager.stop(&params.session_id).await {
-                    Ok(()) => RpcResult::success(serde_json::json!({})),
-                    Err(e) => RpcResult::error(e.to_string()),
-                }
+                let _ = session_manager
+                    .respond_permission(session_id, request_id.to_string(), outcome)
+                    .await;
+                None
             }
 
-            _ => {
-                tracing::warn!(method = %method, "unknown RPC method");
-                RpcResult::error(format!("unknown method: {}", method))
-            }
+            _ => None,
         }
     }
+
+    /// Parse permission outcome from Event Bus data
+    fn parse_permission_outcome(
+        value: &Value,
+    ) -> Option<agent_client_protocol::RequestPermissionOutcome> {
+        if let Some(option_id) = value.get("selected").and_then(|v| v.as_str()) {
+            Some(
+                agent_client_protocol::RequestPermissionOutcome::Selected(
+                    agent_client_protocol::SelectedPermissionOutcome::new(option_id.to_string()),
+                ),
+            )
+        } else if value.get("cancelled").is_some() {
+            Some(agent_client_protocol::RequestPermissionOutcome::Cancelled)
+        } else {
+            None
+        }
+    }
+}
+
+/// WebSocket message from Event Bus
+#[derive(Debug, serde::Deserialize)]
+struct WsMessage {
+    #[serde(rename = "type")]
+    msg_type: String,
+    #[allow(dead_code)]
+    cursor: Option<i64>,
+    kind: Option<String>,
+    data: Option<Value>,
 }
 
 enum ConnectionResult {

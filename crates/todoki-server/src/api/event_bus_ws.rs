@@ -42,6 +42,9 @@ pub struct WsSubscribeParams {
     /// Optional task ID filter (only events for this task)
     pub task_id: Option<String>,
 
+    /// Optional relay ID filter (only events for this relay)
+    pub relay_id: Option<String>,
+
     /// Optional token for authentication (prefer Authorization header)
     pub token: Option<String>,
 }
@@ -176,6 +179,8 @@ async fn handle_event_bus_socket(
         .as_ref()
         .and_then(|s| uuid::Uuid::parse_str(s).ok());
 
+    let relay_id_filter = params.relay_id.clone();
+
     let starting_cursor = params.cursor.unwrap_or(0);
 
     // Send subscription acknowledgment
@@ -207,6 +212,17 @@ async fn handle_event_bus_socket(
 
                 for event in events {
                     if should_send_event(&event, &kinds_filter) {
+                        // Apply relay_id filter
+                        if let Some(ref relay_filter) = relay_id_filter {
+                            if let Some(relay_in_data) = event.data.get("relay_id") {
+                                if relay_in_data.as_str() != Some(relay_filter.as_str()) {
+                                    continue;
+                                }
+                            } else {
+                                continue;
+                            }
+                        }
+
                         let ws_msg = WsMessage::Event {
                             cursor: event.cursor,
                             kind: event.kind.clone(),
@@ -272,6 +288,16 @@ async fn handle_event_bus_socket(
                             }
                             if let Some(ref task_filter) = task_id_filter {
                                 if event.task_id != Some(*task_filter) {
+                                    continue;
+                                }
+                            }
+                            if let Some(ref relay_filter) = relay_id_filter {
+                                if let Some(relay_in_data) = event.data.get("relay_id") {
+                                    if relay_in_data.as_str() != Some(relay_filter.as_str()) {
+                                        continue;
+                                    }
+                                } else {
+                                    // No relay_id in event data, skip
                                     continue;
                                 }
                             }

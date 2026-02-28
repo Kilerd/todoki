@@ -120,6 +120,10 @@ pub enum RelayToServer {
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
+
+    /// Emit event to Event Bus
+    /// Used by Relay to publish response events (spawn_completed, spawn_failed, etc.)
+    EmitEvent { kind: String, data: Value },
 }
 
 // ============================================================================

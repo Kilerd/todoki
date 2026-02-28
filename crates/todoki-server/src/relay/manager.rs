@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use serde_json::Value;
-use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use uuid::Uuid;
 
-use super::{PermissionOutcome, RelayInfo, RelayRole, RpcResponse, RpcResult, ServerToRelay};
+use super::{RelayInfo, RelayRole, ServerToRelay};
 
 /// A set of project UUIDs for efficient lookup
 pub type ProjectSet = HashSet<Uuid>;
@@ -23,8 +23,6 @@ struct PendingPermission {
 pub struct RelayManager {
     /// relay_id -> RelayConnection
     relays: Arc<RwLock<HashMap<String, RelayConnection>>>,
-    /// Pending RPC requests: request_id -> oneshot::Sender
-    pending_rpcs: Arc<Mutex<HashMap<String, oneshot::Sender<RpcResponse>>>>,
     /// Pending permission requests: request_id -> PendingPermission
     pending_permissions: Arc<Mutex<HashMap<String, PendingPermission>>>,
 }
@@ -46,7 +44,6 @@ impl RelayManager {
     pub fn new() -> Self {
         Self {
             relays: Arc::new(RwLock::new(HashMap::new())),
-            pending_rpcs: Arc::new(Mutex::new(HashMap::new())),
             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -121,120 +118,6 @@ impl RelayManager {
             Vec::new()
         };
         active_sessions
-    }
-
-    /// Send RPC request to relay and wait for response
-    pub async fn call(
-        &self,
-        relay_id: &str,
-        method: &str,
-        params: Value,
-    ) -> anyhow::Result<Value> {
-        let request_id = Uuid::new_v4().to_string();
-        let (tx, rx) = oneshot::channel();
-
-        tracing::debug!(
-            request_id = %request_id,
-            relay_id = %relay_id,
-            method = %method,
-            "sending RPC request"
-        );
-
-        // Store the pending request
-        {
-            let mut pending = self.pending_rpcs.lock().await;
-            pending.insert(request_id.clone(), tx);
-            tracing::debug!(
-                request_id = %request_id,
-                pending_count = pending.len(),
-                "stored pending RPC request"
-            );
-        }
-
-        // Get relay sender
-        let relay_tx = {
-            let relays = self.relays.read().await;
-            relays
-                .get(relay_id)
-                .map(|c| c.tx.clone())
-                .ok_or_else(|| anyhow::anyhow!("relay not connected"))?
-        };
-
-        // Send RPC request
-        let msg = ServerToRelay::RpcRequest {
-            id: request_id.clone(),
-            method: method.to_string(),
-            params: params.clone(),
-        };
-
-        tracing::debug!(
-            request_id = %request_id,
-            params = %params,
-            "sending RPC message to relay channel"
-        );
-
-        if relay_tx.send(msg).await.is_err() {
-            tracing::error!(request_id = %request_id, "relay channel send failed");
-            let mut pending = self.pending_rpcs.lock().await;
-            pending.remove(&request_id);
-            anyhow::bail!("relay connection closed");
-        }
-
-        tracing::debug!(request_id = %request_id, "RPC message sent, waiting for response");
-
-        // Wait for response with timeout
-        let response = tokio::time::timeout(std::time::Duration::from_secs(30), rx)
-            .await
-            .map_err(|_| {
-                tracing::error!(
-                    request_id = %request_id,
-                    method = %method,
-                    "RPC timeout after 30s"
-                );
-                // Clean up pending request on timeout
-                let pending = self.pending_rpcs.clone();
-                let req_id = request_id.clone();
-                tokio::spawn(async move {
-                    let mut pending = pending.lock().await;
-                    pending.remove(&req_id);
-                });
-                anyhow::anyhow!("rpc timeout")
-            })?
-            .map_err(|_| anyhow::anyhow!("rpc cancelled"))?;
-
-        tracing::debug!(
-            request_id = %request_id,
-            success = response.success,
-            "received RPC response"
-        );
-
-        if response.success {
-            Ok(response.result.unwrap_or(Value::Null))
-        } else {
-            Err(anyhow::anyhow!(
-                "{}",
-                response.error.unwrap_or_else(|| "unknown error".to_string())
-            ))
-        }
-    }
-
-    /// Handle RPC response from relay
-    pub async fn handle_rpc_response(&self, request_id: &str, result: RpcResult) {
-        tracing::debug!(
-            request_id = %request_id,
-            result = ?result,
-            "received RPC response from relay"
-        );
-        let mut pending = self.pending_rpcs.lock().await;
-        if let Some(tx) = pending.remove(request_id) {
-            tracing::debug!(request_id = %request_id, "forwarding response to caller");
-            let _ = tx.send(result.into());
-        } else {
-            tracing::warn!(
-                request_id = %request_id,
-                "no pending request found for RPC response"
-            );
-        }
     }
 
     /// Select an available relay based on role, project and availability
@@ -395,53 +278,58 @@ impl RelayManager {
         );
     }
 
-    /// Respond to a pending permission request
-    /// Returns the session_id for the responded permission
-    pub async fn respond_to_permission(
+    /// Get pending permission info without removing it
+    pub async fn get_pending_permission(&self, request_id: &str) -> Option<(String, String)> {
+        let pending = self.pending_permissions.lock().await;
+        pending
+            .get(request_id)
+            .map(|p| (p.relay_id.clone(), p.session_id.clone()))
+    }
+
+    /// Remove a pending permission request
+    pub async fn remove_pending_permission(&self, request_id: &str) {
+        let mut pending = self.pending_permissions.lock().await;
+        pending.remove(request_id);
+    }
+
+    /// Emit a relay command event to Event Bus
+    ///
+    /// This replaces the old RPC-based approach. The relay will receive the event
+    /// through its Event Bus WebSocket subscription.
+    pub async fn emit_relay_command(
         &self,
-        request_id: &str,
-        outcome: PermissionOutcome,
+        publisher: &crate::event_bus::EventPublisher,
+        relay_id: &str,
+        kind: &str,
+        request_id: String,
+        mut data: Value,
     ) -> anyhow::Result<String> {
-        // Get and remove the pending permission
-        let pending = {
-            let mut pending = self.pending_permissions.lock().await;
-            pending.remove(request_id)
-        };
+        // Check if relay is connected
+        if !self.is_connected(relay_id).await {
+            anyhow::bail!("relay {} not connected", relay_id);
+        }
 
-        let pending = pending.ok_or_else(|| {
-            anyhow::anyhow!("permission request not found: {}", request_id)
-        })?;
+        // Inject relay_id and request_id into event data
+        if let Some(obj) = data.as_object_mut() {
+            obj.insert("relay_id".to_string(), Value::String(relay_id.to_string()));
+            obj.insert(
+                "request_id".to_string(),
+                Value::String(request_id.clone()),
+            );
+        }
 
-        let session_id = pending.session_id.clone();
-
-        // Get relay sender
-        let relay_tx = {
-            let relays = self.relays.read().await;
-            relays
-                .get(&pending.relay_id)
-                .map(|c| c.tx.clone())
-                .ok_or_else(|| anyhow::anyhow!("relay not connected"))?
-        };
-
-        // Send permission response to relay
-        let msg = ServerToRelay::PermissionResponse {
-            request_id: request_id.to_string(),
-            session_id: pending.session_id,
-            outcome,
-        };
-
-        relay_tx
-            .send(msg)
-            .await
-            .map_err(|_| anyhow::anyhow!("relay connection closed"))?;
+        // Create and emit event
+        let event = crate::event_bus::Event::new(kind.to_string(), Uuid::nil(), data);
+        publisher.emit(event).await?;
 
         tracing::debug!(
+            kind = %kind,
+            relay_id = %relay_id,
             request_id = %request_id,
-            relay_id = %pending.relay_id,
-            "sent permission response"
+            "emitted relay command event"
         );
 
-        Ok(session_id)
+        Ok(request_id)
     }
 }
 

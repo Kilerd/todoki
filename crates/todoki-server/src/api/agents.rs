@@ -7,8 +7,11 @@ use gotcha::{Json, Schematic};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use std::time::Duration;
+
 use crate::api::error::ApiError;
 use crate::auth::AuthContext;
+use crate::event_bus::kinds::EventKind;
 use crate::models::agent::{
     AgentEventResponse, AgentResponse, AgentRole, AgentSessionResponse, AgentStatus, CreateAgent,
     CreateAgentEvent, ExecutionMode, OutputStream, SessionStatus,
@@ -16,7 +19,9 @@ use crate::models::agent::{
 use crate::relay::{AgentStreamEvent, PermissionOutcome, RelayRole};
 use crate::Broadcaster;
 use crate::Db;
+use crate::Publisher;
 use crate::Relays;
+use crate::ReqTracker;
 
 // ============================================================================
 // List agents
@@ -92,6 +97,8 @@ pub async fn create_agent(
     Extension(auth): Extension<AuthContext>,
     State(db): State<Db>,
     State(relays): State<Relays>,
+    State(publisher): State<Publisher>,
+    State(tracker): State<ReqTracker>,
     Json(req): Json<CreateAgentRequest>,
 ) -> Result<Json<CreateAgentResponse>, ApiError> {
     auth.require_auth().map_err(|_| ApiError::unauthorized())?;
@@ -116,7 +123,7 @@ pub async fn create_agent(
 
     // If auto_start, start the agent immediately
     if auto_start {
-        let session = start_agent_internal(&db, &relays, &agent)
+        let session = start_agent_internal(&db, &relays, &publisher, &tracker, &agent)
             .await
             .map_err(|e| ApiError::internal(e.to_string()))?;
 
@@ -173,6 +180,8 @@ fn agent_role_to_relay_role(role: AgentRole) -> RelayRole {
 async fn start_agent_internal(
     db: &DatabaseService,
     relays: &RelayManager,
+    publisher: &crate::event_bus::EventPublisher,
+    tracker: &crate::relay::RequestTracker,
     agent: &Agent,
 ) -> anyhow::Result<AgentSession> {
     let agent_id = agent.id;
@@ -208,17 +217,24 @@ async fn start_agent_internal(
         .add_active_session(&relay_id, &session.id.to_string())
         .await;
 
-    // Call relay to spawn session
-    let params = serde_json::json!({
+    // Emit spawn command event to Event Bus
+    let request_id = Uuid::new_v4().to_string();
+    let rx = tracker.track_request(request_id.clone()).await;
+
+    let data = serde_json::json!({
         "agent_id": agent_id.to_string(),
         "session_id": session.id.to_string(),
         "workdir": agent.workdir,
         "command": agent.command,
         "args": agent.args_vec(),
+        "env": {},
     });
 
-    if let Err(e) = relays.call(&relay_id, "spawn-session", params).await {
-        // Rollback on failure
+    if let Err(e) = relays
+        .emit_relay_command(publisher, &relay_id, EventKind::RELAY_SPAWN_REQUESTED, request_id.clone(), data)
+        .await
+    {
+        // Rollback on emit failure
         let _ = db.update_agent_status(agent_id, AgentStatus::Failed).await;
         let _ = db
             .update_session_status(session.id, SessionStatus::Failed)
@@ -226,7 +242,34 @@ async fn start_agent_internal(
         relays
             .remove_active_session(&relay_id, &session.id.to_string())
             .await;
-        anyhow::bail!("failed to spawn: {}", e);
+        anyhow::bail!("failed to emit spawn command: {}", e);
+    }
+
+    // Wait for response with timeout (30s)
+    let timeout_result = tokio::time::timeout(Duration::from_secs(30), rx).await;
+
+    let result = match timeout_result {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => {
+            anyhow::bail!("channel closed");
+        }
+        Err(_) => {
+            // Timeout - cancel the tracked request
+            tracker.cancel_request(&request_id).await;
+            anyhow::bail!("spawn timeout");
+        }
+    };
+
+    if let Err(e) = result {
+        // Rollback on spawn failure
+        let _ = db.update_agent_status(agent_id, AgentStatus::Failed).await;
+        let _ = db
+            .update_session_status(session.id, SessionStatus::Failed)
+            .await;
+        relays
+            .remove_active_session(&relay_id, &session.id.to_string())
+            .await;
+        anyhow::bail!("spawn failed: {}", e);
     }
 
     Ok(session)
@@ -242,6 +285,8 @@ pub async fn start_agent(
     Extension(auth): Extension<AuthContext>,
     State(db): State<Db>,
     State(relays): State<Relays>,
+    State(publisher): State<Publisher>,
+    State(tracker): State<ReqTracker>,
     Path(agent_id): Path<Uuid>,
 ) -> Result<Json<AgentSessionResponse>, ApiError> {
     auth.require_auth().map_err(|_| ApiError::unauthorized())?;
@@ -251,7 +296,7 @@ pub async fn start_agent(
         .await?
         .ok_or_else(|| ApiError::not_found("agent not found"))?;
 
-    let session = start_agent_internal(&db, &relays, &agent)
+    let session = start_agent_internal(&db, &relays, &publisher, &tracker, &agent)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
 
@@ -268,6 +313,7 @@ pub async fn stop_agent(
     Extension(auth): Extension<AuthContext>,
     State(db): State<Db>,
     State(relays): State<Relays>,
+    State(publisher): State<Publisher>,
     Path(agent_id): Path<Uuid>,
 ) -> Result<Json<EmptyResponse>, ApiError> {
     auth.require_auth().map_err(|_| ApiError::unauthorized())?;
@@ -290,12 +336,18 @@ pub async fn stop_agent(
 
     if let Some(session) = running_session {
         if let Some(relay_id) = &session.relay_id {
-            // Call relay to stop session
-            let params = serde_json::json!({
-                "session_id": session.id.to_string(),
-            });
+            // Emit stop command event to Event Bus (fire-and-forget)
+            let request_id = Uuid::new_v4().to_string();
+            let _ = relays
+                .emit_relay_command(
+                    &publisher,
+                    relay_id,
+                    EventKind::RELAY_STOP_REQUESTED,
+                    request_id,
+                    serde_json::json!({"session_id": session.id.to_string()}),
+                )
+                .await;
 
-            let _ = relays.call(relay_id, "stop-session", params).await;
             relays
                 .remove_active_session(relay_id, &session.id.to_string())
                 .await;
@@ -376,6 +428,7 @@ pub async fn send_input(
     Extension(auth): Extension<AuthContext>,
     State(db): State<Db>,
     State(relays): State<Relays>,
+    State(publisher): State<Publisher>,
     Path(agent_id): Path<Uuid>,
     Json(req): Json<SendInputRequest>,
 ) -> Result<Json<EmptyResponse>, ApiError> {
@@ -402,14 +455,19 @@ pub async fn send_input(
         .relay_id
         .ok_or_else(|| ApiError::internal("session has no relay"))?;
 
-    // Call relay to send input
-    let params = serde_json::json!({
-        "session_id": running_session.id.to_string(),
-        "input": req.input,
-    });
-
+    // Emit input command event to Event Bus (fire-and-forget)
+    let request_id = Uuid::new_v4().to_string();
     relays
-        .call(&relay_id, "send-input", params)
+        .emit_relay_command(
+            &publisher,
+            &relay_id,
+            EventKind::RELAY_INPUT_REQUESTED,
+            request_id,
+            serde_json::json!({
+                "session_id": running_session.id.to_string(),
+                "input": req.input,
+            }),
+        )
         .await
         .map_err(|e| ApiError::internal(format!("failed to send input: {}", e)))?;
 
@@ -451,6 +509,7 @@ pub async fn respond_permission(
     State(db): State<Db>,
     State(relays): State<Relays>,
     State(broadcaster): State<Broadcaster>,
+    State(publisher): State<Publisher>,
     Path(agent_id): Path<Uuid>,
     Json(req): Json<PermissionResponseRequest>,
 ) -> Result<Json<EmptyResponse>, ApiError> {
@@ -462,11 +521,40 @@ pub async fn respond_permission(
         "responding to permission request"
     );
 
-    // Send response to relay and get session_id
-    let session_id_str = relays
-        .respond_to_permission(&req.request_id, req.outcome.into())
+    // Get pending permission info
+    let (relay_id, session_id_str) = relays
+        .get_pending_permission(&req.request_id)
         .await
-        .map_err(|e| ApiError::internal(format!("failed to respond to permission: {}", e)))?;
+        .ok_or_else(|| ApiError::not_found("permission request not found"))?;
+
+    // Emit permission.responded event to Event Bus (relay will receive via WebSocket)
+    let outcome_data = match &req.outcome {
+        PermissionOutcomeRequest::Selected { option_id } => {
+            serde_json::json!({"selected": option_id})
+        }
+        PermissionOutcomeRequest::Cancelled => {
+            serde_json::json!({"cancelled": true})
+        }
+    };
+
+    let event = crate::event_bus::Event::new(
+        EventKind::PERMISSION_RESPONDED.to_string(),
+        Uuid::nil(),
+        serde_json::json!({
+            "relay_id": relay_id,
+            "request_id": req.request_id,
+            "session_id": session_id_str,
+            "outcome": outcome_data,
+        }),
+    );
+
+    publisher
+        .emit(event)
+        .await
+        .map_err(|e| ApiError::internal(format!("failed to emit permission response: {}", e)))?;
+
+    // Remove pending permission
+    relays.remove_pending_permission(&req.request_id).await;
 
     // Parse session_id
     let session_id = Uuid::parse_str(&session_id_str)

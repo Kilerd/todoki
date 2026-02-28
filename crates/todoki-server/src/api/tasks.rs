@@ -16,8 +16,10 @@ use crate::models::{
     CreateTask, TaskCommentCreateRequest, TaskCommentResponse, TaskCreateRequest, TaskResponse,
     TaskStatusUpdateRequest, TaskUpdateRequest,
 };
+use crate::event_bus::kinds::EventKind;
 use crate::relay::RelayRole;
 use crate::Db;
+use crate::Publisher;
 use crate::Relays;
 
 async fn tasks_to_responses(db: &Db, tasks: Vec<(crate::models::Task, crate::models::Project)>) -> crate::Result<Vec<TaskResponse>> {
@@ -292,6 +294,7 @@ pub async fn execute_task(
     Extension(auth): Extension<AuthContext>,
     State(db): State<Db>,
     State(relays): State<Relays>,
+    State(publisher): State<Publisher>,
     Path(task_id): Path<Uuid>,
     Json(payload): Json<ExecuteTaskRequest>,
 ) -> Result<Json<ExecuteTaskResponse>, ApiError> {
@@ -377,17 +380,27 @@ pub async fn execute_task(
         .add_active_session(&relay_id, &session.id.to_string())
         .await;
 
-    // 11. Call relay to spawn session (with relay's setup_script if configured)
-    let spawn_params = serde_json::json!({
+    // 11. Emit spawn event to relay via Event Bus (fire-and-forget for task execution)
+    let spawn_data = serde_json::json!({
         "agent_id": agent.id.to_string(),
         "session_id": session.id.to_string(),
         "workdir": workdir,
         "command": agent.command,
         "args": agent.args_vec(),
-        "setup_script": relay_info.setup_script,
+        "env": {},
     });
 
-    if let Err(e) = relays.call(&relay_id, "spawn-session", spawn_params).await {
+    let spawn_request_id = Uuid::new_v4().to_string();
+    if let Err(e) = relays
+        .emit_relay_command(
+            &publisher,
+            &relay_id,
+            EventKind::RELAY_SPAWN_REQUESTED,
+            spawn_request_id,
+            spawn_data,
+        )
+        .await
+    {
         // Rollback on failure
         let _ = db.update_agent_status(agent.id, AgentStatus::Failed).await;
         let _ = db
@@ -396,7 +409,7 @@ pub async fn execute_task(
         relays
             .remove_active_session(&relay_id, &session.id.to_string())
             .await;
-        return Err(ApiError::internal(format!("failed to spawn agent: {}", e)));
+        return Err(ApiError::internal(format!("failed to emit spawn event: {}", e)));
     }
 
     // 12. Update task with agent_id
@@ -409,17 +422,25 @@ pub async fn execute_task(
         let _ = db.update_task_status(task_id, TaskStatus::InProgress).await;
     }
 
-    // 14. Send task prompt to agent
+    // 14. Send task prompt to agent via Event Bus
     let template = get_template_for_role(&project, agent_role);
     let prompt = render_task_prompt(template, &task, &project);
 
-    let input_params = serde_json::json!({
-        "session_id": session.id.to_string(),
-        "input": prompt,
-    });
-
-    if let Err(e) = relays.call(&relay_id, "send-input", input_params).await {
-        tracing::warn!(session_id = %session.id, error = %e, "failed to send initial prompt");
+    let input_request_id = Uuid::new_v4().to_string();
+    if let Err(e) = relays
+        .emit_relay_command(
+            &publisher,
+            &relay_id,
+            EventKind::RELAY_INPUT_REQUESTED,
+            input_request_id,
+            serde_json::json!({
+                "session_id": session.id.to_string(),
+                "input": prompt,
+            }),
+        )
+        .await
+    {
+        tracing::warn!(session_id = %session.id, error = %e, "failed to emit initial prompt event");
     }
 
     // Reload agent to get updated status

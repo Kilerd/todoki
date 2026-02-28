@@ -1,42 +1,19 @@
 mod broadcaster;
 mod manager;
+mod request_tracker;
 
 use std::collections::HashMap;
 
 pub use broadcaster::{AgentBroadcaster, AgentStreamEvent};
 pub use manager::RelayManager;
+pub use request_tracker::RequestTracker;
 
 use gotcha::Schematic;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use uuid::Uuid;
 
 // Re-export shared protocol types from todoki-protocol
-pub use todoki_protocol::{PermissionOutcome, RelayRole, RelayToServer, RpcResult, ServerToRelay};
-
-#[derive(Debug)]
-pub struct RpcResponse {
-    pub success: bool,
-    pub result: Option<Value>,
-    pub error: Option<String>,
-}
-
-impl From<RpcResult> for RpcResponse {
-    fn from(result: RpcResult) -> Self {
-        match result {
-            RpcResult::Success { result } => RpcResponse {
-                success: true,
-                result: Some(result),
-                error: None,
-            },
-            RpcResult::Error { error } => RpcResponse {
-                success: false,
-                result: None,
-                error: Some(error),
-            },
-        }
-    }
-}
+pub use todoki_protocol::{PermissionOutcome, RelayRole, RelayToServer, ServerToRelay};
 
 // ============================================================================
 // Public types

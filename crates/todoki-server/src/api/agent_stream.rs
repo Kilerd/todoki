@@ -10,9 +10,11 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::config::Settings;
+use crate::event_bus::kinds::EventKind;
 use crate::models::agent::{OutputStream, SessionStatus};
 use crate::Broadcaster;
 use crate::Db;
+use crate::Publisher;
 use crate::Relays;
 
 use specta::{Type};
@@ -68,6 +70,7 @@ pub async fn ws_agent_stream(
     State(db): State<Db>,
     State(relays): State<Relays>,
     State(broadcaster): State<Broadcaster>,
+    State(publisher): State<Publisher>,
     Path(agent_id): Path<Uuid>,
     Query(query): Query<WsAuthQuery>,
 ) -> Response {
@@ -101,7 +104,7 @@ pub async fn ws_agent_stream(
     }
 
     ws.on_upgrade(move |socket| {
-        handle_agent_stream(socket, db, relays, broadcaster, agent_id, query.after_id)
+        handle_agent_stream(socket, db, relays, broadcaster, publisher, agent_id, query.after_id)
     })
     .into_response()
 }
@@ -111,6 +114,7 @@ async fn handle_agent_stream(
     db: Db,
     relays: Relays,
     broadcaster: Broadcaster,
+    publisher: Publisher,
     agent_id: Uuid,
     after_id: Option<i64>,
 ) {
@@ -228,7 +232,7 @@ async fn handle_agent_stream(
                 // Parse client message
                 match serde_json::from_str::<ClientToServer>(&text) {
                     Ok(ClientToServer::SendInput { input }) => {
-                        let result = send_input_to_relay(&db, &relays, agent_id, &input).await;
+                        let result = send_input_to_relay(&db, &relays, &publisher, agent_id, &input).await;
                         let response = match result {
                             Ok(()) => ServerToClient::InputResult {
                                 success: true,
@@ -260,10 +264,11 @@ async fn handle_agent_stream(
     tracing::info!(agent_id = %agent_id, "client disconnected from agent stream");
 }
 
-/// Send input to relay via RPC
+/// Send input to relay via Event Bus
 async fn send_input_to_relay(
     db: &Db,
     relays: &Relays,
+    publisher: &Publisher,
     agent_id: Uuid,
     input: &str,
 ) -> Result<(), String> {
@@ -282,16 +287,21 @@ async fn send_input_to_relay(
         .relay_id
         .ok_or_else(|| "session has no relay".to_string())?;
 
-    // Call relay to send input
-    let params = serde_json::json!({
-        "session_id": running_session.id.to_string(),
-        "input": input,
-    });
-
+    // Emit input event via Event Bus
+    let request_id = Uuid::new_v4().to_string();
     relays
-        .call(&relay_id, "send-input", params)
+        .emit_relay_command(
+            &publisher,
+            &relay_id,
+            EventKind::RELAY_INPUT_REQUESTED,
+            request_id,
+            serde_json::json!({
+                "session_id": running_session.id.to_string(),
+                "input": input,
+            }),
+        )
         .await
-        .map_err(|e| format!("relay call failed: {}", e))?;
+        .map_err(|e| format!("failed to emit input event: {}", e))?;
 
     Ok(())
 }

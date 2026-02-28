@@ -55,7 +55,7 @@ impl EventOrchestrator {
             while *active.read().await {
                 match event_rx.recv().await {
                     Ok(event) => {
-                        if let Err(e) = Self::handle_event(&event, &db, &relay_manager).await {
+                        if let Err(e) = Self::handle_event(&event, &db, &relay_manager, &publisher).await {
                             error!("Failed to handle event {}: {}", event.cursor, e);
                         }
                     }
@@ -85,6 +85,7 @@ impl EventOrchestrator {
         event: &Event,
         db: &Arc<DatabaseService>,
         relay_manager: &Arc<RelayManager>,
+        publisher: &Arc<EventPublisher>,
     ) -> Result<()> {
         // Find agents subscribed to this event kind
         let agents = db.list_agents_by_subscription(&event.kind).await?;
@@ -113,7 +114,7 @@ impl EventOrchestrator {
             }
 
             // Trigger agent
-            match Self::trigger_agent(&agent, event, db, relay_manager).await {
+            match Self::trigger_agent(&agent, event, db, relay_manager, publisher).await {
                 Ok(_) => {
                     info!(
                         "Agent '{}' triggered by event {} (kind: {})",
@@ -138,6 +139,7 @@ impl EventOrchestrator {
         event: &Event,
         db: &Arc<DatabaseService>,
         relay_manager: &Arc<RelayManager>,
+        publisher: &Arc<EventPublisher>,
     ) -> Result<()> {
         // Check if relay is available
         let relay_id = agent.relay_id.as_ref().ok_or_else(|| {
@@ -164,6 +166,11 @@ impl EventOrchestrator {
         // Update agent status
         db.update_agent_status(agent.id, AgentStatus::Running).await?;
 
+        // Register active session
+        relay_manager
+            .add_active_session(relay_id, &session_uuid.to_string())
+            .await;
+
         // Build spawn request
         let workdir = if agent.workdir.is_empty() {
             format!("/tmp/todoki-agent-{}", agent.id)
@@ -180,19 +187,25 @@ impl EventOrchestrator {
             env.insert("TASK_ID".to_string(), task_id.to_string());
         }
 
-        let params = serde_json::json!({
+        let data = serde_json::json!({
             "agent_id": agent.id.to_string(),
             "session_id": session_uuid.to_string(),
             "workdir": workdir,
             "command": agent.command,
             "args": agent.args_vec(),
             "env": env,
-            "setup_script": None::<String>,
         });
 
-        // Send RPC to relay (using the "spawn-session" method)
+        // Emit relay.spawn_requested event via Event Bus (fire-and-forget for orchestrator)
+        let request_id = Uuid::new_v4().to_string();
         relay_manager
-            .call(relay_id, "spawn-session", params)
+            .emit_relay_command(
+                publisher.as_ref(),
+                relay_id,
+                super::kinds::EventKind::RELAY_SPAWN_REQUESTED,
+                request_id,
+                data,
+            )
             .await?;
 
         Ok(())

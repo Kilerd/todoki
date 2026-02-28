@@ -138,14 +138,17 @@ pub async fn replay_events(
 pub async fn emit_event(
     State(publisher): State<Publisher>,
     // TODO: Add authentication middleware to extract agent_id
-    // For now, we'll use a system agent ID
+    // For now, we use the Human Operator agent (00000000-0000-0000-0000-000000000001)
     Json(req): Json<EmitEventRequest>,
 ) -> Result<Json<i64>, ApiError> {
+    // Human Operator agent UUID (inserted via migration 011)
+    const HUMAN_AGENT_ID: Uuid = Uuid::from_bytes([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+
     let event = Event {
         cursor: 0, // Will be assigned
         kind: req.kind,
         time: chrono::Utc::now(),
-        agent_id: Uuid::nil(), // TODO: Get from auth context
+        agent_id: HUMAN_AGENT_ID, // Human Operator
         session_id: req.session_id,
         task_id: req.task_id,
         data: req.data,
