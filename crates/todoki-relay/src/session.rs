@@ -16,6 +16,8 @@ pub struct SessionManager {
     active_session: Arc<Mutex<Option<ActiveSession>>>,
     output_tx: mpsc::Sender<RelayOutput>,
     safe_paths: Vec<String>,
+    server_url: String,
+    token: String,
 }
 
 struct ActiveSession {
@@ -27,11 +29,18 @@ struct ActiveSession {
 }
 
 impl SessionManager {
-    pub fn new(output_tx: mpsc::Sender<RelayOutput>, safe_paths: Vec<String>) -> Self {
+    pub fn new(
+        output_tx: mpsc::Sender<RelayOutput>,
+        safe_paths: Vec<String>,
+        server_url: String,
+        token: String,
+    ) -> Self {
         Self {
             active_session: Arc::new(Mutex::new(None)),
             output_tx,
             safe_paths,
+            server_url,
+            token,
         }
     }
 
@@ -172,6 +181,8 @@ impl SessionManager {
             workdir.clone(),
             stdout,
             stdin,
+            self.server_url.clone(),
+            self.token.clone(),
         )
         .await
         {
@@ -510,12 +521,17 @@ mod tests {
         assert_eq!(normalize_path("/foo/../../bar"), "/bar");
     }
 
+    fn test_session_manager(safe_paths: Vec<String>) -> (SessionManager, tokio::sync::mpsc::Receiver<RelayOutput>) {
+        let (tx, rx) = tokio::sync::mpsc::channel::<RelayOutput>(1);
+        (
+            SessionManager::new(tx, safe_paths, String::new(), String::new()),
+            rx,
+        )
+    }
+
     #[test]
     fn test_is_path_safe_empty_safe_paths() {
-        let (manager, _rx) = {
-            let (tx, rx) = tokio::sync::mpsc::channel::<RelayOutput>(1);
-            (SessionManager::new(tx, vec![]), rx)
-        };
+        let (manager, _rx) = test_session_manager(vec![]);
         // Empty safe paths means no restrictions
         assert!(manager.is_path_safe("/any/path"));
         assert!(manager.is_path_safe("~/anywhere"));
@@ -523,20 +539,14 @@ mod tests {
 
     #[test]
     fn test_is_path_safe_allowed() {
-        let (manager, _rx) = {
-            let (tx, rx) = tokio::sync::mpsc::channel::<RelayOutput>(1);
-            (SessionManager::new(tx, vec!["/allowed".to_string()]), rx)
-        };
+        let (manager, _rx) = test_session_manager(vec!["/allowed".to_string()]);
         assert!(manager.is_path_safe("/allowed"));
         assert!(manager.is_path_safe("/allowed/sub/path"));
     }
 
     #[test]
     fn test_is_path_safe_disallowed() {
-        let (manager, _rx) = {
-            let (tx, rx) = tokio::sync::mpsc::channel::<RelayOutput>(1);
-            (SessionManager::new(tx, vec!["/allowed".to_string()]), rx)
-        };
+        let (manager, _rx) = test_session_manager(vec!["/allowed".to_string()]);
         assert!(!manager.is_path_safe("/not-allowed"));
         assert!(!manager.is_path_safe("/allowed-but-not-really")); // Not a subpath
     }
@@ -544,10 +554,7 @@ mod tests {
     #[test]
     fn test_is_path_safe_with_tilde() {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/home/test".to_string());
-        let (manager, _rx) = {
-            let (tx, rx) = tokio::sync::mpsc::channel::<RelayOutput>(1);
-            (SessionManager::new(tx, vec!["~".to_string()]), rx)
-        };
+        let (manager, _rx) = test_session_manager(vec!["~".to_string()]);
         assert!(manager.is_path_safe(&home));
         assert!(manager.is_path_safe(&format!("{}/Projects", home)));
         assert!(manager.is_path_safe("~/Projects"));
@@ -555,10 +562,7 @@ mod tests {
 
     #[test]
     fn test_is_path_safe_traversal_attack() {
-        let (manager, _rx) = {
-            let (tx, rx) = tokio::sync::mpsc::channel::<RelayOutput>(1);
-            (SessionManager::new(tx, vec!["/allowed".to_string()]), rx)
-        };
+        let (manager, _rx) = test_session_manager(vec!["/allowed".to_string()]);
         // Path traversal should be normalized and rejected
         assert!(!manager.is_path_safe("/allowed/../etc/passwd"));
         assert!(!manager.is_path_safe("/allowed/sub/../../etc"));

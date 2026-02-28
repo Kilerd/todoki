@@ -72,6 +72,7 @@ impl EventKind {
     // Relay Data Upload (Relay → Server via Event Bus)
     // ========================================================================
     pub const RELAY_AGENT_OUTPUT: &'static str = "relay.agent_output";
+    pub const RELAY_AGENT_OUTPUT_BATCH: &'static str = "relay.agent_output_batch";
     pub const RELAY_SESSION_STATUS: &'static str = "relay.session_status";
     pub const RELAY_PERMISSION_REQUEST: &'static str = "relay.permission_request";
     pub const RELAY_ARTIFACT: &'static str = "relay.artifact";

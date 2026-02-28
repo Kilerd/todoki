@@ -803,41 +803,11 @@ impl DatabaseService {
 
     /// Get agent by ID
     pub async fn get_agent(&self, agent_id: Uuid) -> crate::Result<Option<Agent>> {
-        let conn = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?;
-
-        let row = conn
-            .query_opt(
-                r#"
-                SELECT id, name, workdir, command, args, execution_mode, role, project_id, relay_id, status, created_at, updated_at
-                FROM agents
-                WHERE id = $1
-                "#,
-                &[&agent_id],
-            )
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?;
-
-        Ok(row.map(|r| Agent {
-            id: r.get("id"),
-            name: r.get("name"),
-            workdir: r.get("workdir"),
-            command: r.get("command"),
-            args: r.get("args"),
-            execution_mode: r.get::<_, SqlTypeWrapper<ExecutionMode>>("execution_mode").0,
-            role: r.get::<_, SqlTypeWrapper<AgentRole>>("role").0,
-            project_id: r.get("project_id"),
-            relay_id: r.get("relay_id"),
-            status: r.get::<_, SqlTypeWrapper<AgentStatus>>("status").0,
-            created_at: r.get("created_at"),
-            updated_at: r.get("updated_at"),
-            subscribed_events: r.get::<_, Vec<String>>("subscribed_events"),
-            last_cursor: r.get::<_, i64>("last_cursor"),
-            auto_trigger: r.get::<_, bool>("auto_trigger"),
-        }))
+        match Agent::fetch_one_by_pk(&agent_id, &*self.pool).await {
+            Ok(agent) => Ok(Some(agent)),
+            Err(conservator::Error::TooManyRows(0)) => Ok(None),
+            Err(e) => Err(crate::TodokiError::Database(e)),
+        }
     }
 
     /// Update agent status

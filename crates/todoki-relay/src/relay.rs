@@ -100,6 +100,8 @@ impl Relay {
         let session_manager = Arc::new(SessionManager::new(
             buffer_tx.clone(),
             self.config.safe_paths().to_vec(),
+            self.config.server_url().to_string(),
+            self.config.token.clone(),
         ));
 
         let mut reconnect_delay = RECONNECT_DELAY;

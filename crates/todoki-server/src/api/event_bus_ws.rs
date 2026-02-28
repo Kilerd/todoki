@@ -685,14 +685,6 @@ async fn handle_relay_event(
             }
 
             relays.store_permission_request(relay_id, request_id, session_id_str).await;
-
-            // Also emit to Event Bus for event timeline
-            let mut event_data = data.clone();
-            if let Some(obj) = event_data.as_object_mut() {
-                obj.insert("relay_id".to_string(), serde_json::Value::String(relay_id.to_string()));
-            }
-            let event = Event::new(kind.to_string(), agent_uuid, event_data);
-            publisher.emit(event).await?;
         }
 
         k if k == EventKind::RELAY_ARTIFACT => {
@@ -711,17 +703,9 @@ async fn handle_relay_event(
                     Some(agent_uuid),
                     Some(session_uuid),
                     artifact_type,
-                    artifact_data.clone(),
+                    artifact_data,
                 ).await;
             }
-
-            // Also emit to Event Bus for event timeline
-            let mut event_data = data.clone();
-            if let Some(obj) = event_data.as_object_mut() {
-                obj.insert("relay_id".to_string(), serde_json::Value::String(relay_id.to_string()));
-            }
-            let event = Event::new(kind.to_string(), agent_uuid, event_data);
-            publisher.emit(event).await?;
         }
 
         k if k == EventKind::RELAY_PROMPT_COMPLETED => {

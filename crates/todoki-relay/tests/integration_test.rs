@@ -28,7 +28,7 @@ fn mock_agent_path() -> String {
 /// Create a SessionManager with a receiver for output messages
 fn create_session_manager(safe_paths: Vec<String>) -> (SessionManager, mpsc::Receiver<RelayOutput>) {
     let (tx, rx) = mpsc::channel(64);
-    let manager = SessionManager::new(tx, safe_paths);
+    let manager = SessionManager::new(tx, safe_paths, String::new(), String::new());
     (manager, rx)
 }
 

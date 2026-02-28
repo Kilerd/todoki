@@ -17,6 +17,7 @@ use tokio::process::{ChildStdin, ChildStdout};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
+use crate::event_bus_client::EventBusClient;
 use crate::relay::RelayOutput;
 
 /// Regex for detecting GitHub PR URLs
@@ -91,6 +92,12 @@ enum AcpCommand {
     },
 }
 
+/// Buffer state for aggregating output
+struct OutputBufferState {
+    current_stream: Option<String>,
+    messages: Vec<String>,
+}
+
 /// Event sink for ACP output
 #[derive(Clone)]
 struct AcpEventSink {
@@ -98,6 +105,10 @@ struct AcpEventSink {
     agent_id: String,
     session_id: String,
     seq_counter: Arc<AtomicI64>,
+    /// Buffer for aggregating output (flush on stream type change)
+    buffer: Arc<Mutex<OutputBufferState>>,
+    /// Client for emitting events to event-bus
+    event_bus: EventBusClient,
 }
 
 impl AcpEventSink {
@@ -105,6 +116,7 @@ impl AcpEventSink {
         output_tx: mpsc::Sender<RelayOutput>,
         agent_id: String,
         session_id: String,
+        event_bus: EventBusClient,
     ) -> Self {
         // Initialize seq with current timestamp to maintain global ordering across sessions
         let initial_seq = Utc::now().timestamp_nanos_opt().unwrap_or(0);
@@ -113,6 +125,11 @@ impl AcpEventSink {
             agent_id,
             session_id,
             seq_counter: Arc::new(AtomicI64::new(initial_seq)),
+            buffer: Arc::new(Mutex::new(OutputBufferState {
+                current_stream: None,
+                messages: Vec::new(),
+            })),
+            event_bus,
         }
     }
 
@@ -142,7 +159,21 @@ impl AcpEventSink {
             "emitting agent output"
         );
 
-        // Emit via Event Bus
+        // Check if stream type changed - if so, flush previous buffer first
+        {
+            let mut buffer = self.buffer.lock().await;
+            if let Some(ref current) = buffer.current_stream {
+                if current != stream && !buffer.messages.is_empty() {
+                    // Stream type changed, flush previous
+                    self.flush_buffer_inner(current, &buffer.messages, ts).await;
+                    buffer.messages.clear();
+                }
+            }
+            buffer.current_stream = Some(stream.to_string());
+            buffer.messages.push(message.clone());
+        }
+
+        // Emit via Event Bus (streaming, for real-time display)
         let msg = RelayOutput::EmitEvent {
             kind: "relay.agent_output".to_string(),
             data: serde_json::json!({
@@ -156,6 +187,40 @@ impl AcpEventSink {
         };
 
         let _ = self.output_tx.send(msg).await;
+    }
+
+    /// Internal: emit batch event to event-bus
+    async fn flush_buffer_inner(&self, stream: &str, messages: &[String], ts: i64) {
+        if messages.is_empty() {
+            return;
+        }
+
+        let data = serde_json::json!({
+            "agent_id": self.agent_id,
+            "session_id": self.session_id,
+            "ts": ts,
+            "stream": stream,
+            "messages": messages,
+        });
+
+        self.event_bus
+            .emit_fire_and_forget("agent.output_batch", data)
+            .await;
+    }
+
+    /// Flush remaining buffer (call on prompt completion)
+    async fn flush_buffer(&self) {
+        let ts = Utc::now().timestamp_nanos_opt().unwrap_or(0);
+        let (stream, messages) = {
+            let mut buffer = self.buffer.lock().await;
+            let stream = buffer.current_stream.take();
+            let messages = std::mem::take(&mut buffer.messages);
+            (stream, messages)
+        };
+
+        if let Some(stream) = stream {
+            self.flush_buffer_inner(&stream, &messages, ts).await;
+        }
     }
 
     async fn emit_update(&self, update: SessionUpdate) {
@@ -198,22 +263,29 @@ impl AcpEventSink {
                         "detected GitHub PR artifact"
                     );
 
+                    let artifact_data = serde_json::json!({
+                        "session_id": self.session_id,
+                        "agent_id": self.agent_id,
+                        "artifact_type": "github_pr",
+                        "data": {
+                            "url": url,
+                            "owner": owner,
+                            "repo": repo,
+                            "number": number,
+                        },
+                    });
+
+                    // Send to server via WebSocket (for artifacts table)
                     let msg = RelayOutput::EmitEvent {
                         kind: "relay.artifact".to_string(),
-                        data: serde_json::json!({
-                            "session_id": self.session_id,
-                            "agent_id": self.agent_id,
-                            "artifact_type": "github_pr",
-                            "data": {
-                                "url": url,
-                                "owner": owner,
-                                "repo": repo,
-                                "number": number,
-                            },
-                        }),
+                        data: artifact_data.clone(),
                     };
-
                     let _ = self.output_tx.send(msg).await;
+
+                    // Also emit to event-bus via HTTP for persistence/replay
+                    self.event_bus
+                        .emit_fire_and_forget("artifact.created", artifact_data)
+                        .await;
                 }
             }
         }
@@ -233,6 +305,7 @@ struct PermissionManager {
     output_tx: mpsc::Sender<RelayOutput>,
     agent_id: String,
     session_id: String,
+    event_bus: EventBusClient,
 }
 
 impl PermissionManager {
@@ -240,12 +313,14 @@ impl PermissionManager {
         output_tx: mpsc::Sender<RelayOutput>,
         agent_id: String,
         session_id: String,
+        event_bus: EventBusClient,
     ) -> Self {
         Self {
             pending: Mutex::new(None),
             output_tx,
             agent_id,
             session_id,
+            event_bus,
         }
     }
 
@@ -285,17 +360,19 @@ impl PermissionManager {
             );
         }
 
-        // Now send permission request to server via Event Bus
+        // Send permission request to server via WebSocket (for real-time handling)
+        let event_data = serde_json::json!({
+            "request_id": request_id,
+            "agent_id": self.agent_id,
+            "session_id": self.session_id,
+            "tool_call_id": args.tool_call.tool_call_id.to_string(),
+            "options": serde_json::to_value(&args.options).unwrap_or_default(),
+            "tool_call": serde_json::to_value(&args.tool_call).unwrap_or_default(),
+        });
+
         let msg = RelayOutput::EmitEvent {
             kind: "relay.permission_request".to_string(),
-            data: serde_json::json!({
-                "request_id": request_id,
-                "agent_id": self.agent_id,
-                "session_id": self.session_id,
-                "tool_call_id": args.tool_call.tool_call_id.to_string(),
-                "options": serde_json::to_value(&args.options).unwrap_or_default(),
-                "tool_call": serde_json::to_value(&args.tool_call).unwrap_or_default(),
-            }),
+            data: event_data.clone(),
         };
 
         if let Err(e) = self.output_tx.send(msg).await {
@@ -304,6 +381,11 @@ impl PermissionManager {
             *pending = None;
             return Err(anyhow::anyhow!("failed to send permission request: {}", e));
         }
+
+        // Also emit to event-bus via HTTP for persistence/replay
+        self.event_bus
+            .emit_fire_and_forget("permission.requested", event_data)
+            .await;
 
         tracing::debug!(
             session_id = %self.session_id,
@@ -448,6 +530,8 @@ pub async fn spawn_acp_session(
     workdir: String,
     stdout: ChildStdout,
     stdin: ChildStdin,
+    server_url: String,
+    token: String,
 ) -> anyhow::Result<AcpHandle> {
     tracing::debug!(
         session_id = %session_id,
@@ -459,11 +543,19 @@ pub async fn spawn_acp_session(
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<AcpCommand>(64);
     let (ready_tx, ready_rx) = oneshot::channel::<Result<String, String>>();
 
-    let sink = AcpEventSink::new(output_tx.clone(), agent_id.clone(), session_id.clone());
+    let event_bus = EventBusClient::new(&server_url, &token);
+
+    let sink = AcpEventSink::new(
+        output_tx.clone(),
+        agent_id.clone(),
+        session_id.clone(),
+        event_bus.clone(),
+    );
     let permissions = Arc::new(PermissionManager::new(
         output_tx.clone(),
         agent_id.clone(),
         session_id.clone(),
+        event_bus,
     ));
     let permissions_for_cmd = permissions.clone();
 
@@ -590,6 +682,9 @@ pub async fn spawn_acp_session(
                             } else {
                                 tracing::debug!(acp_session_id = %acp_session_id, "prompt request completed");
                             }
+
+                            // Flush remaining output buffer to event-bus
+                            sink.flush_buffer().await;
 
                             // Send prompt completed notification via Event Bus
                             let msg = RelayOutput::EmitEvent {
