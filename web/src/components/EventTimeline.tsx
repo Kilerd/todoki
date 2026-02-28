@@ -99,23 +99,23 @@ function PermissionActions({ event }: { event: Event }) {
     setError(null);
 
     try {
-      const { relay_id, request_id, session_id } = event.data as {
-        relay_id?: string;
+      const { agent_id, request_id, session_id } = event.data as {
+        agent_id?: string;
         request_id?: string;
         session_id?: string;
       };
 
-      if (!relay_id || !request_id || !session_id) {
+      if (!agent_id || !request_id || !session_id) {
         throw new Error("Missing required fields in permission request");
       }
 
       await emitEvent({
         kind: "permission.responded",
         data: {
-          relay_id,
+          agent_id,
           request_id,
           session_id,
-          outcome: outcome === "reject" ? { cancelled: true } : { selected: outcome },
+          outcome: outcome === "reject" ? { cancelled: true } : { selected: { option_id: outcome } },
         },
       });
 

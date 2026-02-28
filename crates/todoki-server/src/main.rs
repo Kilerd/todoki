@@ -372,11 +372,6 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .post("/api/agents/:agent_id/stop", agents::stop_agent)
         .get("/api/agents/:agent_id/sessions", agents::get_agent_sessions)
         .get("/api/agents/:agent_id/events", agents::get_agent_events)
-        .post("/api/agents/:agent_id/input", agents::send_input)
-        .post(
-            "/api/agents/:agent_id/permission",
-            agents::respond_permission,
-        )
         // Relay routes
         // Note: Relay WebSocket connections now use /ws/event-bus with relay_id parameter
         .get("/api/relays", relays::list_relays)
