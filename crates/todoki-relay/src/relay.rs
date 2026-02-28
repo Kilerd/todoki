@@ -178,7 +178,8 @@ impl Relay {
             match ws_read.next().await {
                 Some(Ok(Message::Text(text))) => {
                     if let Ok(msg) = serde_json::from_str::<ServerMessage>(&text) {
-                        if matches!(msg, ServerMessage::Subscribed { .. }) {
+                        if let ServerMessage::Subscribed { kinds, cursor } = msg {
+                            dbg!(kinds, cursor);
                             subscribed = true;
                             tracing::debug!("received subscription acknowledgment");
                         }
@@ -305,12 +306,15 @@ impl Relay {
             buffer_rx
         });
 
+        tracing::info!("forwarder task spawned");
         // Process inbound messages from server (events)
-        let disconnect_reason = loop {
-            match ws_read.next().await {
-                Some(Ok(Message::Text(text))) => {
-                    let Ok(msg) = serde_json::from_str::<ServerMessage>(&text) else {
-                        tracing::warn!(text = %text, "failed to parse server message");
+
+        while let msg = ws_read.next().await {
+            match msg {
+                
+                Some(Ok(Message::Text(event))) => {
+                    let Ok(msg) = serde_json::from_str::<ServerMessage>(&event) else {
+                        tracing::warn!(event = %event, "failed to parse server message");
                         continue;
                     };
                     match msg {
@@ -345,21 +349,21 @@ impl Relay {
                 }
                 Some(Ok(Message::Close(_))) => {
                     tracing::info!("server closed connection");
-                    break "server closed";
+                    break;
                 }
-                Some(Ok(_)) => continue,
                 Some(Err(e)) => {
-                    tracing::warn!(error = %e, "websocket error, will reconnect");
-                    break "websocket error";
+                    tracing::error!(error = %e, "websocket error");
+                    break;
                 }
                 None => {
                     tracing::info!("websocket stream ended");
-                    break "stream ended";
+                    break;
                 }
+                _ => {}
             }
-        };
+        }
 
-        tracing::info!(reason = disconnect_reason, "disconnected from server");
+        tracing::info!("disconnected from server");
 
         // Signal forwarder to stop
         let _ = shutdown_tx.send(()).await;
