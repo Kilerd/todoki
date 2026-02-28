@@ -52,6 +52,8 @@ pub struct EventQueryResponse {
 pub struct EmitEventRequest {
     pub kind: String,
     pub data: serde_json::Value,
+    /// Agent ID that emits this event. Defaults to System agent (nil UUID) if not provided.
+    pub agent_id: Option<Uuid>,
     pub task_id: Option<Uuid>,
     pub session_id: Option<Uuid>,
 }
@@ -127,28 +129,26 @@ pub async fn replay_events(
 }
 
 /// POST /api/event-bus/emit
-/// Emit a new event (for standalone agents or manual testing)
+/// Emit a new event to the event bus
 ///
-/// NOTE: In production, most events are emitted automatically by the system.
-/// This endpoint is primarily for:
+/// Used by:
+/// - Relay for emitting agent events (output_batch, permission_request, artifact, etc.)
 /// - Standalone agents that connect via HTTP
-/// - Manual testing and debugging
+/// - Frontend for user actions (permission responses, etc.)
 /// - External integrations
 #[gotcha::api]
 pub async fn emit_event(
     State(publisher): State<Publisher>,
-    // TODO: Add authentication middleware to extract agent_id
-    // For now, we use the Human Operator agent (00000000-0000-0000-0000-000000000001)
     Json(req): Json<EmitEventRequest>,
 ) -> Result<Json<i64>, ApiError> {
-    // Human Operator agent UUID (inserted via migration 011)
-    const HUMAN_AGENT_ID: Uuid = Uuid::from_bytes([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+    // Use provided agent_id, or default to System agent (nil UUID)
+    let agent_id = req.agent_id.unwrap_or(Uuid::nil());
 
     let event = Event {
-        cursor: 0, // Will be assigned
+        cursor: 0, // Will be assigned by store
         kind: req.kind,
         time: chrono::Utc::now(),
-        agent_id: HUMAN_AGENT_ID, // Human Operator
+        agent_id,
         session_id: req.session_id,
         task_id: req.task_id,
         data: req.data,

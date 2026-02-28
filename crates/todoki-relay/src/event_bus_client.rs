@@ -1,4 +1,5 @@
 use serde_json::Value;
+use uuid::Uuid;
 
 /// Client for emitting events to event-bus via HTTP API
 #[derive(Clone)]
@@ -6,10 +7,11 @@ pub struct EventBusClient {
     http_client: reqwest::Client,
     base_url: String,
     token: String,
+    agent_id: Uuid,
 }
 
 impl EventBusClient {
-    pub fn new(server_url: &str, token: &str) -> Self {
+    pub fn new(server_url: &str, token: &str, agent_id: Uuid) -> Self {
         // Extract base URL: remove WebSocket path and convert protocol
         let base_url = server_url
             .trim_end_matches("/ws/relay")
@@ -22,6 +24,7 @@ impl EventBusClient {
             http_client: reqwest::Client::new(),
             base_url,
             token: token.to_string(),
+            agent_id,
         }
     }
 
@@ -32,6 +35,7 @@ impl EventBusClient {
         let payload = serde_json::json!({
             "kind": kind,
             "data": data,
+            "agent_id": self.agent_id,
         });
 
         let resp = self

@@ -545,7 +545,8 @@ pub async fn spawn_acp_session(
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<AcpCommand>(64);
     let (ready_tx, ready_rx) = oneshot::channel::<Result<String, String>>();
 
-    let event_bus = EventBusClient::new(&server_url, &token);
+    let agent_uuid = uuid::Uuid::parse_str(&agent_id).unwrap_or_default();
+    let event_bus = EventBusClient::new(&server_url, &token, agent_uuid);
 
     let sink = AcpEventSink::new(
         output_tx.clone(),

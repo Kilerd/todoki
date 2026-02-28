@@ -17,7 +17,7 @@ use crate::models::agent::{
     AgentEventResponse, AgentResponse, AgentRole, AgentSessionResponse, AgentStatus, CreateAgent,
     CreateAgentEvent, ExecutionMode, OutputStream, SessionStatus,
 };
-use crate::relay::{AgentStreamEvent, PermissionOutcome, RelayRole};
+use crate::relay::{AgentStreamEvent, RelayRole};
 use crate::Broadcaster;
 use crate::Db;
 use crate::Publisher;
@@ -490,17 +490,6 @@ pub struct PermissionResponseRequest {
 pub enum PermissionOutcomeRequest {
     Selected { option_id: String },
     Cancelled,
-}
-
-impl From<PermissionOutcomeRequest> for PermissionOutcome {
-    fn from(req: PermissionOutcomeRequest) -> Self {
-        match req {
-            PermissionOutcomeRequest::Selected { option_id } => {
-                PermissionOutcome::Selected { option_id }
-            }
-            PermissionOutcomeRequest::Cancelled => PermissionOutcome::Cancelled,
-        }
-    }
 }
 
 /// POST /api/agents/:agent_id/permission - Respond to permission request

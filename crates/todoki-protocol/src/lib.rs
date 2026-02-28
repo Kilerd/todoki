@@ -4,7 +4,6 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use uuid::Uuid;
 
 // ============================================================================
 // Relay Role
@@ -42,157 +41,10 @@ impl RelayRole {
 }
 
 // ============================================================================
-// Protocol: Relay -> Server
+// Relay Session Parameters (used by relay internally)
 // ============================================================================
 
-/// Messages from Relay to Server
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum RelayToServer {
-    /// Registration request
-    Register {
-        /// Stable relay ID (e.g. hash of machine id)
-        relay_id: String,
-        name: String,
-        #[serde(default)]
-        role: RelayRole,
-        safe_paths: Vec<String>,
-        #[serde(default)]
-        labels: HashMap<String, String>,
-        /// Project IDs this relay is bound to (empty = accept all)
-        #[serde(default)]
-        projects: Vec<Uuid>,
-        /// Setup script to run before each session
-        #[serde(default)]
-        setup_script: Option<String>,
-    },
-
-    /// RPC response
-    RpcResponse {
-        id: String,
-        #[serde(flatten)]
-        result: RpcResult,
-    },
-
-    /// Agent output forwarding
-    AgentOutput {
-        agent_id: String,
-        session_id: String,
-        seq: i64,
-        ts: i64,
-        stream: String,
-        message: String,
-    },
-
-    /// Session status change
-    SessionStatus {
-        session_id: String,
-        status: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        exit_code: Option<i32>,
-    },
-
-    /// Permission request from ACP agent
-    PermissionRequest {
-        request_id: String,
-        agent_id: String,
-        session_id: String,
-        tool_call_id: String,
-        options: Value,
-        tool_call: Value,
-    },
-
-    /// Pong response to ping
-    Pong,
-
-    /// Artifact detected (e.g., GitHub PR created)
-    Artifact {
-        session_id: String,
-        agent_id: String,
-        artifact_type: String,
-        data: Value,
-    },
-
-    /// Prompt completed notification
-    PromptCompleted {
-        session_id: String,
-        success: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        error: Option<String>,
-    },
-
-    /// Emit event to Event Bus
-    /// Used by Relay to publish response events (spawn_completed, spawn_failed, etc.)
-    EmitEvent { kind: String, data: Value },
-}
-
-// ============================================================================
-// Protocol: Server -> Relay
-// ============================================================================
-
-/// Messages from Server to Relay
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ServerToRelay {
-    /// Registration confirmed
-    Registered { relay_id: String },
-
-    /// RPC request
-    RpcRequest {
-        id: String,
-        method: String,
-        params: Value,
-    },
-
-    /// Permission response from server
-    PermissionResponse {
-        request_id: String,
-        session_id: String,
-        outcome: PermissionOutcome,
-    },
-
-    /// Ping for keepalive
-    Ping,
-}
-
-/// Permission outcome from user
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum PermissionOutcome {
-    /// User selected an option
-    Selected { option_id: String },
-    /// User cancelled
-    Cancelled,
-}
-
-// ============================================================================
-// RPC types
-// ============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum RpcResult {
-    Success { result: Value },
-    Error { error: String },
-}
-
-impl RpcResult {
-    pub fn success(value: impl Serialize) -> Self {
-        RpcResult::Success {
-            result: serde_json::to_value(value).unwrap_or(Value::Null),
-        }
-    }
-
-    pub fn error(msg: impl Into<String>) -> Self {
-        RpcResult::Error { error: msg.into() }
-    }
-}
-
-// ============================================================================
-// RPC Parameters
-// ============================================================================
-
-/// Parameters for spawn-session RPC
+/// Parameters for spawn-session
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpawnSessionParams {
     pub agent_id: String,
@@ -209,20 +61,14 @@ pub struct SpawnSessionParams {
     pub setup_script: Option<String>,
 }
 
-/// Parameters for send-input RPC
+/// Parameters for send-input
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SendInputParams {
     pub session_id: String,
     pub input: String,
 }
 
-/// Parameters for stop-session RPC
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StopSessionParams {
-    pub session_id: String,
-}
-
-/// Result for spawn-session RPC
+/// Result for spawn-session
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpawnSessionResult {
     pub pid: u32,
@@ -233,25 +79,102 @@ pub struct SpawnSessionResult {
 // ============================================================================
 
 /// Event kind constants
+///
+/// Event kinds follow the format: `<category>.<action>`
+///
+/// Categories:
+/// - task: Task lifecycle events
+/// - agent: Agent lifecycle and collaboration events
+/// - artifact: External artifacts (PRs, issues, etc.)
+/// - permission: Permission request/response events
+/// - relay: Relay communication events
+/// - system: System-level events
 pub mod event_kind {
-    // Permission events
+    // ========================================================================
+    // Task lifecycle
+    // ========================================================================
+    pub const TASK_CREATED: &str = "task.created";
+    pub const TASK_STATUS_CHANGED: &str = "task.status_changed";
+    pub const TASK_ASSIGNED: &str = "task.assigned";
+    pub const TASK_COMPLETED: &str = "task.completed";
+    pub const TASK_FAILED: &str = "task.failed";
+    pub const TASK_ARCHIVED: &str = "task.archived";
+
+    // ========================================================================
+    // Agent lifecycle
+    // ========================================================================
+    pub const AGENT_REGISTERED: &str = "agent.registered";
+    pub const AGENT_STARTED: &str = "agent.started";
+    pub const AGENT_STOPPED: &str = "agent.stopped";
+    pub const AGENT_OUTPUT: &str = "agent.output";
+    pub const AGENT_OUTPUT_BATCH: &str = "agent.output_batch";
+    pub const AGENT_ERROR: &str = "agent.error";
+
+    // ========================================================================
+    // Agent collaboration (PM → BA → Coding → QA pipeline)
+    // ========================================================================
+    pub const REQUIREMENT_ANALYZED: &str = "agent.requirement_analyzed";
+    pub const BUSINESS_CONTEXT_READY: &str = "agent.business_context_ready";
+    pub const CODE_REVIEW_REQUESTED: &str = "agent.code_review_requested";
+    pub const QA_TEST_PASSED: &str = "agent.qa_test_passed";
+    pub const QA_TEST_FAILED: &str = "agent.qa_test_failed";
+
+    // ========================================================================
+    // Agent Session Events
+    // ========================================================================
+    pub const AGENT_SESSION_STARTED: &str = "agent.session_started";
+    pub const AGENT_SESSION_EXITED: &str = "agent.session_exited";
+
+    // ========================================================================
+    // Artifacts
+    // ========================================================================
+    pub const ARTIFACT_CREATED: &str = "artifact.created";
+    pub const GITHUB_PR_OPENED: &str = "artifact.github_pr_opened";
+    pub const GITHUB_PR_MERGED: &str = "artifact.github_pr_merged";
+
+    // ========================================================================
+    // Permission
+    // ========================================================================
     pub const PERMISSION_REQUESTED: &str = "permission.requested";
     pub const PERMISSION_RESPONDED: &str = "permission.responded";
+    pub const PERMISSION_APPROVED: &str = "permission.approved";
+    pub const PERMISSION_DENIED: &str = "permission.denied";
 
-    // Relay lifecycle events
-    pub const RELAY_SPAWN_REQUESTED: &str = "relay.spawn_requested";
-    pub const RELAY_SPAWN_COMPLETED: &str = "relay.spawn_completed";
-    pub const RELAY_SPAWN_FAILED: &str = "relay.spawn_failed";
-    pub const RELAY_INPUT_REQUESTED: &str = "relay.input_requested";
-    pub const RELAY_STOP_REQUESTED: &str = "relay.stop_requested";
+    // ========================================================================
+    // Relay Lifecycle
+    // ========================================================================
+    pub const RELAY_UP: &str = "relay.up";
+    pub const RELAY_DOWN: &str = "relay.down";
+
+    // ========================================================================
+    // Relay Data Upload (Relay → Server)
+    // ========================================================================
+    pub const RELAY_AGENT_OUTPUT: &str = "relay.agent_output";
+    pub const RELAY_AGENT_OUTPUT_BATCH: &str = "relay.agent_output_batch";
+    pub const RELAY_SESSION_STATUS: &str = "relay.session_status";
+    pub const RELAY_PERMISSION_REQUEST: &str = "relay.permission_request";
+    pub const RELAY_ARTIFACT: &str = "relay.artifact";
     pub const RELAY_PROMPT_COMPLETED: &str = "relay.prompt_completed";
 
-    // Agent output events
-    pub const RELAY_AGENT_OUTPUT: &str = "relay.agent_output";
-    pub const AGENT_OUTPUT_BATCH: &str = "agent.output_batch";
+    // ========================================================================
+    // Relay Commands (Server → Relay)
+    // ========================================================================
+    pub const RELAY_SPAWN_REQUESTED: &str = "relay.spawn_requested";
+    pub const RELAY_STOP_REQUESTED: &str = "relay.stop_requested";
+    pub const RELAY_INPUT_REQUESTED: &str = "relay.input_requested";
 
-    // Artifact events
-    pub const ARTIFACT_CREATED: &str = "artifact.created";
+    // ========================================================================
+    // Relay Responses (Relay → Server)
+    // ========================================================================
+    pub const RELAY_SPAWN_COMPLETED: &str = "relay.spawn_completed";
+    pub const RELAY_SPAWN_FAILED: &str = "relay.spawn_failed";
+    pub const RELAY_STOP_COMPLETED: &str = "relay.stop_completed";
+
+    // ========================================================================
+    // System
+    // ========================================================================
+    pub const RELAY_CONNECTED: &str = "system.relay_connected";
+    pub const RELAY_DISCONNECTED: &str = "system.relay_disconnected";
 }
 
 /// Permission response outcome for event bus
@@ -260,13 +183,9 @@ pub mod event_kind {
 #[serde(untagged)]
 pub enum EventPermissionOutcome {
     /// User selected an option
-    Selected {
-        selected: String,
-    },
+    Selected { selected: String },
     /// User cancelled
-    Cancelled {
-        cancelled: bool,
-    },
+    Cancelled { cancelled: bool },
 }
 
 impl EventPermissionOutcome {

@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 // Re-export shared protocol types from todoki-protocol
-pub use todoki_protocol::{PermissionOutcome, RelayRole};
+pub use todoki_protocol::RelayRole;
 
 // ============================================================================
 // Public types
