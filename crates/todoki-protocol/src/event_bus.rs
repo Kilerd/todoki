@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use gotcha::Schematic;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 
 // ============================================================================
 // Event Kind Constants
@@ -159,11 +160,10 @@ impl PermissionOutcome {
 // ============================================================================
 
 /// Data for task.created event - emitted when a new task is created.
+/// Note: task_id is provided at EventMessage level.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schematic", derive(Schematic))]
 pub struct TaskCreatedData {
-    /// Unique identifier for the newly created task (UUID format).
-    pub task_id: String,
     /// Short, descriptive title of the task.
     pub title: String,
     /// Detailed description of what the task involves.
@@ -175,11 +175,10 @@ pub struct TaskCreatedData {
 }
 
 /// Data for task.status_changed event - emitted when a task's status transitions.
+/// Note: task_id is provided at EventMessage level.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schematic", derive(Schematic))]
 pub struct TaskStatusChangedData {
-    /// The task whose status changed.
-    pub task_id: String,
     /// The previous status (e.g., "pending", "in_progress", "completed").
     pub old_status: String,
     /// The new status after the transition.
@@ -187,43 +186,38 @@ pub struct TaskStatusChangedData {
 }
 
 /// Data for task.assigned event - emitted when a task is assigned to an agent.
+/// Note: task_id is provided at EventMessage level.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schematic", derive(Schematic))]
 pub struct TaskAssignedData {
-    /// The task being assigned.
-    pub task_id: String,
     /// The agent_id of the agent that the task is assigned to.
     pub assigned_agent_id: String,
 }
 
 /// Data for task.completed event - emitted when a task finishes successfully.
+/// Note: task_id is provided at EventMessage level.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schematic", derive(Schematic))]
 pub struct TaskCompletedData {
-    /// The task that was completed.
-    pub task_id: String,
     /// Optional result data produced by completing the task.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<Value>,
 }
 
 /// Data for task.failed event - emitted when a task fails.
+/// Note: task_id is provided at EventMessage level.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schematic", derive(Schematic))]
 pub struct TaskFailedData {
-    /// The task that failed.
-    pub task_id: String,
     /// Human-readable error message explaining why the task failed.
     pub error: String,
 }
 
 /// Data for task.archived event - emitted when a task is archived.
+/// Note: task_id is provided at EventMessage level.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schematic", derive(Schematic))]
-pub struct TaskArchivedData {
-    /// The task that was archived.
-    pub task_id: String,
-}
+pub struct TaskArchivedData {}
 
 // ============================================================================
 // Agent Data Structures
@@ -336,39 +330,36 @@ pub struct AgentSessionExitedData {
 
 /// Data for agent.requirement_analyzed event - emitted when an agent completes requirement analysis.
 /// Used for multi-agent collaboration workflows.
+/// Note: task_id is provided at EventMessage level.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schematic", derive(Schematic))]
 pub struct RequirementAnalyzedData {
     /// The agent that performed the analysis.
     pub agent_id: String,
-    /// The task whose requirements were analyzed.
-    pub task_id: String,
     /// Structured analysis result (schema varies by agent type).
     pub analysis: Value,
 }
 
 /// Data for agent.business_context_ready event - emitted when business context is prepared.
 /// Signals that downstream agents can begin their work with the provided context.
+/// Note: task_id is provided at EventMessage level.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schematic", derive(Schematic))]
 pub struct BusinessContextReadyData {
     /// The agent that prepared the context.
     pub agent_id: String,
-    /// The task this context belongs to.
-    pub task_id: String,
     /// Business context data (e.g., domain knowledge, constraints, stakeholder requirements).
     pub context: Value,
 }
 
 /// Data for agent.code_review_requested event - emitted when code review is needed.
 /// Triggers code review agents to examine the changes.
+/// Note: task_id is provided at EventMessage level.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schematic", derive(Schematic))]
 pub struct CodeReviewRequestedData {
     /// The agent requesting the review.
     pub agent_id: String,
-    /// The task associated with the code changes.
-    pub task_id: String,
     /// GitHub PR URL if the code is in a pull request.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pr_url: Option<String>,
@@ -376,13 +367,12 @@ pub struct CodeReviewRequestedData {
 
 /// Data for agent.qa_test_passed and agent.qa_test_failed events.
 /// Indicates QA testing results for a task.
+/// Note: task_id is provided at EventMessage level.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schematic", derive(Schematic))]
 pub struct QaTestResultData {
     /// The QA agent that ran the tests.
     pub agent_id: String,
-    /// The task being tested.
-    pub task_id: String,
     /// Additional test result details (e.g., test counts, failure reasons, coverage).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<Value>,
@@ -407,11 +397,10 @@ pub struct ArtifactCreatedData {
 
 /// Data for artifact.github_pr_opened and artifact.github_pr_merged events.
 /// Tracks GitHub pull request lifecycle.
+/// Note: task_id is provided at EventMessage level.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schematic", derive(Schematic))]
 pub struct GithubPrData {
-    /// The task that this PR is associated with.
-    pub task_id: String,
     /// Full URL to the pull request (e.g., "https://github.com/owner/repo/pull/123").
     pub pr_url: String,
     /// Pull request number.
@@ -854,6 +843,9 @@ pub struct EventMessage {
     /// For example, in a relay.agent_output event, agent_id is the relay,
     /// while target_agent_id in the data identifies which agent produced the output.
     pub agent_id: String,
+    /// Optional task_id for indexing and filtering events by task.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<Uuid>,
 }
 
 impl EventMessage {
@@ -949,15 +941,15 @@ mod tests {
         {
             "kind": "task.created",
             "agent_id": "agent_id",
+            "task_id": "018f1a2b-3c4d-5e6f-7a8b-9c0d1e2f3a4b",
             "data": {
-                "task_id": "task_123",
                 "title": "Test Task"
             }
         }
         "#;
         let msg: EventMessage = serde_json::from_str(message).unwrap();
+        assert!(msg.task_id.is_some());
         if let Event::Builtin(BuiltinEvent::TaskCreated(data)) = msg.event {
-            assert_eq!(data.task_id, "task_123");
             assert_eq!(data.title, "Test Task");
         } else {
             panic!("Expected TaskCreated event");
@@ -1013,14 +1005,13 @@ mod tests {
     #[test]
     fn test_serialize_builtin_event() {
         let event = BuiltinEvent::TaskCreated(TaskCreatedData {
-            task_id: "task_123".to_string(),
             title: "Test".to_string(),
             description: None,
             parent_task_id: None,
         });
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains(r#""kind":"task.created""#));
-        assert!(json.contains(r#""task_id":"task_123""#));
+        assert!(json.contains(r#""title":"Test""#));
     }
 
     #[test]

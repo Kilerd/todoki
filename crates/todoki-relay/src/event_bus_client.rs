@@ -10,6 +10,7 @@ pub struct EventBusClient {
     base_url: String,
     token: String,
     agent_id: Uuid,
+    task_id: Option<Uuid>,
 }
 
 impl EventBusClient {
@@ -27,7 +28,19 @@ impl EventBusClient {
             base_url,
             token: token.to_string(),
             agent_id,
+            task_id: None,
         }
+    }
+
+    /// Set the task_id to include in all emitted events
+    pub fn set_task_id(&mut self, task_id: Option<Uuid>) {
+        self.task_id = task_id;
+    }
+
+    /// Create a new client with a task_id set
+    pub fn with_task_id(mut self, task_id: Uuid) -> Self {
+        self.task_id = Some(task_id);
+        self
     }
 
     /// Emit an event to event-bus
@@ -38,6 +51,7 @@ impl EventBusClient {
             "kind": kind,
             "data": data,
             "agent_id": self.agent_id,
+            "task_id": self.task_id,
         });
 
         let resp = self
@@ -76,6 +90,7 @@ impl EventBusClient {
         let message = EventMessage {
             event: Event::Builtin(event),
             agent_id: self.agent_id.to_string(),
+            task_id: self.task_id,
         };
         self.emit_message(&message).await
     }

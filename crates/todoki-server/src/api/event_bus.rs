@@ -51,11 +51,9 @@ pub struct EventQueryResponse {
 /// Uses EventMessage for type validation of builtin events
 #[derive(Debug, Deserialize, Schematic)]
 pub struct EmitEventRequest {
-    /// The event message (kind + data + agent_id)
+    /// The event message (kind + data + agent_id + task_id)
     #[serde(flatten)]
     pub message: EventMessage,
-    /// Optional task ID for indexing
-    pub task_id: Option<Uuid>,
     /// Optional session ID for indexing
     pub session_id: Option<Uuid>,
 }
@@ -146,6 +144,8 @@ pub async fn emit_event(
 ) -> Result<Json<i64>, ApiError> {
     // Parse agent_id from string to Uuid first (before consuming message)
     let agent_id = Uuid::parse_str(&req.message.agent_id).unwrap_or(Uuid::nil());
+    // Get task_id from EventMessage
+    let task_id = req.message.task_id;
 
     // Extract kind and data from typed EventMessage
     let (kind, mut data) = req.message.into_parts();
@@ -168,7 +168,7 @@ pub async fn emit_event(
         time: chrono::Utc::now(),
         agent_id,
         session_id: req.session_id,
-        task_id: req.task_id,
+        task_id,
         data,
     };
 
