@@ -8,4 +8,3 @@ export const deleteAgent = fetcher.path("/api/agents/{agent_id}").method("delete
 export const startAgent = fetcher.path("/api/agents/{agent_id}/start").method("post").create();
 export const stopAgent = fetcher.path("/api/agents/{agent_id}/stop").method("post").create();
 export const getAgentSessions = fetcher.path("/api/agents/{agent_id}/sessions").method("get").create();
-export const getAgentEvents = fetcher.path("/api/agents/{agent_id}/events").method("get").create();

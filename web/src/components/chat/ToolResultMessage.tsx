@@ -43,7 +43,7 @@ function ToolResultItem({ result }: { result: ToolCallData }) {
         />
       </button>
 
-      {expanded && hasResponse && (
+      {expanded && !!hasResponse && (
         <div className="px-3 py-2 bg-slate-50 max-h-48 overflow-y-auto">
           <div className="text-[10px] font-medium text-slate-500 mb-1">Response</div>
           <pre className="text-[10px] text-slate-600 font-mono overflow-x-auto whitespace-pre-wrap break-all">

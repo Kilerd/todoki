@@ -15,7 +15,6 @@ import {
   ClipboardList,
   Code,
   FileText,
-  History,
   MessageSquare,
   PlayCircle,
   RefreshCw,

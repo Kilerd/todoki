@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import {
   X,
   Calendar,
@@ -41,7 +41,6 @@ export default function TaskDetailPanel({
   isLoading,
 }: TaskDetailPanelProps) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const selectedTaskId = searchParams.get("task");
   const { tasks, refresh } = useTasks();
   const { projects } = useProjects();
@@ -175,16 +174,6 @@ export default function TaskDetailPanel({
             <span className="text-slate-600">Created:</span>
             <span className="text-slate-700">
               {format(new Date(task.create_at), "MMM d, yyyy 'at' h:mm a")}
-            </span>
-          </div>
-        )}
-
-        {task.update_at && task.update_at !== task.create_at && (
-          <div className="flex items-center gap-2 text-sm">
-            <Clock className="h-4 w-4 text-slate-400" />
-            <span className="text-slate-600">Updated:</span>
-            <span className="text-slate-700">
-              {format(new Date(task.update_at), "MMM d, yyyy 'at' h:mm a")}
             </span>
           </div>
         )}

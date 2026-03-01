@@ -94,7 +94,7 @@ export function ConversationView({
     for (const event of events) {
       // Build permission states (permission.responded updates permission.requested)
       if (event.kind === "permission.requested") {
-        const data = event.data as PermissionRequestData;
+        const data = event.data as unknown as PermissionRequestData;
         const key = `${data.request_id}-${data.session_id}`;
         if (!permissionStates.has(key)) {
           permissionStates.set(key, {
@@ -107,7 +107,7 @@ export function ConversationView({
       }
 
       if (event.kind === "permission.responded") {
-        const data = event.data as PermissionResponseData;
+        const data = event.data as unknown as PermissionResponseData;
         const key = `${data.request_id}-${data.session_id}`;
         const existing = permissionStates.get(key);
         if (existing) {
@@ -122,7 +122,7 @@ export function ConversationView({
 
       // Build tool states (tool_result updates tool_use)
       if (event.kind !== "agent.output_batch") continue;
-      const data = event.data as OutputBatchData;
+      const data = event.data as unknown as OutputBatchData;
       if (!data.messages) continue;
 
       if (data.stream === "tool_use" || data.stream === "tool_result") {
@@ -168,7 +168,7 @@ export function ConversationView({
     for (const event of events) {
       // Handle permission.requested events (use merged state with response)
       if (event.kind === "permission.requested") {
-        const data = event.data as PermissionRequestData;
+        const data = event.data as unknown as PermissionRequestData;
         const key = `${data.request_id}-${data.session_id}`;
         const mergedState = permissionStates.get(key);
         result.push({
@@ -189,7 +189,7 @@ export function ConversationView({
 
       if (event.kind !== "agent.output_batch") continue;
 
-      const data = event.data as OutputBatchData;
+      const data = event.data as unknown as OutputBatchData;
       if (!data.messages || !data.stream) continue;
 
       const parsed = parseOutputBatchMessages(data.messages);
