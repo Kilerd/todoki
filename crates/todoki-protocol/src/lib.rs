@@ -155,6 +155,7 @@ pub mod event_kind {
     pub const RELAY_PERMISSION_REQUEST: &str = "relay.permission_request";
     pub const RELAY_ARTIFACT: &str = "relay.artifact";
     pub const RELAY_PROMPT_COMPLETED: &str = "relay.prompt_completed";
+    pub const RELAY_ERROR: &str = "relay.error";
 
     // ========================================================================
     // Relay Commands (Server → Relay)
@@ -177,13 +178,19 @@ pub mod event_kind {
     pub const RELAY_DISCONNECTED: &str = "system.relay_disconnected";
 }
 
+/// Selected outcome payload with option_id
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventSelectedOutcome {
+    pub option_id: String,
+}
+
 /// Permission response outcome for event bus
 /// Used in `permission.responded` event data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum EventPermissionOutcome {
     /// User selected an option
-    Selected { selected: String },
+    Selected { selected: EventSelectedOutcome },
     /// User cancelled
     Cancelled { cancelled: bool },
 }
@@ -191,7 +198,9 @@ pub enum EventPermissionOutcome {
 impl EventPermissionOutcome {
     pub fn selected(option_id: impl Into<String>) -> Self {
         Self::Selected {
-            selected: option_id.into(),
+            selected: EventSelectedOutcome {
+                option_id: option_id.into(),
+            },
         }
     }
 
@@ -288,4 +297,71 @@ pub struct ArtifactCreatedData {
     pub artifact_type: String,
     #[serde(flatten)]
     pub extra: Value,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_permission_responded_payload() {
+        // Actual payload from database record
+        let payload = r#"{
+            "outcome": {"selected": {"option_id": "allow"}},
+            "agent_id": "04cefd89-920f-4ec8-bbc7-264a73394951",
+            "relay_id": "3a7a3500342792977c6472cc4861c220",
+            "request_id": "dd460197-dc1f-45ec-bc5c-7e70946371a0",
+            "session_id": "89ac287d-fbf3-43e2-beb3-cb5af2c0d382"
+        }"#;
+
+        let data: Value = serde_json::from_str(payload).expect("failed to parse JSON");
+        let outcome_value = data.get("outcome").expect("missing outcome field");
+
+        let outcome: EventPermissionOutcome =
+            serde_json::from_value(outcome_value.clone()).expect("failed to parse outcome");
+
+        match outcome {
+            EventPermissionOutcome::Selected { selected } => {
+                assert_eq!(selected.option_id, "allow");
+            }
+            EventPermissionOutcome::Cancelled { .. } => {
+                panic!("expected Selected, got Cancelled");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_permission_cancelled_payload() {
+        let payload = r#"{"cancelled": true}"#;
+        let outcome: EventPermissionOutcome =
+            serde_json::from_str(payload).expect("failed to parse");
+
+        match outcome {
+            EventPermissionOutcome::Cancelled { cancelled } => {
+                assert!(cancelled);
+            }
+            EventPermissionOutcome::Selected { .. } => {
+                panic!("expected Cancelled, got Selected");
+            }
+        }
+    }
+
+    #[test]
+    fn test_event_permission_outcome_constructors() {
+        let selected = EventPermissionOutcome::selected("allow_always");
+        match selected {
+            EventPermissionOutcome::Selected { selected } => {
+                assert_eq!(selected.option_id, "allow_always");
+            }
+            _ => panic!("expected Selected"),
+        }
+
+        let cancelled = EventPermissionOutcome::cancelled();
+        match cancelled {
+            EventPermissionOutcome::Cancelled { cancelled } => {
+                assert!(cancelled);
+            }
+            _ => panic!("expected Cancelled"),
+        }
+    }
 }

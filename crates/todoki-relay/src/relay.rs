@@ -387,7 +387,7 @@ impl Relay {
         data: &Value,
         session_manager: &SessionManager,
         relay_id: &str,
-        _buffer_tx: &mpsc::Sender<RelayOutput>,
+        buffer_tx: &mpsc::Sender<RelayOutput>,
         setup_script: Option<&str>,
     ) -> Option<RelayOutput> {
         match kind {
@@ -466,13 +466,116 @@ impl Relay {
             }
 
             "permission.responded" => {
-                let request_id = data.get("request_id")?.as_str()?;
-                let session_id = data.get("session_id")?.as_str()?;
-                let outcome = Self::parse_permission_outcome(data.get("outcome")?)?;
+                let request_id = match data.get("request_id").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => {
+                        let msg = "missing or invalid request_id";
+                        tracing::error!(data = %data, "permission.responded: {}", msg);
+                        let _ = buffer_tx
+                            .send(RelayOutput::EmitEvent {
+                                kind: "relay.error".to_string(),
+                                data: serde_json::json!({
+                                    "relay_id": relay_id,
+                                    "error_type": "permission_response_failed",
+                                    "error": msg,
+                                    "raw_data": data,
+                                }),
+                            })
+                            .await;
+                        return None;
+                    }
+                };
+                let session_id = match data.get("session_id").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => {
+                        let msg = "missing or invalid session_id";
+                        tracing::error!(request_id = %request_id, data = %data, "permission.responded: {}", msg);
+                        let _ = buffer_tx
+                            .send(RelayOutput::EmitEvent {
+                                kind: "relay.error".to_string(),
+                                data: serde_json::json!({
+                                    "relay_id": relay_id,
+                                    "request_id": request_id,
+                                    "error_type": "permission_response_failed",
+                                    "error": msg,
+                                    "raw_data": data,
+                                }),
+                            })
+                            .await;
+                        return None;
+                    }
+                };
+                let outcome_value = match data.get("outcome") {
+                    Some(v) => v,
+                    None => {
+                        let msg = "missing outcome field";
+                        tracing::error!(request_id = %request_id, session_id = %session_id, "permission.responded: {}", msg);
+                        let _ = buffer_tx
+                            .send(RelayOutput::EmitEvent {
+                                kind: "relay.error".to_string(),
+                                data: serde_json::json!({
+                                    "relay_id": relay_id,
+                                    "request_id": request_id,
+                                    "session_id": session_id,
+                                    "error_type": "permission_response_failed",
+                                    "error": msg,
+                                }),
+                            })
+                            .await;
+                        return None;
+                    }
+                };
+                let outcome = match Self::parse_permission_outcome(outcome_value) {
+                    Some(o) => o,
+                    None => {
+                        let msg = "failed to parse outcome";
+                        tracing::error!(
+                            request_id = %request_id,
+                            session_id = %session_id,
+                            outcome = %outcome_value,
+                            "permission.responded: {}", msg
+                        );
+                        let _ = buffer_tx
+                            .send(RelayOutput::EmitEvent {
+                                kind: "relay.error".to_string(),
+                                data: serde_json::json!({
+                                    "relay_id": relay_id,
+                                    "request_id": request_id,
+                                    "session_id": session_id,
+                                    "error_type": "permission_response_failed",
+                                    "error": msg,
+                                    "raw_outcome": outcome_value,
+                                }),
+                            })
+                            .await;
+                        return None;
+                    }
+                };
 
-                let _ = session_manager
+                if let Err(e) = session_manager
                     .respond_permission(session_id, request_id.to_string(), outcome)
-                    .await;
+                    .await
+                {
+                    let msg = format!("failed to deliver response: {}", e);
+                    tracing::error!(
+                        request_id = %request_id,
+                        session_id = %session_id,
+                        error = %e,
+                        "permission.responded: failed to deliver response"
+                    );
+                    let _ = buffer_tx
+                        .send(RelayOutput::EmitEvent {
+                            kind: "relay.error".to_string(),
+                            data: serde_json::json!({
+                                "relay_id": relay_id,
+                                "request_id": request_id,
+                                "session_id": session_id,
+                                "error_type": "permission_response_failed",
+                                "error": msg,
+                            }),
+                        })
+                        .await;
+                }
                 None
             }
 
@@ -488,7 +591,7 @@ impl Relay {
         match outcome {
             EventPermissionOutcome::Selected { selected } => {
                 Some(agent_client_protocol::RequestPermissionOutcome::Selected(
-                    agent_client_protocol::SelectedPermissionOutcome::new(selected),
+                    agent_client_protocol::SelectedPermissionOutcome::new(selected.option_id),
                 ))
             }
             EventPermissionOutcome::Cancelled { .. } => {
