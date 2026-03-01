@@ -57,6 +57,9 @@ interface UseEventStreamOptions {
 
   /** Authentication token */
   token?: string;
+
+  /** Enable/disable the connection (default: true) */
+  enabled?: boolean;
 }
 
 interface UseEventStreamReturn {
@@ -88,6 +91,7 @@ export function useEventStream(options: UseEventStreamOptions = {}): UseEventStr
     autoReconnect = true,
     maxReconnectAttempts = 10,
     token = getToken() || '',
+    enabled = true,
   } = options;
 
   const [events, setEvents] = useState<Event[]>([]);
@@ -134,6 +138,10 @@ export function useEventStream(options: UseEventStreamOptions = {}): UseEventStr
   }, [kinds, cursor, agentId, taskId, token]);
 
   const connect = useCallback(() => {
+    if (!enabled) {
+      return;
+    }
+
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
@@ -223,7 +231,7 @@ export function useEventStream(options: UseEventStreamOptions = {}): UseEventStr
       console.error('[EventStream] Failed to create WebSocket:', err);
       setError('Failed to connect to event stream');
     }
-  }, [buildWebSocketUrl, autoReconnect, maxReconnectAttempts]);
+  }, [buildWebSocketUrl, autoReconnect, maxReconnectAttempts, enabled]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -249,8 +257,13 @@ export function useEventStream(options: UseEventStreamOptions = {}): UseEventStr
     setEvents([]);
   }, []);
 
-  // Connect on mount
+  // Connect on mount, disconnect when disabled
   useEffect(() => {
+    if (!enabled) {
+      disconnect();
+      return;
+    }
+
     if (cursor !== undefined) {
       setIsReplaying(true);
     }
@@ -259,7 +272,7 @@ export function useEventStream(options: UseEventStreamOptions = {}): UseEventStr
     return () => {
       disconnect();
     };
-  }, [connect, disconnect, cursor]);
+  }, [connect, disconnect, cursor, enabled]);
 
   return {
     events,

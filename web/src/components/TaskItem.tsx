@@ -31,7 +31,9 @@ import {
 } from "../hooks/useTasks";
 import type { TaskResponse, TaskStatus } from "../api/types";
 
-type Props = TaskResponse;
+type Props = TaskResponse & {
+  compact?: boolean;
+};
 
 export default function TaskItem(props: Props) {
   const [isLoading, setIsLoading] = useState(false);
@@ -62,6 +64,48 @@ export default function TaskItem(props: Props) {
   const isWorking =
     props.status === "in-progress" || props.status === "in-review";
   const isActive = isTodo || isWorking;
+
+  // Compact mode for three-column layout
+  if (props.compact) {
+    return (
+      <div className="flex items-center justify-between py-2 px-3 group">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {isLoading && (
+            <Loader2 className="h-4 w-4 animate-spin text-slate-400 shrink-0" />
+          )}
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            {props.priority > 0 && (
+              <span className="text-red-500 font-medium text-xs shrink-0">
+                {"!".repeat(props.priority)}
+              </span>
+            )}
+            <span
+              className={cn(
+                "text-sm text-slate-700 truncate",
+                isDone || props.archived ? "line-through text-slate-400" : ""
+              )}
+            >
+              {props.content}
+            </span>
+            {props.comments.length > 0 && (
+              <MessageSquare className="h-3 w-3 text-slate-400 shrink-0" />
+            )}
+          </div>
+        </div>
+        <Badge
+          variant="outline"
+          className={cn(
+            "text-[10px] shrink-0 ml-2",
+            isWorking && "bg-blue-50 text-blue-700 border-blue-200",
+            isTodo && "bg-slate-50 text-slate-600 border-slate-200",
+            isDone && "bg-green-50 text-green-700 border-green-200"
+          )}
+        >
+          {props.status}
+        </Badge>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center justify-between py-3 px-3 rounded-lg border border-slate-200 hover:border-slate-300 bg-white group transition-colors duration-150">
