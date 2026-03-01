@@ -82,8 +82,12 @@ impl EventStore for PgEventStore {
         let conn = self.pool.get().await?;
         let limit_i64 = limit.unwrap_or(1000).min(10000) as i64;
 
-        // Convert Option<&[String]> to Option<Vec<String>> for query parameter
-        let kinds_vec = kinds.map(|k| k.to_vec());
+        // Convert wildcard patterns (e.g., "agent.*") to SQL LIKE patterns (e.g., "agent.%")
+        let kinds_patterns: Option<Vec<String>> = kinds.map(|k| {
+            k.iter()
+                .map(|s| s.replace('*', "%"))
+                .collect()
+        });
 
         let rows = conn
             .query(
@@ -92,7 +96,10 @@ impl EventStore for PgEventStore {
                 FROM events
                 WHERE cursor > $1
                   AND ($2::BIGINT IS NULL OR cursor <= $2)
-                  AND ($3::TEXT[] IS NULL OR kind = ANY($3))
+                  AND ($3::TEXT[] IS NULL OR EXISTS (
+                      SELECT 1 FROM unnest($3::TEXT[]) AS pattern
+                      WHERE kind LIKE pattern
+                  ))
                   AND ($4::UUID IS NULL OR agent_id = $4)
                   AND ($5::UUID IS NULL OR task_id = $5)
                 ORDER BY cursor ASC
@@ -101,7 +108,7 @@ impl EventStore for PgEventStore {
                 &[
                     &from_cursor,
                     &to_cursor,
-                    &kinds_vec,
+                    &kinds_patterns,
                     &agent_id,
                     &task_id,
                     &limit_i64,
