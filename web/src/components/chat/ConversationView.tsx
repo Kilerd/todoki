@@ -132,14 +132,29 @@ export function ConversationView({
           if (tool.type === "tool_call" || tool.type === "tool_call_update") {
             const existing = toolStates.get(tool.id);
             if (!existing) {
-              // First time seeing this tool (from tool_use)
+              // First time seeing this tool
               toolStates.set(tool.id, tool);
-            } else if (tool.status === "completed" || tool.status === "error") {
-              // tool_result only updates status, keep everything else from tool_use
+            } else {
+              // Merge: keep existing values, update with new non-empty values
+              // Priority: completed/error status > pending, non-empty title > empty/generic
+              const hasRealTitle = (t: string | undefined) => t && t !== "Terminal" && t.length > 0;
+              const hasRealInput = (input: Record<string, unknown> | undefined) =>
+                input && Object.keys(input).length > 0;
+
               toolStates.set(tool.id, {
                 ...existing,
-                status: tool.status,
-                content: tool.content,
+                // Update status if it's a terminal state (completed/error)
+                status: tool.status === "completed" || tool.status === "error"
+                  ? tool.status
+                  : existing.status,
+                // Prefer non-generic title
+                title: hasRealTitle(tool.title) ? tool.title : existing.title,
+                // Prefer non-empty kind
+                kind: tool.kind || existing.kind,
+                // Prefer non-empty raw_input
+                raw_input: hasRealInput(tool.raw_input) ? tool.raw_input : existing.raw_input,
+                // Update content if provided
+                content: tool.content || existing.content,
               });
             }
           }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   X,
@@ -15,8 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ConversationView } from "./chat";
-import { useEventStream } from "@/hooks/useEventStream";
-import { queryEvents, type EventBusEvent } from "@/api/eventBus";
+import type { Event } from "@/hooks/useEventStream";
 import {
   useTasks,
   updateTaskStatus,
@@ -30,17 +29,17 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import type { TaskStatus } from "../api/types";
 
-interface Event {
-  cursor: number;
-  kind: string;
-  time: string;
-  agent_id: string;
-  session_id: string | null;
-  task_id: string | null;
-  data: Record<string, unknown>;
+interface TaskDetailPanelProps {
+  events?: Event[];
+  isConnected?: boolean;
+  isLoading?: boolean;
 }
 
-export default function TaskDetailPanel() {
+export default function TaskDetailPanel({
+  events = [],
+  isConnected,
+  isLoading,
+}: TaskDetailPanelProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const selectedTaskId = searchParams.get("task");
@@ -48,66 +47,6 @@ export default function TaskDetailPanel() {
   const { projects } = useProjects();
   const { toast } = useToast();
   const [isExecuting, setIsExecuting] = useState(false);
-
-  // Event stream for conversation view
-  const { events, isConnected, isReplaying } = useEventStream({
-    kinds: ["agent.output_batch", "permission.*"],
-    taskId: selectedTaskId || undefined,
-  });
-
-  // Historical events
-  const [historicalEvents, setHistoricalEvents] = useState<Event[]>([]);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-
-  // Load historical events when task changes
-  useEffect(() => {
-    if (!selectedTaskId) {
-      setHistoricalEvents([]);
-      return;
-    }
-
-    const loadHistory = async () => {
-      setIsLoadingHistory(true);
-      try {
-        const response = await queryEvents({
-          cursor: 0,
-          kinds: "agent.output_batch,permission.*",
-          task_id: selectedTaskId,
-          limit: 500,
-        });
-
-        const converted: Event[] = response.events.map((e: EventBusEvent) => ({
-          cursor: e.cursor,
-          kind: e.kind,
-          time: e.time,
-          agent_id: e.agent_id,
-          session_id: e.session_id,
-          task_id: e.task_id,
-          data: e.data,
-        }));
-        setHistoricalEvents(converted);
-      } catch {
-        // Ignore errors
-      } finally {
-        setIsLoadingHistory(false);
-      }
-    };
-
-    loadHistory();
-  }, [selectedTaskId]);
-
-  // Merge historical and real-time events
-  const allEvents = useMemo(() => {
-    const merged = [...historicalEvents, ...events];
-    const seen = new Set<number>();
-    return merged
-      .filter((e) => {
-        if (seen.has(e.cursor)) return false;
-        seen.add(e.cursor);
-        return true;
-      })
-      .sort((a, b) => a.cursor - b.cursor);
-  }, [historicalEvents, events]);
 
   const task = useMemo(
     () => tasks.find((t) => t.id === selectedTaskId),
@@ -365,9 +304,9 @@ export default function TaskDetailPanel() {
           </div>
         </div>
         <ConversationView
-          events={allEvents}
+          events={events}
           isConnected={isConnected}
-          isLoading={isLoadingHistory || isReplaying}
+          isLoading={isLoading}
           autoScroll
           className="flex-1"
         />

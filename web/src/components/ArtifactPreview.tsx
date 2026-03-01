@@ -1,9 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
 import { X, ExternalLink, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useEventStream } from "../hooks/useEventStream";
+import type { Event } from "../hooks/useEventStream";
 
 interface Artifact {
   id: string;
@@ -13,43 +12,42 @@ interface Artifact {
   data?: any;
 }
 
-export default function ArtifactPreview() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const selectedTaskId = searchParams.get("task");
-  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+interface ArtifactPreviewProps {
+  events: Event[];
+}
+
+export default function ArtifactPreview({ events }: ArtifactPreviewProps) {
   const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(
     null
   );
   const [iframeError, setIframeError] = useState(false);
 
-  // Subscribe to artifact events for the selected task
-  const { events, isConnected } = useEventStream({
-    kinds: ["artifact.*"],
-    taskId: selectedTaskId || undefined,
-    enabled: !!selectedTaskId,
-  });
-
   // Extract artifacts from events
-  useEffect(() => {
-    if (!events || events.length === 0) return;
-
-    const newArtifacts = events
+  const artifacts = useMemo(() => {
+    return events
       .filter((event) => event.kind.startsWith("artifact."))
       .map((event, index) => ({
         id: String(event.cursor) || `artifact-${index}`,
-        type: event.data?.type || "unknown",
-        url: event.data?.url,
-        title: event.data?.title || "Untitled Artifact",
-        data: event.data?.data,
+        type: (event.data as any)?.type || "unknown",
+        url: (event.data as any)?.url,
+        title: (event.data as any)?.title || "Untitled Artifact",
+        data: (event.data as any)?.data,
       }));
-
-    setArtifacts(newArtifacts);
-
-    // Auto-select the latest artifact
-    if (newArtifacts.length > 0 && !selectedArtifact) {
-      setSelectedArtifact(newArtifacts[newArtifacts.length - 1]);
-    }
   }, [events]);
+
+  // Auto-select the latest artifact when artifacts change
+  useEffect(() => {
+    if (artifacts.length > 0 && !selectedArtifact) {
+      setSelectedArtifact(artifacts[artifacts.length - 1]);
+    }
+  }, [artifacts, selectedArtifact]);
+
+  // Reset selection when events change significantly
+  useEffect(() => {
+    if (artifacts.length === 0) {
+      setSelectedArtifact(null);
+    }
+  }, [artifacts.length]);
 
   const handleClose = () => {
     setSelectedArtifact(null);
@@ -115,10 +113,6 @@ export default function ArtifactPreview() {
       </div>
     );
   };
-
-  if (!selectedTaskId) {
-    return null;
-  }
 
   if (!selectedArtifact) {
     return (

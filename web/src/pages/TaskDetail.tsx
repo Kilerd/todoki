@@ -459,7 +459,7 @@ export default function TaskDetail() {
             Real-time Events
           </h2>
           <EventTimeline
-            kinds={['task.*', 'agent.*', 'artifact.*']}
+            kinds={['task.*', 'agent.*', 'artifact.*', 'permission.*', 'artifact.*']}
             taskId={id}
             showStatus={false}
             maxEvents={20}

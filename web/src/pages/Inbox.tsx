@@ -7,17 +7,79 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { Plus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import ProjectTaskList from "../components/ProjectTaskList";
 import TaskDetailPanel from "../components/TaskDetailPanel";
 import ArtifactPreview from "../components/ArtifactPreview";
 import TaskCreateModal from "../modals/TaskCreateModal";
+import { useEventStream, type Event } from "../hooks/useEventStream";
+import { queryEvents, type EventBusEvent } from "../api/eventBus";
 
 function Inbox() {
   const [searchParams] = useSearchParams();
   const selectedTaskId = searchParams.get("task");
   const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
+
+  // Event stream for all task-related events
+  const { events, isConnected, isReplaying } = useEventStream({
+    kinds: ["agent.output_batch", "permission.*", "artifact.*"],
+    taskId: selectedTaskId || undefined,
+  });
+
+  // Historical events
+  const [historicalEvents, setHistoricalEvents] = useState<Event[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  // Load historical events when task changes
+  useEffect(() => {
+    if (!selectedTaskId) {
+      setHistoricalEvents([]);
+      return;
+    }
+
+    const loadHistory = async () => {
+      setIsLoadingHistory(true);
+      try {
+        const response = await queryEvents({
+          cursor: 0,
+          kinds: "agent.output_batch,permission.*,artifact.*",
+          task_id: selectedTaskId,
+          limit: 500,
+        });
+
+        const converted: Event[] = response.events.map((e: EventBusEvent) => ({
+          cursor: e.cursor,
+          kind: e.kind,
+          time: e.time,
+          agent_id: e.agent_id,
+          session_id: e.session_id,
+          task_id: e.task_id,
+          data: e.data,
+        }));
+        setHistoricalEvents(converted);
+      } catch {
+        // Ignore errors
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    };
+
+    loadHistory();
+  }, [selectedTaskId]);
+
+  // Merge historical and real-time events
+  const allEvents = useMemo(() => {
+    const merged = [...historicalEvents, ...events];
+    const seen = new Set<number>();
+    return merged
+      .filter((e) => {
+        if (seen.has(e.cursor)) return false;
+        seen.add(e.cursor);
+        return true;
+      })
+      .sort((a, b) => a.cursor - b.cursor);
+  }, [historicalEvents, events]);
 
   return (
     <div className="h-screen overflow-hidden relative">
@@ -38,7 +100,11 @@ function Inbox() {
           )}
           data-testid="task-detail-panel"
         >
-          <TaskDetailPanel />
+          <TaskDetailPanel
+            events={allEvents}
+            isConnected={isConnected}
+            isLoading={isLoadingHistory || isReplaying}
+          />
         </div>
 
         {/* Column 3: Artifact Preview */}
@@ -49,7 +115,7 @@ function Inbox() {
           )}
           data-testid="artifact-preview"
         >
-          <ArtifactPreview />
+          <ArtifactPreview events={allEvents} />
         </div>
       </div>
 
