@@ -1,10 +1,28 @@
+use std::fs::File;
+
 use tracing_subscriber::EnvFilter;
 
-use todoki_relay::config::RelayConfig;
+use todoki_relay::config::{DaemonArgs, RelayConfig};
 use todoki_relay::relay::Relay;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Parse daemon args first (before full config load)
+    let daemon_args = DaemonArgs::parse_daemon_args();
+
+    // Daemonize if requested (must be done before logging init)
+    if daemon_args.daemonize {
+        let stdout = File::create(&daemon_args.log_file)?;
+        let stderr = stdout.try_clone()?;
+
+        daemonize::Daemonize::new()
+            .pid_file(&daemon_args.pid_file)
+            .working_directory(std::env::current_dir()?)
+            .stdout(stdout)
+            .stderr(stderr)
+            .start()?;
+    }
+
     // Initialize logging
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     tracing_subscriber::fmt().with_env_filter(filter).init();

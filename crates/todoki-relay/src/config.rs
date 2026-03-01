@@ -51,6 +51,18 @@ pub struct Args {
     /// Path to config file
     #[arg(short, long, env = "TODOKI_CONFIG", default_value = "~/.todoki-relay/config.toml")]
     pub config: PathBuf,
+
+    /// Run as daemon in background
+    #[arg(short = 'D', long)]
+    pub daemonize: bool,
+
+    /// PID file path (only used with --daemonize)
+    #[arg(long, default_value = "/tmp/todoki-relay.pid")]
+    pub pid_file: PathBuf,
+
+    /// Log file path (only used with --daemonize)
+    #[arg(long, default_value = "/tmp/todoki-relay.log")]
+    pub log_file: PathBuf,
 }
 
 fn parse_label(s: &str) -> Result<(String, String), String> {
@@ -229,4 +241,23 @@ fn expand_tilde(path: &PathBuf) -> PathBuf {
         }
     }
     path.clone()
+}
+
+/// Daemon-specific args extracted early for daemonize before full config load
+#[derive(Debug, Clone)]
+pub struct DaemonArgs {
+    pub daemonize: bool,
+    pub pid_file: PathBuf,
+    pub log_file: PathBuf,
+}
+
+impl DaemonArgs {
+    pub fn parse_daemon_args() -> Self {
+        let args = Args::parse();
+        Self {
+            daemonize: args.daemonize,
+            pid_file: args.pid_file,
+            log_file: args.log_file,
+        }
+    }
 }
