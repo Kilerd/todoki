@@ -1,18 +1,41 @@
-import { useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
-import { X, Calendar, Tag, User, Clock } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import {
+  X,
+  Calendar,
+  Tag,
+  Clock,
+  Play,
+  Check,
+  Archive,
+  RotateCcw,
+  Trash2,
+  Inbox as InboxIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EventTimeline } from "./EventTimeline";
-import { useTasks } from "../hooks/useTasks";
+import {
+  useTasks,
+  updateTaskStatus,
+  archiveTask,
+  unarchiveTask,
+  deleteTask,
+} from "../hooks/useTasks";
 import { useProjects } from "../hooks/useProjects";
+import { executeTask } from "../api/tasks";
+import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import type { TaskStatus } from "../api/types";
 
 export default function TaskDetailPanel() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const selectedTaskId = searchParams.get("task");
-  const { tasks } = useTasks();
+  const { tasks, refresh } = useTasks();
   const { projects } = useProjects();
+  const { toast } = useToast();
+  const [isExecuting, setIsExecuting] = useState(false);
 
   const task = useMemo(
     () => tasks.find((t) => t.id === selectedTaskId),
@@ -20,12 +43,57 @@ export default function TaskDetailPanel() {
   );
 
   const project = useMemo(
-    () => projects.find((p) => p.id === task?.project_id),
+    () => projects.find((p) => p.id === task?.project?.id),
     [projects, task]
   );
 
   const handleClose = () => {
     setSearchParams({});
+  };
+
+  const handleStatusChange = async (status: TaskStatus) => {
+    if (!selectedTaskId) return;
+    await updateTaskStatus(selectedTaskId, status);
+    refresh();
+  };
+
+  const handleArchive = async () => {
+    if (!selectedTaskId) return;
+    await archiveTask(selectedTaskId);
+    refresh();
+  };
+
+  const handleUnarchive = async () => {
+    if (!selectedTaskId) return;
+    await unarchiveTask(selectedTaskId);
+    refresh();
+  };
+
+  const handleDelete = async () => {
+    if (!selectedTaskId) return;
+    await deleteTask(selectedTaskId);
+    setSearchParams({});
+  };
+
+  const handleExecute = async () => {
+    if (!selectedTaskId) return;
+    setIsExecuting(true);
+    try {
+      const { data } = await executeTask({ task_id: selectedTaskId });
+      toast({
+        title: "Task execution started",
+        description: `Agent ${data.agent.name} is now running`,
+      });
+      refresh();
+    } catch (e) {
+      toast({
+        title: "Failed to execute task",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExecuting(false);
+    }
   };
 
   if (!selectedTaskId || !task) {
@@ -109,6 +177,101 @@ export default function TaskDetailPanel() {
             </span>
           </div>
         )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex flex-wrap items-center gap-2 p-4 border-b border-slate-100">
+        {task.status === "backlog" && !task.archived && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleStatusChange("todo")}
+            className="cursor-pointer"
+          >
+            <InboxIcon className="h-4 w-4 mr-1.5" />
+            Move to Inbox
+          </Button>
+        )}
+
+        {["todo", "in-progress", "in-review"].includes(task.status) &&
+          !task.archived && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleStatusChange("backlog")}
+                className="cursor-pointer"
+              >
+                <Clock className="h-4 w-4 mr-1.5" />
+                Later
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => handleStatusChange("done")}
+                className="bg-teal-600 hover:bg-teal-700 cursor-pointer"
+              >
+                <Check className="h-4 w-4 mr-1.5" />
+                Done
+              </Button>
+              {(!task.agent || task.agent.status !== "running") && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExecute}
+                  disabled={isExecuting}
+                  className="cursor-pointer"
+                >
+                  <Play className="h-4 w-4 mr-1.5" />
+                  {isExecuting ? "Starting..." : "Execute on Relay"}
+                </Button>
+              )}
+            </>
+          )}
+
+        {task.status === "done" && !task.archived && (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleStatusChange("todo")}
+              className="cursor-pointer"
+            >
+              <RotateCcw className="h-4 w-4 mr-1.5" />
+              Reopen
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleArchive}
+              className="cursor-pointer"
+            >
+              <Archive className="h-4 w-4 mr-1.5" />
+              Archive
+            </Button>
+          </>
+        )}
+
+        {task.archived && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleUnarchive}
+            className="cursor-pointer"
+          >
+            <RotateCcw className="h-4 w-4 mr-1.5" />
+            Restore
+          </Button>
+        )}
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleDelete}
+          className="text-red-500 hover:text-red-600 hover:bg-red-50 ml-auto cursor-pointer"
+        >
+          <Trash2 className="h-4 w-4 mr-1.5" />
+          Delete
+        </Button>
       </div>
 
       {/* Event Timeline */}

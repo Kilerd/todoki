@@ -1,4 +1,4 @@
-import { emitEvent } from "@/api/eventBus";
+import { emitEvent, queryEvents, type EventBusEvent } from "@/api/eventBus";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -13,13 +13,14 @@ import {
   CheckCircle2,
   Circle,
   FileText,
+  History,
   PlayCircle,
   RefreshCw,
   Shield,
   StopCircle,
   XCircle,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 interface EventTimelineProps {
   /** Event kind patterns to subscribe (e.g., ["task.*", "agent.*"]) */
@@ -265,9 +266,74 @@ export function EventTimeline({
       token,
     });
 
+  // Historical events state
+  const [historicalEvents, setHistoricalEvents] = useState<Event[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [hasLoadedHistory, setHasLoadedHistory] = useState(false);
+
+  // Load historical events on mount
+  useEffect(() => {
+    if (hasLoadedHistory) return;
+
+    const loadHistory = async () => {
+      setIsLoadingHistory(true);
+      setHistoryError(null);
+      try {
+        const kindsParam = kinds?.join(",");
+        const response = await queryEvents({
+          cursor: 0,
+          kinds: kindsParam,
+          task_id: taskId,
+          agent_id: agentId,
+          limit: maxEvents,
+        });
+
+        const converted: Event[] = response.events.map((e: EventBusEvent) => ({
+          cursor: e.cursor,
+          kind: e.kind,
+          time: e.time,
+          agent_id: e.agent_id,
+          session_id: e.session_id,
+          task_id: e.task_id,
+          data: e.data,
+        }));
+        setHistoricalEvents(converted);
+        setHasLoadedHistory(true);
+      } catch (err) {
+        setHistoryError(
+          err instanceof Error ? err.message : "Failed to load history"
+        );
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    };
+
+    loadHistory();
+  }, [kinds, taskId, agentId, maxEvents, hasLoadedHistory]);
+
+  // Merge historical and real-time events, dedupe by cursor
+  const allEvents = useMemo(() => {
+    const merged = [...historicalEvents, ...events];
+    const seen = new Set<number>();
+    return merged
+      .filter((e) => {
+        if (seen.has(e.cursor)) return false;
+        seen.add(e.cursor);
+        return true;
+      })
+      .sort((a, b) => a.cursor - b.cursor);
+  }, [historicalEvents, events]);
+
   const displayedEvents = useMemo(() => {
-    return events.slice(-maxEvents);
-  }, [events, maxEvents]);
+    return allEvents.slice(-maxEvents);
+  }, [allEvents, maxEvents]);
+
+  const handleClearAll = () => {
+    clearEvents();
+    setHistoricalEvents([]);
+    setHasLoadedHistory(false);
+  };
 
   return (
     <div className="space-y-4">
@@ -289,10 +355,10 @@ export function EventTimeline({
                 </span>
               </div>
 
-              {isReplaying && (
+              {(isReplaying || isLoadingHistory) && (
                 <Badge variant="outline" className="text-xs">
                   <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-                  Replaying history
+                  {isLoadingHistory ? "Loading history" : "Replaying"}
                 </Badge>
               )}
 
@@ -317,7 +383,7 @@ export function EventTimeline({
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={clearEvents}
+                onClick={handleClearAll}
                 className="cursor-pointer"
               >
                 Clear
@@ -325,10 +391,26 @@ export function EventTimeline({
             </div>
           </div>
 
-          {error && (
+          {/* Subscribed kinds */}
+          {kinds && kinds.length > 0 && (
+            <div className="flex items-center gap-2 mt-3 flex-wrap">
+              <span className="text-xs text-slate-500">Subscribed:</span>
+              {kinds.map((kind) => (
+                <Badge
+                  key={kind}
+                  variant="secondary"
+                  className="text-xs font-mono"
+                >
+                  {kind}
+                </Badge>
+              ))}
+            </div>
+          )}
+
+          {(error || historyError) && (
             <div className="flex items-center gap-2 mt-3 text-sm text-red-600 bg-red-50 p-2 rounded">
               <AlertCircle className="h-4 w-4" />
-              {error}
+              {error || historyError}
             </div>
           )}
         </Card>
