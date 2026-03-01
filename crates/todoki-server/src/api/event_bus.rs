@@ -29,8 +29,6 @@ pub struct EventQueryParams {
     pub limit: Option<usize>,
 }
 
-#[derive(Debug, Deserialize, Schematic)]
-pub struct LatestCursorParams {}
 
 #[derive(Debug, Deserialize, Schematic)]
 pub struct ReplayParams {

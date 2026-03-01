@@ -86,9 +86,3 @@ impl Event {
     }
 }
 
-/// Query response for event bus API
-#[derive(Debug, Serialize, Deserialize)]
-pub struct EventQueryResponse {
-    pub events: Vec<Event>,
-    pub next_cursor: i64,
-}

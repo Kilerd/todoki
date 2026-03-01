@@ -21,8 +21,6 @@ const BUFFER_SIZE: usize = 4096;
 enum ClientMessage {
     /// Emit an event to the Event Bus
     EmitEvent { kind: String, data: Value },
-    /// Pong response to ping
-    Pong,
 }
 
 /// Server → Client message format from Event Bus WebSocket
@@ -308,7 +306,8 @@ impl Relay {
         tracing::info!("forwarder task spawned");
         // Process inbound messages from server (events)
 
-        while let msg = ws_read.next().await {
+        loop {
+            let msg = ws_read.next().await;
             match msg {
                 
                 Some(Ok(Message::Text(event))) => {

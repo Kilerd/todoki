@@ -50,10 +50,6 @@ impl EventPublisher {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::event_bus::kinds::EventKind;
-    use uuid::Uuid;
-
     #[test]
     fn test_publisher_creation() {
         // This test just ensures EventPublisher can be created

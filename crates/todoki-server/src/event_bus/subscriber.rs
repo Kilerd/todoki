@@ -58,8 +58,6 @@ impl EventSubscriber {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_subscriber_creation() {
         // This test just ensures EventSubscriber can be created

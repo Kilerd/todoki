@@ -10,7 +10,6 @@ pub mod publisher;
 pub mod subscriber;
 
 pub use types::Event;
-pub use kinds::EventKind;
-pub use store::{EventStore, PgEventStore};
+pub use store::PgEventStore;
 pub use publisher::EventPublisher;
 pub use subscriber::EventSubscriber;
