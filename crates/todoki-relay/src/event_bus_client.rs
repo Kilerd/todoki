@@ -1,4 +1,6 @@
+use serde::Serialize;
 use serde_json::Value;
+use todoki_protocol::event_bus::{BuiltinEvent, Event, EventMessage};
 use uuid::Uuid;
 
 /// Client for emitting events to event-bus via HTTP API
@@ -66,6 +68,50 @@ impl EventBusClient {
     pub async fn emit_fire_and_forget(&self, kind: &str, data: Value) {
         if let Err(e) = self.emit(kind, data).await {
             tracing::warn!(kind = %kind, error = %e, "failed to emit event to event-bus");
+        }
+    }
+
+    /// Emit a typed builtin event
+    pub async fn emit_builtin(&self, event: BuiltinEvent) -> Result<i64, EventBusError> {
+        let message = EventMessage {
+            event: Event::Builtin(event),
+            agent_id: self.agent_id.to_string(),
+        };
+        self.emit_message(&message).await
+    }
+
+    /// Emit a typed builtin event, logging errors but not propagating them
+    pub async fn emit_builtin_fire_and_forget(&self, event: BuiltinEvent) {
+        if let Err(e) = self.emit_builtin(event).await {
+            tracing::warn!(error = %e, "failed to emit builtin event to event-bus");
+        }
+    }
+
+    /// Internal: emit any serializable message
+    async fn emit_message<T: Serialize>(&self, message: &T) -> Result<i64, EventBusError> {
+        let url = format!("{}/api/event-bus/emit", self.base_url);
+
+        let resp = self
+            .http_client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .json(message)
+            .send()
+            .await
+            .map_err(|e| EventBusError::Network(e.to_string()))?;
+
+        if resp.status().is_success() {
+            let cursor = resp
+                .json::<i64>()
+                .await
+                .map_err(|e| EventBusError::Parse(e.to_string()))?;
+            tracing::debug!(cursor = cursor, "emitted event to event-bus");
+            Ok(cursor)
+        } else {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            tracing::warn!(status = %status, body = %body, "failed to emit event");
+            Err(EventBusError::Server(status.as_u16(), body))
         }
     }
 }

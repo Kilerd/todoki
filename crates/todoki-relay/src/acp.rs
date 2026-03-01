@@ -19,6 +19,9 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::event_bus_client::EventBusClient;
 use crate::relay::RelayOutput;
+use todoki_protocol::event_bus::{
+    AgentOutputBatchData, ArtifactCreatedData, BuiltinEvent, PermissionRequestedData,
+};
 
 /// Regex for detecting GitHub PR URLs
 static PR_REGEX: Lazy<Regex> =
@@ -185,17 +188,14 @@ impl AcpEventSink {
             return;
         }
 
-        let data = serde_json::json!({
-            "agent_id": self.agent_id,
-            "session_id": self.session_id,
-            "ts": ts,
-            "stream": stream,
-            "messages": messages,
+        let event = BuiltinEvent::AgentOutputBatch(AgentOutputBatchData {
+            session_id: self.session_id.clone(),
+            stream: stream.to_string(),
+            messages: messages.to_vec(),
+            ts,
         });
 
-        self.event_bus
-            .emit_fire_and_forget("agent.output_batch", data)
-            .await;
+        self.event_bus.emit_builtin_fire_and_forget(event).await;
     }
 
     /// Flush remaining buffer (call on prompt completion)
@@ -265,29 +265,27 @@ impl AcpEventSink {
                         "detected GitHub PR artifact"
                     );
 
-                    let artifact_data = serde_json::json!({
-                        "session_id": self.session_id,
-                        "agent_id": self.agent_id,
-                        "artifact_type": "github_pr",
-                        "data": {
+                    let artifact_data = ArtifactCreatedData {
+                        session_id: self.session_id.clone(),
+                        artifact_type: "github_pr".to_string(),
+                        data: serde_json::json!({
                             "url": url,
                             "owner": owner,
                             "repo": repo,
                             "number": number,
-                        },
-                    });
+                        }),
+                    };
 
                     // Send to server via WebSocket (for artifacts table)
                     let msg = RelayOutput::EmitEvent {
                         kind: "relay.artifact".to_string(),
-                        data: artifact_data.clone(),
+                        data: serde_json::to_value(&artifact_data).unwrap_or_default(),
                     };
                     let _ = self.output_tx.send(msg).await;
 
                     // Also emit to event-bus via HTTP for persistence/replay
-                    self.event_bus
-                        .emit_fire_and_forget("artifact.created", artifact_data)
-                        .await;
+                    let event = BuiltinEvent::ArtifactCreated(artifact_data);
+                    self.event_bus.emit_builtin_fire_and_forget(event).await;
                 }
             }
         }
@@ -305,7 +303,6 @@ struct PendingPermission {
 struct PermissionManager {
     pending: Mutex<Option<PendingPermission>>,
     output_tx: mpsc::Sender<RelayOutput>,
-    agent_id: String,
     session_id: String,
     event_bus: EventBusClient,
 }
@@ -313,14 +310,12 @@ struct PermissionManager {
 impl PermissionManager {
     fn new(
         output_tx: mpsc::Sender<RelayOutput>,
-        agent_id: String,
         session_id: String,
         event_bus: EventBusClient,
     ) -> Self {
         Self {
             pending: Mutex::new(None),
             output_tx,
-            agent_id,
             session_id,
             event_bus,
         }
@@ -362,19 +357,19 @@ impl PermissionManager {
             );
         }
 
-        // Send permission request to server via WebSocket (for real-time handling)
-        let event_data = serde_json::json!({
-            "request_id": request_id,
-            "agent_id": self.agent_id,
-            "session_id": self.session_id,
-            "tool_call_id": args.tool_call.tool_call_id.to_string(),
-            "options": serde_json::to_value(&args.options).unwrap_or_default(),
-            "tool_call": serde_json::to_value(&args.tool_call).unwrap_or_default(),
-        });
+        // Build permission request data
+        let permission_data = PermissionRequestedData {
+            session_id: self.session_id.clone(),
+            request_id: request_id.clone(),
+            tool_call_id: args.tool_call.tool_call_id.to_string(),
+            tool_call: serde_json::to_value(&args.tool_call).unwrap_or_default(),
+            options: serde_json::to_value(&args.options).unwrap_or_default(),
+        };
 
+        // Send permission request to server via WebSocket (for real-time handling)
         let msg = RelayOutput::EmitEvent {
             kind: "relay.permission_request".to_string(),
-            data: event_data.clone(),
+            data: serde_json::to_value(&permission_data).unwrap_or_default(),
         };
 
         if let Err(e) = self.output_tx.send(msg).await {
@@ -385,9 +380,8 @@ impl PermissionManager {
         }
 
         // Also emit to event-bus via HTTP for persistence/replay
-        self.event_bus
-            .emit_fire_and_forget("permission.requested", event_data)
-            .await;
+        let event = BuiltinEvent::PermissionRequested(permission_data);
+        self.event_bus.emit_builtin_fire_and_forget(event).await;
 
         tracing::debug!(
             session_id = %self.session_id,
@@ -556,7 +550,6 @@ pub async fn spawn_acp_session(
     );
     let permissions = Arc::new(PermissionManager::new(
         output_tx.clone(),
-        agent_id.clone(),
         session_id.clone(),
         event_bus,
     ));
