@@ -862,7 +862,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1067,7 +1067,7 @@ dependencies = [
 [[package]]
 name = "gotcha"
 version = "0.2.2"
-source = "git+https://github.com/Kilerd/gotcha.git?branch=main#cdda45439c140c25d834e3d74fc8c1a17d5d0b0c"
+source = "git+https://github.com/Kilerd/gotcha.git?branch=main#79c5e0dba10beea625b7f5a146d881e32193cd97"
 dependencies = [
  "async-trait",
  "axum",
@@ -1101,7 +1101,7 @@ dependencies = [
 [[package]]
 name = "gotcha_macro"
 version = "0.2.0"
-source = "git+https://github.com/Kilerd/gotcha.git?branch=main#cdda45439c140c25d834e3d74fc8c1a17d5d0b0c"
+source = "git+https://github.com/Kilerd/gotcha.git?branch=main#79c5e0dba10beea625b7f5a146d881e32193cd97"
 dependencies = [
  "darling 0.14.4",
  "proc-macro-error",
@@ -2450,7 +2450,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2974,7 +2974,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3123,6 +3123,7 @@ dependencies = [
 name = "todoki-protocol"
 version = "0.1.0"
 dependencies = [
+ "gotcha",
  "serde",
  "serde_json",
  "uuid",

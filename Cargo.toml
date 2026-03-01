@@ -22,3 +22,4 @@ anyhow = "1"
 futures-util = "0.3"
 async-trait = "0.1"
 todoki-protocol = { path = "crates/todoki-protocol" }
+gotcha = { git = "https://github.com/Kilerd/gotcha.git", branch = "main" }

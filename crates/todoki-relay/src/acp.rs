@@ -7,8 +7,10 @@ use agent_client_protocol::{
     Agent, CancelNotification, Client, ClientCapabilities, ClientSideConnection, ContentBlock,
     Implementation, InitializeRequest, NewSessionRequest, PromptRequest, ProtocolVersion,
     RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SelectedPermissionOutcome, SessionNotification, SessionUpdate, ToolCall, ToolCallUpdate,
+    SelectedPermissionOutcome, SessionNotification, SessionUpdate, ToolCall as AcpToolCall,
+    ToolCallUpdate,
 };
+// Note: We use AcpToolCall for the full ToolCall type and ToolCallUpdate for permission requests
 use chrono::Utc;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -20,12 +22,31 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use crate::event_bus_client::EventBusClient;
 use crate::relay::RelayOutput;
 use todoki_protocol::event_bus::{
-    AgentOutputBatchData, ArtifactCreatedData, BuiltinEvent, PermissionRequestedData,
+    AgentOutputBatchData, ArtifactCreatedData, BuiltinEvent, PermissionOption, PermissionRequestedData,
+    ToolCall,
 };
 
 /// Regex for detecting GitHub PR URLs
 static PR_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)").unwrap());
+
+/// Convert ACP ToolCallUpdate to protocol ToolCall
+fn convert_tool_call_update(acp: &ToolCallUpdate) -> ToolCall {
+    ToolCall {
+        title: acp.fields.title.clone().unwrap_or_default(),
+        raw_input: acp.fields.raw_input.clone().unwrap_or(Value::Null),
+        tool_call_id: Some(acp.tool_call_id.to_string()),
+    }
+}
+
+/// Convert ACP PermissionOption to protocol PermissionOption
+fn convert_permission_option(acp: &agent_client_protocol::PermissionOption) -> PermissionOption {
+    PermissionOption {
+        kind: format!("{:?}", acp.kind).to_lowercase(),
+        name: acp.name.clone(),
+        option_id: acp.option_id.to_string(),
+    }
+}
 
 /// ACP session handle for sending commands
 #[derive(Clone)]
@@ -362,8 +383,8 @@ impl PermissionManager {
             session_id: self.session_id.clone(),
             request_id: request_id.clone(),
             tool_call_id: args.tool_call.tool_call_id.to_string(),
-            tool_call: serde_json::to_value(&args.tool_call).unwrap_or_default(),
-            options: serde_json::to_value(&args.options).unwrap_or_default(),
+            tool_call: convert_tool_call_update(&args.tool_call),
+            options: args.options.iter().map(convert_permission_option).collect(),
         };
 
         // Send permission request to server via WebSocket (for real-time handling)
@@ -795,7 +816,7 @@ fn json_message(kind: &str, content: &ContentBlock) -> Value {
     })
 }
 
-fn json_tool_call(tool_call: &ToolCall) -> Value {
+fn json_tool_call(tool_call: &AcpToolCall) -> Value {
     serde_json::json!({
         "type": "tool_call",
         "id": tool_call.tool_call_id.to_string(),

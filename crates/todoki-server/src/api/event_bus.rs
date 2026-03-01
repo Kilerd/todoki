@@ -4,6 +4,7 @@ use crate::{Publisher, Relays, Subscriber};
 use gotcha::axum::extract::{Query, State};
 use gotcha::{Json, Schematic};
 use serde::{Deserialize, Serialize};
+use todoki_protocol::event_bus::EventMessage;
 use uuid::Uuid;
 
 // ============================================================================
@@ -48,13 +49,16 @@ pub struct EventQueryResponse {
     pub next_cursor: i64,
 }
 
+/// Request to emit an event via HTTP API
+/// Uses EventMessage for type validation of builtin events
 #[derive(Debug, Deserialize, Schematic)]
 pub struct EmitEventRequest {
-    pub kind: String,
-    pub data: serde_json::Value,
-    /// Agent ID that emits this event. Defaults to System agent (nil UUID) if not provided.
-    pub agent_id: Option<Uuid>,
+    /// The event message (kind + data + agent_id)
+    #[serde(flatten)]
+    pub message: EventMessage,
+    /// Optional task ID for indexing
     pub task_id: Option<Uuid>,
+    /// Optional session ID for indexing
     pub session_id: Option<Uuid>,
 }
 
@@ -140,31 +144,34 @@ pub async fn replay_events(
 pub async fn emit_event(
     State(publisher): State<Publisher>,
     State(relays): State<Relays>,
-    Json(mut req): Json<EmitEventRequest>,
+    Json(req): Json<EmitEventRequest>,
 ) -> Result<Json<i64>, ApiError> {
+    // Parse agent_id from string to Uuid first (before consuming message)
+    let agent_id = Uuid::parse_str(&req.message.agent_id).unwrap_or(Uuid::nil());
+
+    // Extract kind and data from typed EventMessage
+    let (kind, mut data) = req.message.into_parts();
+
     // For permission.responded events, inject relay_id from pending permissions
     // This fixes the routing bug where frontend sends permission responses without relay_id
-    if req.kind == "permission.responded" {
-        if let Some(request_id) = req.data.get("request_id").and_then(|v| v.as_str()) {
+    if kind == "permission.responded" {
+        if let Some(request_id) = data.get("request_id").and_then(|v| v.as_str()) {
             if let Some((relay_id, _session_id)) = relays.get_pending_permission(request_id).await {
-                if let Some(obj) = req.data.as_object_mut() {
+                if let Some(obj) = data.as_object_mut() {
                     obj.insert("relay_id".to_string(), serde_json::Value::String(relay_id));
                 }
             }
         }
     }
 
-    // Use provided agent_id, or default to System agent (nil UUID)
-    let agent_id = req.agent_id.unwrap_or(Uuid::nil());
-
     let event = Event {
         cursor: 0, // Will be assigned by store
-        kind: req.kind,
+        kind,
         time: chrono::Utc::now(),
         agent_id,
         session_id: req.session_id,
         task_id: req.task_id,
-        data: req.data,
+        data,
     };
 
     let cursor = publisher

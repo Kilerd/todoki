@@ -9,7 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Shared protocol
-todoki-protocol.workspace = true
+todoki-protocol = { workspace = true, features = ["schematic"] }
 
 # Web framework
 gotcha = { git = "https://github.com/Kilerd/gotcha.git", branch = "main", features = ["cors", "openapi"] }
