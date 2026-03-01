@@ -284,9 +284,10 @@ export default function TaskDetailPanel() {
         </div>
         <div className="flex-1 overflow-y-auto p-4">
           <EventTimeline
-            kinds={["task.*", "agent.*", "artifact.*"]}
+            kinds={["task.*", "agent.*", "artifact.*", "permission.*", "relay.*"]}
             taskId={selectedTaskId}
             autoScroll
+            maxEvents={1000}
           />
         </div>
       </div>

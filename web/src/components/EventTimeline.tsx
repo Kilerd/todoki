@@ -100,25 +100,27 @@ function PermissionActions({ event }: { event: Event }) {
     setError(null);
 
     try {
-      const { agent_id, request_id, session_id } = event.data as {
-        agent_id?: string;
+      const { request_id, session_id } = event.data as {
         request_id?: string;
         session_id?: string;
       };
 
-      if (!agent_id || !request_id || !session_id) {
+      if (!request_id || !session_id) {
         throw new Error("Missing required fields in permission request");
       }
 
       await emitEvent({
+        agent_id: event.agent_id,
+        session_id,
+        task_id: event.task_id,
         kind: "permission.responded",
         data: {
-          agent_id,
-          request_id,
-          session_id,
+          relay_id: "",
+          request_id: request_id,
+          session_id: session_id,
           outcome: outcome === "reject" ? { cancelled: true } : { selected: { option_id: outcome } },
         },
-      });
+      }); // relay_id injected by backend
 
       setResponded(true);
     } catch (err) {

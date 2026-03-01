@@ -42,7 +42,7 @@ export default function EventTimelineDemo() {
             </p>
             <Separator className="mb-6" />
 
-            <EventTimeline kinds={["*"]} showStatus={true} maxEvents={50} />
+            <EventTimeline kinds={["*"]} showStatus={true} maxEvents={500} />
           </Card>
 
           <Card className="p-6 bg-slate-50">
@@ -68,7 +68,7 @@ export default function EventTimelineDemo() {
             </p>
             <Separator className="mb-6" />
 
-            <EventTimeline kinds={["task.*"]} showStatus={true} maxEvents={30} />
+            <EventTimeline kinds={["task.*"]} showStatus={true} maxEvents={300} />
           </Card>
 
           <Card className="p-6 bg-slate-50">

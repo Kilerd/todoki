@@ -155,7 +155,7 @@ export default function EventsPage() {
         kinds={filterKinds}
         cursor={cursor}
         showStatus={true}
-        maxEvents={100}
+        maxEvents={1000}
       />
     </div>
   );
