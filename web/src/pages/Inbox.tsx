@@ -17,7 +17,7 @@ import { useEventStream, type Event } from "../hooks/useEventStream";
 import { queryEvents, type EventBusEvent } from "../api/eventBus";
 
 function Inbox() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const selectedTaskId = searchParams.get("task");
   const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
 
@@ -81,6 +81,11 @@ function Inbox() {
       .sort((a, b) => a.cursor - b.cursor);
   }, [historicalEvents, events]);
 
+  // Handler for closing artifact preview
+  const handleCloseArtifact = () => {
+    setSearchParams({});
+  };
+
   return (
     <div className="h-screen overflow-hidden relative">
       <div className="h-full grid grid-cols-[320px_1fr] lg:grid-cols-[320px_480px_1fr] gap-0">
@@ -115,7 +120,7 @@ function Inbox() {
           )}
           data-testid="artifact-preview"
         >
-          <ArtifactPreview events={allEvents} />
+          <ArtifactPreview events={allEvents} onClose={handleCloseArtifact} />
         </div>
       </div>
 
