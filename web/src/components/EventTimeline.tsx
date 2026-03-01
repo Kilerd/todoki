@@ -12,13 +12,18 @@ import {
   Bot,
   CheckCircle2,
   Circle,
+  ClipboardList,
+  Code,
   FileText,
   History,
+  MessageSquare,
   PlayCircle,
   RefreshCw,
   Shield,
   StopCircle,
+  Terminal,
   XCircle,
+  Wrench,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -88,6 +93,229 @@ function getEventColor(kind: string): string {
   if (kind.includes("stopped")) return "border-l-yellow-400";
   if (kind.includes("analyzed")) return "border-l-purple-400";
   return "border-l-slate-300";
+}
+
+// Types for agent.output_batch messages
+interface OutputBatchData {
+  messages: string[];
+  session_id: string;
+  stream: "system" | "assistant" | "plan" | "tool_use" | "tool_result";
+  ts: number;
+}
+
+interface AgentMessage {
+  type: "agent_message";
+  chunk?: boolean;
+  text: string;
+}
+
+interface PlanMessage {
+  type: "plan";
+  plan: {
+    entries: Array<{
+      content: string;
+      priority: string;
+      status: string;
+    }>;
+  };
+}
+
+interface ToolCallMessage {
+  type: "tool_call" | "tool_call_update";
+  id: string;
+  kind: string;
+  title: string;
+  status: "pending" | "completed" | "error";
+  raw_input?: Record<string, unknown>;
+  raw_output?: string | null;
+  content?: Array<{ type: string; content: unknown }>;
+  meta?: {
+    claudeCode?: {
+      toolName?: string;
+      toolResponse?: unknown;
+    };
+  };
+}
+
+function OutputBatchContent({ data }: { data: OutputBatchData }) {
+  const parsedMessages = useMemo(() => {
+    return data.messages.map((msg) => {
+      try {
+        return JSON.parse(msg);
+      } catch {
+        return { type: "raw", text: msg };
+      }
+    });
+  }, [data.messages]);
+
+  const streamIcon = useMemo(() => {
+    switch (data.stream) {
+      case "system":
+        return <Terminal className="h-3 w-3 text-slate-500" />;
+      case "assistant":
+        return <MessageSquare className="h-3 w-3 text-blue-500" />;
+      case "plan":
+        return <ClipboardList className="h-3 w-3 text-purple-500" />;
+      case "tool_use":
+        return <Wrench className="h-3 w-3 text-orange-500" />;
+      case "tool_result":
+        return <Code className="h-3 w-3 text-green-500" />;
+      default:
+        return <Circle className="h-3 w-3 text-slate-400" />;
+    }
+  }, [data.stream]);
+
+  // Render assistant messages (combine chunks into text)
+  if (data.stream === "assistant") {
+    const text = parsedMessages
+      .filter((m): m is AgentMessage => m.type === "agent_message")
+      .map((m) => m.text)
+      .join("");
+
+    if (!text.trim()) return null;
+
+    return (
+      <div className="flex items-start gap-2 mt-2">
+        {streamIcon}
+        <div className="flex-1 text-sm text-slate-700 whitespace-pre-wrap">
+          {text}
+        </div>
+      </div>
+    );
+  }
+
+  // Render plan messages
+  if (data.stream === "plan") {
+    const planMsg = parsedMessages.find((m): m is PlanMessage => m.type === "plan");
+    if (!planMsg?.plan?.entries) return null;
+
+    return (
+      <div className="mt-2">
+        <div className="flex items-center gap-2 mb-2">
+          {streamIcon}
+          <span className="text-xs font-medium text-purple-600">Plan</span>
+        </div>
+        <div className="space-y-1 pl-5">
+          {planMsg.plan.entries.map((entry, idx) => (
+            <div
+              key={idx}
+              className={cn(
+                "flex items-center gap-2 text-xs",
+                entry.status === "completed" ? "text-green-600" : "text-slate-600"
+              )}
+            >
+              {entry.status === "completed" ? (
+                <CheckCircle2 className="h-3 w-3" />
+              ) : (
+                <Circle className="h-3 w-3" />
+              )}
+              <span>{entry.content}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Render tool_use messages
+  if (data.stream === "tool_use") {
+    const toolCalls = parsedMessages.filter(
+      (m): m is ToolCallMessage => m.type === "tool_call" || m.type === "tool_call_update"
+    );
+
+    // Dedupe by id, keep latest
+    const uniqueTools = new Map<string, ToolCallMessage>();
+    for (const tool of toolCalls) {
+      uniqueTools.set(tool.id, tool);
+    }
+
+    if (uniqueTools.size === 0) return null;
+
+    return (
+      <div className="mt-2 space-y-2">
+        {Array.from(uniqueTools.values()).map((tool) => (
+          <div key={tool.id} className="flex items-start gap-2">
+            {streamIcon}
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-orange-600">
+                  {tool.title || tool.kind}
+                </span>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "text-[10px] h-4",
+                    tool.status === "completed"
+                      ? "text-green-600 border-green-300"
+                      : tool.status === "error"
+                        ? "text-red-600 border-red-300"
+                        : "text-slate-500 border-slate-300"
+                  )}
+                >
+                  {tool.status}
+                </Badge>
+              </div>
+              {tool.raw_input && Object.keys(tool.raw_input).length > 0 && (
+                <div className="text-[10px] text-slate-500 font-mono mt-1 truncate max-w-md">
+                  {Object.entries(tool.raw_input)
+                    .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
+                    .join(", ")}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Render tool_result messages (collapsed by default)
+  if (data.stream === "tool_result") {
+    const results = parsedMessages.filter(
+      (m): m is ToolCallMessage => m.type === "tool_call_update" && m.status === "completed"
+    );
+
+    if (results.length === 0) return null;
+
+    return (
+      <div className="mt-2">
+        <details className="text-xs">
+          <summary className="flex items-center gap-2 cursor-pointer hover:text-slate-800">
+            {streamIcon}
+            <span className="text-green-600">
+              {results.length} tool result{results.length > 1 ? "s" : ""}
+            </span>
+          </summary>
+          <div className="mt-1 pl-5 space-y-1">
+            {results.map((result) => (
+              <div key={result.id} className="text-[10px] text-slate-500 font-mono">
+                {result.meta?.claudeCode?.toolName || result.kind}
+              </div>
+            ))}
+          </div>
+        </details>
+      </div>
+    );
+  }
+
+  // Render system messages (collapsed by default)
+  if (data.stream === "system") {
+    return (
+      <div className="mt-2">
+        <details className="text-xs">
+          <summary className="flex items-center gap-2 cursor-pointer hover:text-slate-800">
+            {streamIcon}
+            <span className="text-slate-500">System message</span>
+          </summary>
+          <pre className="mt-1 pl-5 text-[10px] text-slate-500 font-mono overflow-x-auto max-h-32">
+            {JSON.stringify(parsedMessages, null, 2)}
+          </pre>
+        </details>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function PermissionActions({ event }: { event: Event }) {
@@ -181,6 +409,7 @@ function EventItem({ event }: { event: Event }) {
 
   const hasDetails = event.data && Object.keys(event.data).length > 0;
   const isPermissionRequest = event.kind === "permission.requested";
+  const isOutputBatch = event.kind === "agent.output_batch";
 
   // Extract tool call info for permission requests
   const toolCallInfo = useMemo(() => {
@@ -188,6 +417,9 @@ function EventItem({ event }: { event: Event }) {
     const data = event.data as { tool_call?: { title?: string } };
     return data?.tool_call?.title;
   }, [event.data, isPermissionRequest]);
+
+  // Get stream type badge for output_batch
+  const outputBatchData = isOutputBatch ? (event.data as OutputBatchData) : null;
 
   return (
     <div
@@ -203,6 +435,21 @@ function EventItem({ event }: { event: Event }) {
             <span className="text-sm font-medium text-slate-700">
               {event.kind}
             </span>
+            {outputBatchData && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] h-4",
+                  outputBatchData.stream === "assistant" && "text-blue-600 border-blue-300",
+                  outputBatchData.stream === "plan" && "text-purple-600 border-purple-300",
+                  outputBatchData.stream === "tool_use" && "text-orange-600 border-orange-300",
+                  outputBatchData.stream === "tool_result" && "text-green-600 border-green-300",
+                  outputBatchData.stream === "system" && "text-slate-500 border-slate-300"
+                )}
+              >
+                {outputBatchData.stream}
+              </Badge>
+            )}
             <span className="text-xs text-slate-400 font-mono">
               #{event.cursor}
             </span>
@@ -234,12 +481,30 @@ function EventItem({ event }: { event: Event }) {
           {/* Permission action buttons */}
           {isPermissionRequest && <PermissionActions event={event} />}
 
-          {hasDetails && (
+          {/* Specialized output_batch rendering */}
+          {isOutputBatch && outputBatchData && (
+            <OutputBatchContent data={outputBatchData} />
+          )}
+
+          {/* Generic data view for non-output_batch events */}
+          {hasDetails && !isOutputBatch && (
             <details className="text-xs text-slate-600 mt-2">
               <summary className="cursor-pointer hover:text-slate-800 select-none">
                 View data
               </summary>
               <pre className="mt-2 p-2 bg-slate-50 rounded border border-slate-200 overflow-x-auto">
+                {JSON.stringify(event.data, null, 2)}
+              </pre>
+            </details>
+          )}
+
+          {/* Raw data toggle for output_batch */}
+          {isOutputBatch && hasDetails && (
+            <details className="text-xs text-slate-400 mt-2">
+              <summary className="cursor-pointer hover:text-slate-600 select-none">
+                Raw data
+              </summary>
+              <pre className="mt-2 p-2 bg-slate-50 rounded border border-slate-200 overflow-x-auto text-[10px]">
                 {JSON.stringify(event.data, null, 2)}
               </pre>
             </details>

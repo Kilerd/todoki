@@ -1039,74 +1039,79 @@ export interface operations {
                     session_id?: string | null;
                     /**
                      * Format: uuid
-                     * @description Optional task ID for indexing
+                     * @description Optional task_id for indexing and filtering events by task.
                      */
                     task_id?: string | null;
                 } & (({
-                    /** @description Data for task.created event - emitted when a new task is created. */
+                    /**
+                     * @description Data for task.created event - emitted when a new task is created.
+                     *     Note: task_id is provided at EventMessage level.
+                     */
                     data: {
                         /** @description Detailed description of what the task involves. */
                         description?: string | null;
                         /** @description If this is a subtask, the task_id of the parent task. */
                         parent_task_id?: string | null;
-                        /** @description Unique identifier for the newly created task (UUID format). */
-                        task_id: string;
                         /** @description Short, descriptive title of the task. */
                         title: string;
                     };
                     /** @enum {string} */
                     kind: "task.created";
                 } | {
-                    /** @description Data for task.status_changed event - emitted when a task's status transitions. */
+                    /**
+                     * @description Data for task.status_changed event - emitted when a task's status transitions.
+                     *     Note: task_id is provided at EventMessage level.
+                     */
                     data: {
                         /** @description The new status after the transition. */
                         new_status: string;
                         /** @description The previous status (e.g., "pending", "in_progress", "completed"). */
                         old_status: string;
-                        /** @description The task whose status changed. */
-                        task_id: string;
                     };
                     /** @enum {string} */
                     kind: "task.status_changed";
                 } | {
-                    /** @description Data for task.assigned event - emitted when a task is assigned to an agent. */
+                    /**
+                     * @description Data for task.assigned event - emitted when a task is assigned to an agent.
+                     *     Note: task_id is provided at EventMessage level.
+                     */
                     data: {
                         /** @description The agent_id of the agent that the task is assigned to. */
                         assigned_agent_id: string;
-                        /** @description The task being assigned. */
-                        task_id: string;
                     };
                     /** @enum {string} */
                     kind: "task.assigned";
                 } | {
-                    /** @description Data for task.completed event - emitted when a task finishes successfully. */
+                    /**
+                     * @description Data for task.completed event - emitted when a task finishes successfully.
+                     *     Note: task_id is provided at EventMessage level.
+                     */
                     data: {
                         /**
                          * Format: json
                          * @description Optional result data produced by completing the task.
                          */
                         result?: Record<string, never> | null;
-                        /** @description The task that was completed. */
-                        task_id: string;
                     };
                     /** @enum {string} */
                     kind: "task.completed";
                 } | {
-                    /** @description Data for task.failed event - emitted when a task fails. */
+                    /**
+                     * @description Data for task.failed event - emitted when a task fails.
+                     *     Note: task_id is provided at EventMessage level.
+                     */
                     data: {
                         /** @description Human-readable error message explaining why the task failed. */
                         error: string;
-                        /** @description The task that failed. */
-                        task_id: string;
                     };
                     /** @enum {string} */
                     kind: "task.failed";
                 } | {
-                    /** @description Data for task.archived event - emitted when a task is archived. */
-                    data: {
-                        /** @description The task that was archived. */
-                        task_id: string;
-                    };
+                    /**
+                     * @description Data for task.archived event - emitted when a task is archived.
+                     *     Note: task_id is provided at EventMessage level.
+                     */
+                    data: Record<string, never>;
                     /** @enum {string} */
                     kind: "task.archived";
                 } | {
@@ -1214,6 +1219,7 @@ export interface operations {
                     /**
                      * @description Data for agent.requirement_analyzed event - emitted when an agent completes requirement analysis.
                      *     Used for multi-agent collaboration workflows.
+                     *     Note: task_id is provided at EventMessage level.
                      */
                     data: {
                         /** @description The agent that performed the analysis. */
@@ -1223,8 +1229,6 @@ export interface operations {
                          * @description Structured analysis result (schema varies by agent type).
                          */
                         analysis: Record<string, never>;
-                        /** @description The task whose requirements were analyzed. */
-                        task_id: string;
                     };
                     /** @enum {string} */
                     kind: "agent.requirement_analyzed";
@@ -1232,6 +1236,7 @@ export interface operations {
                     /**
                      * @description Data for agent.business_context_ready event - emitted when business context is prepared.
                      *     Signals that downstream agents can begin their work with the provided context.
+                     *     Note: task_id is provided at EventMessage level.
                      */
                     data: {
                         /** @description The agent that prepared the context. */
@@ -1241,8 +1246,6 @@ export interface operations {
                          * @description Business context data (e.g., domain knowledge, constraints, stakeholder requirements).
                          */
                         context: Record<string, never>;
-                        /** @description The task this context belongs to. */
-                        task_id: string;
                     };
                     /** @enum {string} */
                     kind: "agent.business_context_ready";
@@ -1250,14 +1253,13 @@ export interface operations {
                     /**
                      * @description Data for agent.code_review_requested event - emitted when code review is needed.
                      *     Triggers code review agents to examine the changes.
+                     *     Note: task_id is provided at EventMessage level.
                      */
                     data: {
                         /** @description The agent requesting the review. */
                         agent_id: string;
                         /** @description GitHub PR URL if the code is in a pull request. */
                         pr_url?: string | null;
-                        /** @description The task associated with the code changes. */
-                        task_id: string;
                     };
                     /** @enum {string} */
                     kind: "agent.code_review_requested";
@@ -1265,6 +1267,7 @@ export interface operations {
                     /**
                      * @description Data for agent.qa_test_passed and agent.qa_test_failed events.
                      *     Indicates QA testing results for a task.
+                     *     Note: task_id is provided at EventMessage level.
                      */
                     data: {
                         /** @description The QA agent that ran the tests. */
@@ -1274,8 +1277,6 @@ export interface operations {
                          * @description Additional test result details (e.g., test counts, failure reasons, coverage).
                          */
                         details?: Record<string, never> | null;
-                        /** @description The task being tested. */
-                        task_id: string;
                     };
                     /** @enum {string} */
                     kind: "agent.qa_test_passed";
@@ -1283,6 +1284,7 @@ export interface operations {
                     /**
                      * @description Data for agent.qa_test_passed and agent.qa_test_failed events.
                      *     Indicates QA testing results for a task.
+                     *     Note: task_id is provided at EventMessage level.
                      */
                     data: {
                         /** @description The QA agent that ran the tests. */
@@ -1292,8 +1294,6 @@ export interface operations {
                          * @description Additional test result details (e.g., test counts, failure reasons, coverage).
                          */
                         details?: Record<string, never> | null;
-                        /** @description The task being tested. */
-                        task_id: string;
                     };
                     /** @enum {string} */
                     kind: "agent.qa_test_failed";
@@ -1319,6 +1319,7 @@ export interface operations {
                     /**
                      * @description Data for artifact.github_pr_opened and artifact.github_pr_merged events.
                      *     Tracks GitHub pull request lifecycle.
+                     *     Note: task_id is provided at EventMessage level.
                      */
                     data: {
                         /** @description Pull request number. */
@@ -1327,8 +1328,6 @@ export interface operations {
                         pr_url: string;
                         /** @description Repository in "owner/repo" format. */
                         repo: string;
-                        /** @description The task that this PR is associated with. */
-                        task_id: string;
                     };
                     /** @enum {string} */
                     kind: "artifact.github_pr_opened";
@@ -1336,6 +1335,7 @@ export interface operations {
                     /**
                      * @description Data for artifact.github_pr_opened and artifact.github_pr_merged events.
                      *     Tracks GitHub pull request lifecycle.
+                     *     Note: task_id is provided at EventMessage level.
                      */
                     data: {
                         /** @description Pull request number. */
@@ -1344,8 +1344,6 @@ export interface operations {
                         pr_url: string;
                         /** @description Repository in "owner/repo" format. */
                         repo: string;
-                        /** @description The task that this PR is associated with. */
-                        task_id: string;
                     };
                     /** @enum {string} */
                     kind: "artifact.github_pr_merged";
@@ -1355,20 +1353,31 @@ export interface operations {
                      *     This is the frontend-facing event (after relay routing is resolved).
                      */
                     data: {
-                        /**
-                         * Format: json
-                         * @description Available permission options for the user to choose from.
-                         */
-                        options: Record<string, never>;
+                        /** @description Available permission options for the user to choose from. */
+                        options: {
+                            /** @description The type of permission option (e.g., "allow", "deny", "allow_always"). */
+                            kind: string;
+                            /** @description Human-readable display name for this option. */
+                            name: string;
+                            /** @description Unique identifier for this option, used when responding to the permission request. */
+                            option_id: string;
+                        }[];
                         /** @description Unique identifier for this permission request (for response correlation). */
                         request_id: string;
                         /** @description Session ID requesting permission. */
                         session_id: string;
-                        /**
-                         * Format: json
-                         * @description Details of the tool call requiring permission.
-                         */
-                        tool_call: Record<string, never>;
+                        /** @description Details of the tool call requiring permission. */
+                        tool_call: {
+                            /**
+                             * Format: json
+                             * @description The raw input parameters that will be passed to the tool.
+                             */
+                            raw_input: Record<string, never>;
+                            /** @description Human-readable title describing what the tool will do. */
+                            title: string;
+                            /** @description Unique identifier for this specific tool call instance. */
+                            tool_call_id?: string | null;
+                        };
                         /** @description Tool call ID for tracking within the agent. */
                         tool_call_id: string;
                     };
@@ -1505,11 +1514,15 @@ export interface operations {
                      *     The server should route this to the appropriate UI for user decision.
                      */
                     data: {
-                        /**
-                         * Format: json
-                         * @description Available permission options for the user to choose from.
-                         */
-                        options: Record<string, never>;
+                        /** @description Available permission options for the user to choose from. */
+                        options: {
+                            /** @description The type of permission option (e.g., "allow", "deny", "allow_always"). */
+                            kind: string;
+                            /** @description Human-readable display name for this option. */
+                            name: string;
+                            /** @description Unique identifier for this option, used when responding to the permission request. */
+                            option_id: string;
+                        }[];
                         /** @description The relay forwarding the request. */
                         relay_id: string;
                         /** @description Unique identifier for this permission request (for response correlation). */
@@ -1518,11 +1531,18 @@ export interface operations {
                         session_id: string;
                         /** @description The agent requesting permission. */
                         target_agent_id: string;
-                        /**
-                         * Format: json
-                         * @description Details of the tool call requiring permission.
-                         */
-                        tool_call: Record<string, never>;
+                        /** @description Details of the tool call requiring permission. */
+                        tool_call: {
+                            /**
+                             * Format: json
+                             * @description The raw input parameters that will be passed to the tool.
+                             */
+                            raw_input: Record<string, never>;
+                            /** @description Human-readable title describing what the tool will do. */
+                            title: string;
+                            /** @description Unique identifier for this specific tool call instance. */
+                            tool_call_id?: string | null;
+                        };
                         /** @description Tool call ID for tracking. */
                         tool_call_id: string;
                     };
