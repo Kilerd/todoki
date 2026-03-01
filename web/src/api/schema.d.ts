@@ -728,24 +728,18 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        agent: {
-                            args: string[];
-                            command: string;
-                            created_at: string;
-                            /** @enum {string} */
-                            execution_mode: "local" | "remote";
-                            /** Format: uuid */
-                            id: string;
-                            name: string;
-                            /** Format: uuid */
-                            project_id: string;
-                            /** @enum {string} */
-                            role: "general" | "business" | "coding" | "qa";
-                            /** @enum {string} */
-                            status: "created" | "running" | "stopped" | "exited" | "failed";
-                            updated_at: string;
-                            workdir: string;
-                        };
+                        args: string[];
+                        command: string;
+                        created_at: string;
+                        /** @enum {string} */
+                        execution_mode: "local" | "remote";
+                        /** Format: uuid */
+                        id: string;
+                        name: string;
+                        /** Format: uuid */
+                        project_id: string;
+                        /** @enum {string} */
+                        role: "general" | "business" | "coding" | "qa";
                         /** @description Session info if auto_start was true */
                         session?: {
                             /** Format: uuid */
@@ -757,6 +751,10 @@ export interface operations {
                             /** @enum {string} */
                             status: "running" | "completed" | "failed" | "cancelled";
                         } | null;
+                        /** @enum {string} */
+                        status: "created" | "running" | "stopped" | "exited" | "failed";
+                        updated_at: string;
+                        workdir: string;
                     };
                 };
             };
@@ -1020,22 +1018,669 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /**
+         * @description Request to emit an event via HTTP API
+         *     Uses EventMessage for type validation of builtin events
+         */
         requestBody: {
             content: {
                 "application/json": {
                     /**
-                     * Format: uuid
-                     * @description Agent ID that emits this event. Defaults to System agent (nil UUID) if not provided.
+                     * @description The agent_id of the agent that emitted this event.
+                     *     This identifies the sender, not the subject or recipient of the event.
+                     *     For example, in a relay.agent_output event, agent_id is the relay,
+                     *     while target_agent_id in the data identifies which agent produced the output.
                      */
-                    agent_id?: string | null;
-                    /** Format: json */
-                    data: Record<string, never>;
-                    kind: string;
-                    /** Format: uuid */
+                    agent_id: string;
+                    /**
+                     * Format: uuid
+                     * @description Optional session ID for indexing
+                     */
                     session_id?: string | null;
-                    /** Format: uuid */
+                    /**
+                     * Format: uuid
+                     * @description Optional task ID for indexing
+                     */
                     task_id?: string | null;
-                };
+                } & (({
+                    /** @description Data for task.created event - emitted when a new task is created. */
+                    data: {
+                        /** @description Detailed description of what the task involves. */
+                        description?: string | null;
+                        /** @description If this is a subtask, the task_id of the parent task. */
+                        parent_task_id?: string | null;
+                        /** @description Unique identifier for the newly created task (UUID format). */
+                        task_id: string;
+                        /** @description Short, descriptive title of the task. */
+                        title: string;
+                    };
+                    /** @enum {string} */
+                    kind: "task.created";
+                } | {
+                    /** @description Data for task.status_changed event - emitted when a task's status transitions. */
+                    data: {
+                        /** @description The new status after the transition. */
+                        new_status: string;
+                        /** @description The previous status (e.g., "pending", "in_progress", "completed"). */
+                        old_status: string;
+                        /** @description The task whose status changed. */
+                        task_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "task.status_changed";
+                } | {
+                    /** @description Data for task.assigned event - emitted when a task is assigned to an agent. */
+                    data: {
+                        /** @description The agent_id of the agent that the task is assigned to. */
+                        assigned_agent_id: string;
+                        /** @description The task being assigned. */
+                        task_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "task.assigned";
+                } | {
+                    /** @description Data for task.completed event - emitted when a task finishes successfully. */
+                    data: {
+                        /**
+                         * Format: json
+                         * @description Optional result data produced by completing the task.
+                         */
+                        result?: Record<string, never> | null;
+                        /** @description The task that was completed. */
+                        task_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "task.completed";
+                } | {
+                    /** @description Data for task.failed event - emitted when a task fails. */
+                    data: {
+                        /** @description Human-readable error message explaining why the task failed. */
+                        error: string;
+                        /** @description The task that failed. */
+                        task_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "task.failed";
+                } | {
+                    /** @description Data for task.archived event - emitted when a task is archived. */
+                    data: {
+                        /** @description The task that was archived. */
+                        task_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "task.archived";
+                } | {
+                    /** @description Data for agent.registered event - emitted when an agent is registered with the system. */
+                    data: {
+                        /** @description Unique identifier for the agent (UUID format). */
+                        agent_id: string;
+                        /** @description Type of agent (e.g., "claude", "gpt", "custom"). */
+                        agent_type: string;
+                        /** @description List of capabilities this agent supports (e.g., ["code_review", "testing"]). */
+                        capabilities?: string[] | null;
+                    };
+                    /** @enum {string} */
+                    kind: "agent.registered";
+                } | {
+                    /** @description Data for agent.started event - emitted when an agent begins execution. */
+                    data: {
+                        /** @description The agent that started. */
+                        agent_id: string;
+                        /** @description Session ID for this execution instance. */
+                        session_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "agent.started";
+                } | {
+                    /** @description Data for agent.stopped event - emitted when an agent stops execution. */
+                    data: {
+                        /** @description The agent that stopped. */
+                        agent_id: string;
+                        /** @description Human-readable reason for stopping (e.g., "completed", "error", "user_cancelled"). */
+                        reason?: string | null;
+                        /** @description Session ID that was terminated. */
+                        session_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "agent.stopped";
+                } | {
+                    /** @description Data for agent.output event - emitted for each line of agent output. */
+                    data: {
+                        /** @description The agent producing output. */
+                        agent_id: string;
+                        /** @description The output message content. */
+                        message: string;
+                        /** @description Session ID for this execution. */
+                        session_id: string;
+                        /** @description Output stream type: "stdout" or "stderr". */
+                        stream: string;
+                        /** @description Unix timestamp in milliseconds when the output was produced. */
+                        ts: number;
+                    };
+                    /** @enum {string} */
+                    kind: "agent.output";
+                } | {
+                    /**
+                     * @description Data for agent.output_batch event - emitted for batched agent output.
+                     *     More efficient than individual output events for high-volume output.
+                     */
+                    data: {
+                        /** @description Batch of output messages. */
+                        messages: string[];
+                        /** @description Session ID for this execution. */
+                        session_id: string;
+                        /** @description Output stream type: "stdout" or "stderr". */
+                        stream: string;
+                        /** @description Unix timestamp in milliseconds when the batch was created. */
+                        ts: number;
+                    };
+                    /** @enum {string} */
+                    kind: "agent.output_batch";
+                } | {
+                    /** @description Data for agent.error event - emitted when an agent encounters an error. */
+                    data: {
+                        /** @description The agent that encountered the error. */
+                        agent_id: string;
+                        /** @description Human-readable error message. */
+                        error: string;
+                        /** @description Session ID where the error occurred. */
+                        session_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "agent.error";
+                } | {
+                    /** @description Data for agent.session_started event - emitted when a new agent session begins. */
+                    data: {
+                        /** @description The agent starting a session. */
+                        agent_id: string;
+                        /** @description Unique identifier for this session (UUID format). */
+                        session_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "agent.session_started";
+                } | {
+                    /** @description Data for agent.session_exited event - emitted when an agent session terminates. */
+                    data: {
+                        /** @description The agent whose session exited. */
+                        agent_id: string;
+                        /** @description Process exit code (0 = success, non-zero = error). */
+                        exit_code?: number | null;
+                        /** @description Session ID that terminated. */
+                        session_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "agent.session_exited";
+                } | {
+                    /**
+                     * @description Data for agent.requirement_analyzed event - emitted when an agent completes requirement analysis.
+                     *     Used for multi-agent collaboration workflows.
+                     */
+                    data: {
+                        /** @description The agent that performed the analysis. */
+                        agent_id: string;
+                        /**
+                         * Format: json
+                         * @description Structured analysis result (schema varies by agent type).
+                         */
+                        analysis: Record<string, never>;
+                        /** @description The task whose requirements were analyzed. */
+                        task_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "agent.requirement_analyzed";
+                } | {
+                    /**
+                     * @description Data for agent.business_context_ready event - emitted when business context is prepared.
+                     *     Signals that downstream agents can begin their work with the provided context.
+                     */
+                    data: {
+                        /** @description The agent that prepared the context. */
+                        agent_id: string;
+                        /**
+                         * Format: json
+                         * @description Business context data (e.g., domain knowledge, constraints, stakeholder requirements).
+                         */
+                        context: Record<string, never>;
+                        /** @description The task this context belongs to. */
+                        task_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "agent.business_context_ready";
+                } | {
+                    /**
+                     * @description Data for agent.code_review_requested event - emitted when code review is needed.
+                     *     Triggers code review agents to examine the changes.
+                     */
+                    data: {
+                        /** @description The agent requesting the review. */
+                        agent_id: string;
+                        /** @description GitHub PR URL if the code is in a pull request. */
+                        pr_url?: string | null;
+                        /** @description The task associated with the code changes. */
+                        task_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "agent.code_review_requested";
+                } | {
+                    /**
+                     * @description Data for agent.qa_test_passed and agent.qa_test_failed events.
+                     *     Indicates QA testing results for a task.
+                     */
+                    data: {
+                        /** @description The QA agent that ran the tests. */
+                        agent_id: string;
+                        /**
+                         * Format: json
+                         * @description Additional test result details (e.g., test counts, failure reasons, coverage).
+                         */
+                        details?: Record<string, never> | null;
+                        /** @description The task being tested. */
+                        task_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "agent.qa_test_passed";
+                } | {
+                    /**
+                     * @description Data for agent.qa_test_passed and agent.qa_test_failed events.
+                     *     Indicates QA testing results for a task.
+                     */
+                    data: {
+                        /** @description The QA agent that ran the tests. */
+                        agent_id: string;
+                        /**
+                         * Format: json
+                         * @description Additional test result details (e.g., test counts, failure reasons, coverage).
+                         */
+                        details?: Record<string, never> | null;
+                        /** @description The task being tested. */
+                        task_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "agent.qa_test_failed";
+                } | {
+                    /**
+                     * @description Data for artifact.created event - emitted when an agent produces an artifact.
+                     *     Artifacts are tangible outputs like files, commits, PRs, documents, etc.
+                     */
+                    data: {
+                        /** @description Type of artifact (e.g., "file", "commit", "pr", "document", "test_report"). */
+                        artifact_type: string;
+                        /**
+                         * Format: json
+                         * @description Artifact-specific data (schema varies by artifact_type).
+                         */
+                        data: Record<string, never>;
+                        /** @description Session ID that produced the artifact. */
+                        session_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "artifact.created";
+                } | {
+                    /**
+                     * @description Data for artifact.github_pr_opened and artifact.github_pr_merged events.
+                     *     Tracks GitHub pull request lifecycle.
+                     */
+                    data: {
+                        /** @description Pull request number. */
+                        pr_number: number;
+                        /** @description Full URL to the pull request (e.g., "https://github.com/owner/repo/pull/123"). */
+                        pr_url: string;
+                        /** @description Repository in "owner/repo" format. */
+                        repo: string;
+                        /** @description The task that this PR is associated with. */
+                        task_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "artifact.github_pr_opened";
+                } | {
+                    /**
+                     * @description Data for artifact.github_pr_opened and artifact.github_pr_merged events.
+                     *     Tracks GitHub pull request lifecycle.
+                     */
+                    data: {
+                        /** @description Pull request number. */
+                        pr_number: number;
+                        /** @description Full URL to the pull request (e.g., "https://github.com/owner/repo/pull/123"). */
+                        pr_url: string;
+                        /** @description Repository in "owner/repo" format. */
+                        repo: string;
+                        /** @description The task that this PR is associated with. */
+                        task_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "artifact.github_pr_merged";
+                } | {
+                    /**
+                     * @description Data for permission.requested event - emitted when an agent needs user approval.
+                     *     This is the frontend-facing event (after relay routing is resolved).
+                     */
+                    data: {
+                        /**
+                         * Format: json
+                         * @description Available permission options for the user to choose from.
+                         */
+                        options: Record<string, never>;
+                        /** @description Unique identifier for this permission request (for response correlation). */
+                        request_id: string;
+                        /** @description Session ID requesting permission. */
+                        session_id: string;
+                        /**
+                         * Format: json
+                         * @description Details of the tool call requiring permission.
+                         */
+                        tool_call: Record<string, never>;
+                        /** @description Tool call ID for tracking within the agent. */
+                        tool_call_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "permission.requested";
+                } | {
+                    /**
+                     * @description Data for permission.responded event - emitted when a user responds to a permission request.
+                     *     Contains the routing information needed to deliver the response to the correct relay/agent.
+                     */
+                    data: {
+                        /** @description User's decision: either selected option or cancelled. */
+                        outcome: {
+                            /** @description The selected outcome containing the chosen option_id. */
+                            selected: {
+                                /** @description The option_id of the permission option that was selected. */
+                                option_id: string;
+                            };
+                        } | {
+                            /** @description Always true when the request was cancelled. */
+                            cancelled: boolean;
+                        };
+                        /** @description Target relay to deliver the response to. */
+                        relay_id: string;
+                        /** @description Permission request ID being responded to. */
+                        request_id: string;
+                        /** @description Session ID to receive the response. */
+                        session_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "permission.responded";
+                } | {
+                    data: {
+                        request_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "permission.approved";
+                } | {
+                    data: {
+                        request_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "permission.denied";
+                } | {
+                    data: {
+                        request_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "permission.revoked";
+                } | {
+                    data: {
+                        request_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "permission.expired";
+                } | {
+                    data: {
+                        request_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "permission.cancelled";
+                } | {
+                    /** @description Data for relay.up and relay.down events - relay lifecycle events. */
+                    data: {
+                        /** @description Unique identifier for the relay (UUID format). */
+                        relay_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "relay.up";
+                } | {
+                    /** @description Data for relay.up and relay.down events - relay lifecycle events. */
+                    data: {
+                        /** @description Unique identifier for the relay (UUID format). */
+                        relay_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "relay.down";
+                } | {
+                    /** @description Data for relay.agent_output event - single output line from an agent via relay. */
+                    data: {
+                        /** @description The output message content. */
+                        message: string;
+                        /** @description The relay forwarding the output. */
+                        relay_id: string;
+                        /** @description Session ID for this execution. */
+                        session_id: string;
+                        /** @description Output stream type: "stdout" or "stderr". */
+                        stream: string;
+                        /** @description The agent producing the output. */
+                        target_agent_id: string;
+                        /** @description Unix timestamp in milliseconds. */
+                        ts: number;
+                    };
+                    /** @enum {string} */
+                    kind: "relay.agent_output";
+                } | {
+                    /**
+                     * @description Data for relay.agent_output_batch event - batched output from an agent via relay.
+                     *     Preferred over individual output events for efficiency.
+                     */
+                    data: {
+                        /** @description Batch of output messages. */
+                        messages: string[];
+                        /** @description The relay forwarding the output. */
+                        relay_id: string;
+                        /** @description Session ID for this execution. */
+                        session_id: string;
+                        /** @description Output stream type: "stdout" or "stderr". */
+                        stream: string;
+                        /** @description The agent producing the output. */
+                        target_agent_id: string;
+                        /** @description Unix timestamp in milliseconds when the batch was created. */
+                        ts: number;
+                    };
+                    /** @enum {string} */
+                    kind: "relay.agent_output_batch";
+                } | {
+                    /** @description Data for relay.session_status event - reports agent session status changes. */
+                    data: {
+                        /** @description Process exit code if the session has exited. */
+                        exit_code?: number | null;
+                        /** @description The relay reporting the status. */
+                        relay_id: string;
+                        /** @description Session ID being reported. */
+                        session_id: string;
+                        /** @description Current status (e.g., "running", "exited", "error"). */
+                        status: string;
+                    };
+                    /** @enum {string} */
+                    kind: "relay.session_status";
+                } | {
+                    /**
+                     * @description Data for relay.permission_request event - relay forwards permission request from agent.
+                     *     The server should route this to the appropriate UI for user decision.
+                     */
+                    data: {
+                        /**
+                         * Format: json
+                         * @description Available permission options for the user to choose from.
+                         */
+                        options: Record<string, never>;
+                        /** @description The relay forwarding the request. */
+                        relay_id: string;
+                        /** @description Unique identifier for this permission request (for response correlation). */
+                        request_id: string;
+                        /** @description Session ID where the request originated. */
+                        session_id: string;
+                        /** @description The agent requesting permission. */
+                        target_agent_id: string;
+                        /**
+                         * Format: json
+                         * @description Details of the tool call requiring permission.
+                         */
+                        tool_call: Record<string, never>;
+                        /** @description Tool call ID for tracking. */
+                        tool_call_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "relay.permission_request";
+                } | {
+                    /** @description Data for relay.artifact event - relay reports an artifact created by an agent. */
+                    data: {
+                        /** @description Type of artifact (e.g., "file", "commit", "pr"). */
+                        artifact_type: string;
+                        /** @description The relay reporting the artifact. */
+                        relay_id: string;
+                        /** @description Session ID that produced the artifact. */
+                        session_id: string;
+                        /** @description The agent that created the artifact. */
+                        target_agent_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "relay.artifact";
+                } | {
+                    /** @description Data for relay.prompt_completed event - indicates an agent prompt has finished. */
+                    data: {
+                        /** @description Error message if success is false. */
+                        error?: string | null;
+                        /** @description The relay reporting completion. */
+                        relay_id: string;
+                        /** @description Session ID where the prompt completed. */
+                        session_id: string;
+                        /** @description Whether the prompt completed successfully. */
+                        success: boolean;
+                    };
+                    /** @enum {string} */
+                    kind: "relay.prompt_completed";
+                } | {
+                    /** @description Data for relay.error event - relay reports an error condition. */
+                    data: {
+                        /** @description Human-readable error message. */
+                        error: string;
+                        /** @description The relay reporting the error. */
+                        relay_id: string;
+                        /** @description Session ID where the error occurred. */
+                        session_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "relay.error";
+                } | {
+                    /** @description Data for relay.spawn_requested event - server requests relay to spawn an agent process. */
+                    data: {
+                        /** @description Command-line arguments. */
+                        args: string[];
+                        /** @description Command to execute (e.g., "claude", "python"). */
+                        command: string;
+                        /** @description Environment variables to set for the process. */
+                        env: {
+                            [key: string]: string;
+                        };
+                        /** @description Target relay that should spawn the process. */
+                        relay_id: string;
+                        /** @description Unique request ID for response correlation. */
+                        request_id: string;
+                        /** @description Session ID to assign to this execution. */
+                        session_id: string;
+                        /** @description Agent ID for the spawned process. */
+                        target_agent_id: string;
+                        /** @description Working directory for the process. */
+                        workdir: string;
+                    };
+                    /** @enum {string} */
+                    kind: "relay.spawn_requested";
+                } | {
+                    /** @description Data for relay.stop_requested event - server requests relay to stop an agent session. */
+                    data: {
+                        /** @description Target relay that should stop the session. */
+                        relay_id: string;
+                        /** @description Session ID to stop. */
+                        session_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "relay.stop_requested";
+                } | {
+                    /** @description Data for relay.input_requested event - server sends input to forward to an agent. */
+                    data: {
+                        /** @description Input text to send to the agent's stdin. */
+                        input: string;
+                        /** @description Target relay that should forward the input. */
+                        relay_id: string;
+                        /** @description Session ID to receive the input. */
+                        session_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "relay.input_requested";
+                } | {
+                    /** @description Data for relay.spawn_completed event - relay confirms successful agent spawn. */
+                    data: {
+                        /** @description The relay that completed the spawn. */
+                        relay_id: string;
+                        /** @description Original request ID for correlation. */
+                        request_id: string;
+                        /** @description Session ID that was spawned. */
+                        session_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "relay.spawn_completed";
+                } | {
+                    /** @description Data for relay.spawn_failed event - relay reports agent spawn failure. */
+                    data: {
+                        /** @description Human-readable error explaining why spawn failed. */
+                        error: string;
+                        /** @description The relay that failed to spawn. */
+                        relay_id: string;
+                        /** @description Original request ID for correlation. */
+                        request_id: string;
+                        /** @description Session ID that failed to spawn. */
+                        session_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "relay.spawn_failed";
+                } | {
+                    /** @description Data for relay.stop_completed event - relay confirms session was stopped. */
+                    data: {
+                        /** @description The relay that stopped the session. */
+                        relay_id: string;
+                        /** @description Session ID that was stopped. */
+                        session_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "relay.stop_completed";
+                } | {
+                    /**
+                     * @description Data for system.relay_connected and system.relay_disconnected events.
+                     *     Tracks relay WebSocket connection lifecycle.
+                     */
+                    data: {
+                        /** @description The relay that connected or disconnected. */
+                        relay_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "system.relay_connected";
+                } | {
+                    /**
+                     * @description Data for system.relay_connected and system.relay_disconnected events.
+                     *     Tracks relay WebSocket connection lifecycle.
+                     */
+                    data: {
+                        /** @description The relay that connected or disconnected. */
+                        relay_id: string;
+                    };
+                    /** @enum {string} */
+                    kind: "system.relay_disconnected";
+                }) | {
+                    /**
+                     * Format: json
+                     * @description Arbitrary JSON data for the event.
+                     */
+                    data: Record<string, never>;
+                    /** @description Event kind string (e.g., "custom.my_event"). */
+                    kind: string;
+                });
             };
         };
         responses: {
