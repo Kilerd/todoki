@@ -549,11 +549,13 @@ pub async fn spawn_acp_session(
     stdin: ChildStdin,
     server_url: String,
     token: String,
+    task_id: Option<String>,
 ) -> anyhow::Result<AcpHandle> {
     tracing::debug!(
         session_id = %session_id,
         agent_id = %agent_id,
         workdir = %workdir,
+        task_id = ?task_id,
         "spawn_acp_session called"
     );
 
@@ -561,7 +563,9 @@ pub async fn spawn_acp_session(
     let (ready_tx, ready_rx) = oneshot::channel::<Result<String, String>>();
 
     let agent_uuid = uuid::Uuid::parse_str(&agent_id).unwrap_or_default();
-    let event_bus = EventBusClient::new(&server_url, &token, agent_uuid);
+    let task_uuid = task_id.as_ref().and_then(|id| uuid::Uuid::parse_str(id).ok());
+    let mut event_bus = EventBusClient::new(&server_url, &token, agent_uuid);
+    event_bus.set_task_id(task_uuid);
 
     let sink = AcpEventSink::new(
         output_tx.clone(),

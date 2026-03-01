@@ -399,6 +399,7 @@ impl Relay {
                 let args: Vec<String> = serde_json::from_value(data.get("args")?.clone()).ok()?;
                 let env: std::collections::HashMap<String, String> =
                     serde_json::from_value(data.get("env")?.clone()).unwrap_or_default();
+                let task_id = data.get("task_id").and_then(|v| v.as_str()).map(|s| s.to_string());
 
                 let params = todoki_protocol::SpawnSessionParams {
                     agent_id: agent_id.to_string(),
@@ -408,6 +409,7 @@ impl Relay {
                     args,
                     env,
                     setup_script: setup_script.map(|s| s.to_string()),
+                    task_id,
                 };
 
                 match session_manager.spawn(params).await {

@@ -319,6 +319,7 @@ impl RelayManager {
         kind: &str,
         request_id: String,
         mut data: Value,
+        task_id: Option<Uuid>,
     ) -> anyhow::Result<String> {
         // Check if relay is connected
         if !self.is_connected(relay_id).await {
@@ -334,14 +335,16 @@ impl RelayManager {
             );
         }
 
-        // Create and emit event
-        let event = crate::event_bus::Event::new(kind.to_string(), Uuid::nil(), data);
+        // Create and emit event with task_id
+        let mut event = crate::event_bus::Event::new(kind.to_string(), Uuid::nil(), data);
+        event.task_id = task_id;
         publisher.emit(event).await?;
 
         tracing::debug!(
             kind = %kind,
             relay_id = %relay_id,
             request_id = %request_id,
+            task_id = ?task_id,
             "emitted relay command event"
         );
 

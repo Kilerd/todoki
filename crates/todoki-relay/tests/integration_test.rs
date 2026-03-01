@@ -79,6 +79,7 @@ async fn test_spawn_session() {
         workdir: workdir.clone(),
         env: std::collections::HashMap::new(),
         setup_script: None,
+        task_id: None,
     };
 
     let result = manager.spawn(params).await;
@@ -126,6 +127,7 @@ async fn test_send_input_simple() {
         workdir: workdir.clone(),
         env: std::collections::HashMap::new(),
         setup_script: None,
+        task_id: None,
     };
 
     manager.spawn(params).await.expect("spawn failed");
@@ -185,6 +187,7 @@ async fn test_permission_flow() {
         workdir: workdir.clone(),
         env: std::collections::HashMap::new(),
         setup_script: None,
+        task_id: None,
     };
 
     manager.spawn(params).await.expect("spawn failed");
@@ -226,6 +229,7 @@ async fn test_path_validation() {
         workdir: "/not/allowed/path".to_string(),
         env: std::collections::HashMap::new(),
         setup_script: None,
+        task_id: None,
     };
 
     let result = manager.spawn(params).await;
@@ -262,6 +266,7 @@ async fn test_spawn_duplicate_session() {
         workdir: workdir.clone(),
         env: std::collections::HashMap::new(),
         setup_script: None,
+        task_id: None,
     };
 
     manager.spawn(params1).await.expect("first spawn failed");
@@ -275,6 +280,7 @@ async fn test_spawn_duplicate_session() {
         workdir: workdir.clone(),
         env: std::collections::HashMap::new(),
         setup_script: None,
+        task_id: None,
     };
 
     let result = manager.spawn(params2).await;

@@ -386,6 +386,7 @@ pub async fn execute_task(
         "command": agent.command,
         "args": agent.args_vec(),
         "env": {},
+        "task_id": task_id.to_string(),
     });
 
     let spawn_request_id = Uuid::new_v4().to_string();
@@ -396,6 +397,7 @@ pub async fn execute_task(
             EventKind::RELAY_SPAWN_REQUESTED,
             spawn_request_id,
             spawn_data,
+            Some(task_id),
         )
         .await
     {
@@ -435,6 +437,7 @@ pub async fn execute_task(
                 "session_id": session.id.to_string(),
                 "input": prompt,
             }),
+            Some(task_id),
         )
         .await
     {

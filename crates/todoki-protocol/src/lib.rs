@@ -63,6 +63,9 @@ pub struct SpawnSessionParams {
     /// If provided, executes as: bash -c "setup_script && exec command args..."
     #[serde(default)]
     pub setup_script: Option<String>,
+    /// Optional task_id for associating events with a task
+    #[serde(default)]
+    pub task_id: Option<String>,
 }
 
 /// Parameters for send-input

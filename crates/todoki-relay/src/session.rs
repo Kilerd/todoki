@@ -183,6 +183,7 @@ impl SessionManager {
             stdin,
             self.server_url.clone(),
             self.token.clone(),
+            params.task_id.clone(),
         )
         .await
         {

@@ -215,7 +215,7 @@ async fn start_agent_internal(
     });
 
     if let Err(e) = relays
-        .emit_relay_command(publisher, &relay_id, EventKind::RELAY_SPAWN_REQUESTED, request_id.clone(), data)
+        .emit_relay_command(publisher, &relay_id, EventKind::RELAY_SPAWN_REQUESTED, request_id.clone(), data, None)
         .await
     {
         // Rollback on emit failure
@@ -330,6 +330,7 @@ pub async fn stop_agent(
                     EventKind::RELAY_STOP_REQUESTED,
                     request_id,
                     serde_json::json!({"session_id": session.id.to_string()}),
+                    None,
                 )
                 .await;
 
