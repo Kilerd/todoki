@@ -17,6 +17,7 @@ import {
   unarchiveTask,
   updateTaskStatus,
 } from "../hooks/useTasks";
+import { getProjectById } from "../hooks/useProjects";
 
 const STATUS_LABELS: Record<string, string> = {
   backlog: "Backlog",
@@ -94,6 +95,7 @@ export default function TimelineTaskItem(props: Props) {
   }
 
   const isDone = props.status === "done";
+  const project = props.project_id ? getProjectById(props.project_id) : null;
 
   return (
     <div>
@@ -102,9 +104,9 @@ export default function TimelineTaskItem(props: Props) {
           <span className="text-gray-500 min-w-[5vh] flex items-center gap-1.5">
             <div
               className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: props.project?.color ?? "#6B7280" }}
+              style={{ backgroundColor: project?.color ?? "#6B7280" }}
             />
-            {props.project?.name ?? "Inbox"}
+            {project?.name ?? "Inbox"}
           </span>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

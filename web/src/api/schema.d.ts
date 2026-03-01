@@ -334,6 +334,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Project Done Tasks
+         * @description GET /api/projects/:project_id/tasks/done - Get done tasks for a project with pagination
+         */
+        get: operations["get_project_done_tasks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/relays": {
         parameters: {
             query?: never;
@@ -2083,6 +2103,91 @@ export interface operations {
             };
         };
     };
+    get_project_done_tasks: {
+        parameters: {
+            query: {
+                offset: number;
+                limit: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Agent executing this task, if any */
+                        agent?: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            role: "general" | "business" | "coding" | "qa";
+                            /** @enum {string} */
+                            status: "created" | "running" | "stopped" | "exited" | "failed";
+                        } | null;
+                        archived: boolean;
+                        /** @description Artifacts created by the agent (e.g., GitHub PRs) */
+                        artifacts: {
+                            /** Format: uuid */
+                            agent_id?: string | null;
+                            artifact_type: string;
+                            created_at: string;
+                            /** Format: json */
+                            data: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            project_id: string;
+                            /** Format: uuid */
+                            session_id?: string | null;
+                            /** Format: uuid */
+                            task_id: string;
+                            updated_at: string;
+                        }[];
+                        comments: {
+                            content: string;
+                            create_at: string;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        content: string;
+                        create_at: string;
+                        events: {
+                            datetime: string;
+                            /** @enum {string} */
+                            event_type: "Create" | "StatusChange" | "Unarchived" | "Archived" | "CreateComment";
+                            /** @enum {string|null} */
+                            from_state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string|null} */
+                            state?: "backlog" | "todo" | "in-progress" | "in-review" | "done" | null;
+                            /** Format: uuid */
+                            task_id: string;
+                        }[];
+                        /** Format: uuid */
+                        id: string;
+                        priority: number;
+                        /** Format: uuid */
+                        project_id: string;
+                        /** @enum {string} */
+                        status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
+                    }[];
+                };
+            };
+        };
+    };
     list_relays: {
         parameters: {
             query?: never;
@@ -2250,20 +2355,8 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         priority: number;
-                        project: {
-                            archived: boolean;
-                            business_template?: string | null;
-                            coding_template?: string | null;
-                            color: string;
-                            created_at: string;
-                            description?: string | null;
-                            general_template?: string | null;
-                            /** Format: uuid */
-                            id: string;
-                            name: string;
-                            qa_template?: string | null;
-                            updated_at: string;
-                        };
+                        /** Format: uuid */
+                        project_id: string;
                         /** @enum {string} */
                         status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     }[];
@@ -2353,20 +2446,8 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         priority: number;
-                        project: {
-                            archived: boolean;
-                            business_template?: string | null;
-                            coding_template?: string | null;
-                            color: string;
-                            created_at: string;
-                            description?: string | null;
-                            general_template?: string | null;
-                            /** Format: uuid */
-                            id: string;
-                            name: string;
-                            qa_template?: string | null;
-                            updated_at: string;
-                        };
+                        /** Format: uuid */
+                        project_id: string;
                         /** @enum {string} */
                         status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     };
@@ -2445,20 +2526,8 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         priority: number;
-                        project: {
-                            archived: boolean;
-                            business_template?: string | null;
-                            coding_template?: string | null;
-                            color: string;
-                            created_at: string;
-                            description?: string | null;
-                            general_template?: string | null;
-                            /** Format: uuid */
-                            id: string;
-                            name: string;
-                            qa_template?: string | null;
-                            updated_at: string;
-                        };
+                        /** Format: uuid */
+                        project_id: string;
                         /** @enum {string} */
                         status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     }[];
@@ -2537,20 +2606,8 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         priority: number;
-                        project: {
-                            archived: boolean;
-                            business_template?: string | null;
-                            coding_template?: string | null;
-                            color: string;
-                            created_at: string;
-                            description?: string | null;
-                            general_template?: string | null;
-                            /** Format: uuid */
-                            id: string;
-                            name: string;
-                            qa_template?: string | null;
-                            updated_at: string;
-                        };
+                        /** Format: uuid */
+                        project_id: string;
                         /** @enum {string} */
                         status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     }[];
@@ -2629,20 +2686,8 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         priority: number;
-                        project: {
-                            archived: boolean;
-                            business_template?: string | null;
-                            coding_template?: string | null;
-                            color: string;
-                            created_at: string;
-                            description?: string | null;
-                            general_template?: string | null;
-                            /** Format: uuid */
-                            id: string;
-                            name: string;
-                            qa_template?: string | null;
-                            updated_at: string;
-                        };
+                        /** Format: uuid */
+                        project_id: string;
                         /** @enum {string} */
                         status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     }[];
@@ -2721,20 +2766,8 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         priority: number;
-                        project: {
-                            archived: boolean;
-                            business_template?: string | null;
-                            coding_template?: string | null;
-                            color: string;
-                            created_at: string;
-                            description?: string | null;
-                            general_template?: string | null;
-                            /** Format: uuid */
-                            id: string;
-                            name: string;
-                            qa_template?: string | null;
-                            updated_at: string;
-                        };
+                        /** Format: uuid */
+                        project_id: string;
                         /** @enum {string} */
                         status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     }[];
@@ -2813,20 +2846,8 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         priority: number;
-                        project: {
-                            archived: boolean;
-                            business_template?: string | null;
-                            coding_template?: string | null;
-                            color: string;
-                            created_at: string;
-                            description?: string | null;
-                            general_template?: string | null;
-                            /** Format: uuid */
-                            id: string;
-                            name: string;
-                            qa_template?: string | null;
-                            updated_at: string;
-                        };
+                        /** Format: uuid */
+                        project_id: string;
                         /** @enum {string} */
                         status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     }[];
@@ -2907,20 +2928,8 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         priority: number;
-                        project: {
-                            archived: boolean;
-                            business_template?: string | null;
-                            coding_template?: string | null;
-                            color: string;
-                            created_at: string;
-                            description?: string | null;
-                            general_template?: string | null;
-                            /** Format: uuid */
-                            id: string;
-                            name: string;
-                            qa_template?: string | null;
-                            updated_at: string;
-                        };
+                        /** Format: uuid */
+                        project_id: string;
                         /** @enum {string} */
                         status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     };
@@ -3010,20 +3019,8 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         priority: number;
-                        project: {
-                            archived: boolean;
-                            business_template?: string | null;
-                            coding_template?: string | null;
-                            color: string;
-                            created_at: string;
-                            description?: string | null;
-                            general_template?: string | null;
-                            /** Format: uuid */
-                            id: string;
-                            name: string;
-                            qa_template?: string | null;
-                            updated_at: string;
-                        };
+                        /** Format: uuid */
+                        project_id: string;
                         /** @enum {string} */
                         status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     };
@@ -3126,20 +3123,8 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         priority: number;
-                        project: {
-                            archived: boolean;
-                            business_template?: string | null;
-                            coding_template?: string | null;
-                            color: string;
-                            created_at: string;
-                            description?: string | null;
-                            general_template?: string | null;
-                            /** Format: uuid */
-                            id: string;
-                            name: string;
-                            qa_template?: string | null;
-                            updated_at: string;
-                        };
+                        /** Format: uuid */
+                        project_id: string;
                         /** @enum {string} */
                         status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     };
@@ -3320,20 +3305,8 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         priority: number;
-                        project: {
-                            archived: boolean;
-                            business_template?: string | null;
-                            coding_template?: string | null;
-                            color: string;
-                            created_at: string;
-                            description?: string | null;
-                            general_template?: string | null;
-                            /** Format: uuid */
-                            id: string;
-                            name: string;
-                            qa_template?: string | null;
-                            updated_at: string;
-                        };
+                        /** Format: uuid */
+                        project_id: string;
                         /** @enum {string} */
                         status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     };
@@ -3414,20 +3387,8 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         priority: number;
-                        project: {
-                            archived: boolean;
-                            business_template?: string | null;
-                            coding_template?: string | null;
-                            color: string;
-                            created_at: string;
-                            description?: string | null;
-                            general_template?: string | null;
-                            /** Format: uuid */
-                            id: string;
-                            name: string;
-                            qa_template?: string | null;
-                            updated_at: string;
-                        };
+                        /** Format: uuid */
+                        project_id: string;
                         /** @enum {string} */
                         status: "backlog" | "todo" | "in-progress" | "in-review" | "done";
                     };

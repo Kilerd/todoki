@@ -291,6 +291,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .get("/api/projects/:project_id", projects::get_project)
         .put("/api/projects/:project_id", projects::update_project)
         .delete("/api/projects/:project_id", projects::delete_project)
+        .get("/api/projects/:project_id/tasks/done", projects::get_project_done_tasks)
         // Report route
         .get("/api/report", report::get_report)
         // Artifact routes

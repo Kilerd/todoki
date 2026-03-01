@@ -5,8 +5,9 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::api::error::ApiError;
+use crate::api::tasks::tasks_to_responses;
 use crate::auth::AuthContext;
-use crate::models::{CreateProject, ProjectCreateRequest, ProjectResponse, ProjectUpdateRequest};
+use crate::models::{CreateProject, ProjectCreateRequest, ProjectResponse, ProjectUpdateRequest, TaskResponse};
 use crate::Db;
 
 #[derive(Debug, Deserialize, Schematic)]
@@ -111,4 +112,33 @@ pub async fn delete_project(
 
     db.delete_project(project_id).await?;
     Ok(Json(()))
+}
+
+#[derive(Debug, Deserialize, Schematic)]
+pub struct ProjectDoneTasksQuery {
+    #[serde(default)]
+    pub offset: i64,
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+}
+
+fn default_limit() -> i64 {
+    20
+}
+
+/// GET /api/projects/:project_id/tasks/done - Get done tasks for a project with pagination
+#[gotcha::api]
+pub async fn get_project_done_tasks(
+    Extension(auth): Extension<AuthContext>,
+    State(db): State<Db>,
+    Path(project_id): Path<Uuid>,
+    Query(query): Query<ProjectDoneTasksQuery>,
+) -> Result<Json<Vec<TaskResponse>>, ApiError> {
+    auth.require_auth().map_err(|_| ApiError::unauthorized())?;
+
+    let tasks = db
+        .get_project_done_tasks(project_id, query.offset, query.limit)
+        .await?;
+    let responses = tasks_to_responses(&db, tasks).await?;
+    Ok(Json(responses))
 }

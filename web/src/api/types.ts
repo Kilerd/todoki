@@ -5,8 +5,9 @@ import type {operations} from "./schema";
 export type TaskResponse =
     operations["get_tasks"]["responses"]["200"]["content"]["application/json"][number];
 
-// Extract Project from TaskResponse.project
-export type Project = TaskResponse["project"];
+// Extract Project from list_projects operation response
+export type Project =
+    operations["list_projects"]["responses"]["200"]["content"]["application/json"][number];
 
 // Extract TaskComment from TaskResponse.comments
 export type TaskComment = TaskResponse["comments"][number];

@@ -23,13 +23,13 @@ export default function TaskItemEditModal({ onOpenChange, innerProps: props }: D
     const { projects } = useProjects();
     const originalContent = (props.priority > 0 ? `${"!".repeat(props.priority)} ` : "") + props.content;
     const [newTaskText, setNewTaskText] = useState(originalContent);
-    const [selectedProjectId, setSelectedProjectId] = useState(props.project.id);
+    const [selectedProjectId, setSelectedProjectId] = useState(props.project_id);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const parsedTask = useMemo(() => parseTask(newTaskText), [newTaskText]);
     const selectedProject = projects.find(p => p.id === selectedProjectId);
 
-    const hasChanges = originalContent !== newTaskText || selectedProjectId !== props.project.id;
+    const hasChanges = originalContent !== newTaskText || selectedProjectId !== props.project_id;
 
     const handleSubmitClick = async () => {
         setIsSubmitting(true);
@@ -112,7 +112,7 @@ export default function TaskItemEditModal({ onOpenChange, innerProps: props }: D
                     disabled={!hasChanges}
                     onClick={() => {
                         setNewTaskText(originalContent);
-                        setSelectedProjectId(props.project.id);
+                        setSelectedProjectId(props.project_id);
                     }}
                 >
                     Reset

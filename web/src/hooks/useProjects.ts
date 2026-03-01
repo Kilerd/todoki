@@ -39,7 +39,19 @@ export function useProjects() {
     };
   }, [refresh]);
 
-  return { projects, isLoading, refresh };
+  const getProjectById = useCallback(
+    (projectId: string): Project | undefined => {
+      return projects.find((p) => p.id === projectId);
+    },
+    [projects]
+  );
+
+  return { projects, isLoading, refresh, getProjectById };
+}
+
+// Utility function to get project from global store (for use outside React components)
+export function getProjectById(projectId: string): Project | undefined {
+  return globalProjects.find((p) => p.id === projectId);
 }
 
 export function useProject(projectId: string) {

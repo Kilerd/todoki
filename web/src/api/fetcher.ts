@@ -2,7 +2,7 @@ import {Fetcher} from "openapi-typescript-fetch";
 import {paths} from "../api/schema";
 import {getToken} from "@/lib/auth.ts";
 
-const API_BASE_URL =
+export const baseUrl =
     import.meta.env.VITE_API_BASE_URL || "http://localhost:8201";
 
 if (import.meta.env.PROD && !import.meta.env.VITE_API_BASE_URL) {
@@ -13,7 +13,7 @@ if (import.meta.env.PROD && !import.meta.env.VITE_API_BASE_URL) {
 export const fetcher = Fetcher.for<paths>();
 
 fetcher.configure({
-    baseUrl: API_BASE_URL,
+    baseUrl: baseUrl,
     init: {
         headers: {
             "Content-Type": "application/json",

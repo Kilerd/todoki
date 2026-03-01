@@ -6,7 +6,6 @@ use uuid::Uuid;
 
 use super::agent::AgentBriefResponse;
 use super::artifact::ArtifactResponse;
-use super::project::ProjectResponse;
 
 // ============================================================================
 // Task Status
@@ -239,7 +238,7 @@ pub struct TaskResponse {
     pub id: Uuid,
     pub priority: i32,
     pub content: String,
-    pub project: ProjectResponse,
+    pub project_id: Uuid,
     pub status: TaskStatus,
     pub create_at: DateTime<Utc>,
     pub archived: bool,
@@ -256,7 +255,6 @@ pub struct TaskResponse {
 impl TaskResponse {
     pub fn from_task(
         task: Task,
-        project: ProjectResponse,
         events: Vec<TaskEvent>,
         comments: Vec<TaskComment>,
         agent: Option<AgentBriefResponse>,
@@ -266,7 +264,7 @@ impl TaskResponse {
             id: task.id,
             priority: task.priority,
             content: task.content,
-            project,
+            project_id: task.project_id,
             status: task.status,
             create_at: task.create_at,
             archived: task.archived,

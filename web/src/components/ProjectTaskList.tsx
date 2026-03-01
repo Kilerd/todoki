@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronDown, Plus, History, Loader2 } from "lucide-react";
 import { orderBy } from "lodash";
 import { cn } from "@/lib/utils";
 import {
@@ -12,36 +12,59 @@ import {
 import TaskItem from "./TaskItem";
 import { useTasks } from "../hooks/useTasks";
 import { useProjects } from "../hooks/useProjects";
+import { fetchProjectDoneTasks } from "../api/projects";
 import TaskCreateModal from "../modals/TaskCreateModal";
 import type { TaskResponse as Task, Project } from "../api/types";
+
+const DONE_TASKS_PAGE_SIZE = 20;
 
 interface ProjectGroupProps {
   project: Project;
   tasks: Task[];
+  doneTasks: Task[];
   expanded: boolean;
   onToggle: () => void;
   selectedTaskId?: string;
   onTaskSelect: (taskId: string) => void;
   onAddTask: (projectId: string) => void;
+  onLoadDoneTasks: (projectId: string) => void;
+  isLoadingDone: boolean;
+  hasMoreDone: boolean;
+  showDone: boolean;
 }
 
 function ProjectGroup({
   project,
   tasks,
+  doneTasks,
   expanded,
   onToggle,
   selectedTaskId,
   onTaskSelect,
   onAddTask,
+  onLoadDoneTasks,
+  isLoadingDone,
+  hasMoreDone,
+  showDone,
 }: ProjectGroupProps) {
   const sortedTasks = useMemo(
     () => orderBy(tasks, ["priority", "create_at"], ["desc", "asc"]),
     [tasks]
   );
 
+  const sortedDoneTasks = useMemo(
+    () => orderBy(doneTasks, ["create_at"], ["desc"]),
+    [doneTasks]
+  );
+
   const handleAddClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     onAddTask(project.id);
+  };
+
+  const handleLoadDoneClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onLoadDoneTasks(project.id);
   };
 
   return (
@@ -92,9 +115,57 @@ function ProjectGroup({
               <TaskItem {...task} compact />
             </div>
           ))}
-          {tasks.length === 0 && (
-            <div className="text-xs text-slate-400 py-2 px-3">No tasks</div>
+          {tasks.length === 0 && !showDone && (
+            <div className="text-xs text-slate-400 py-2 px-3">No active tasks</div>
           )}
+
+          {/* Done tasks section */}
+          {showDone && sortedDoneTasks.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <div className="text-xs text-slate-400 px-3 pb-2 flex items-center gap-1.5">
+                <History className="h-3 w-3" />
+                Completed ({doneTasks.length})
+              </div>
+              {sortedDoneTasks.map((task) => (
+                <div
+                  key={task.id}
+                  className={cn(
+                    "cursor-pointer rounded-lg transition-colors opacity-60",
+                    selectedTaskId === task.id
+                      ? "bg-teal-50 ring-2 ring-teal-500 ring-inset opacity-100"
+                      : "hover:bg-slate-50 hover:opacity-80"
+                  )}
+                  onClick={() => onTaskSelect(task.id)}
+                >
+                  <TaskItem {...task} compact />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Load more button */}
+          <button
+            className={cn(
+              "w-full text-xs text-slate-400 hover:text-slate-600 py-2 px-3 text-left hover:bg-slate-50 rounded-lg transition-colors flex items-center gap-1.5",
+              isLoadingDone && "cursor-not-allowed"
+            )}
+            onClick={handleLoadDoneClick}
+            disabled={isLoadingDone}
+          >
+            {isLoadingDone ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Loading...
+              </>
+            ) : hasMoreDone || !showDone ? (
+              <>
+                <History className="h-3 w-3" />
+                {showDone ? "Load more completed" : "Load completed tasks"}
+              </>
+            ) : doneTasks.length > 0 ? (
+              <span className="text-slate-300">No more completed tasks</span>
+            ) : null}
+          </button>
         </div>
       )}
     </div>
@@ -107,8 +178,11 @@ export default function ProjectTaskList() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedTaskId = searchParams.get("task") || undefined;
 
-  // Track expanded state for each project (empty initially, will auto-expand based on tasks)
+  // Track user's manual expand/collapse choices
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(
     () => new Set()
   );
 
@@ -116,20 +190,39 @@ export default function ProjectTaskList() {
   const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
   const [selectedProjectForTask, setSelectedProjectForTask] = useState<string | null>(null);
 
+  // Track done tasks per project
+  const [doneTasks, setDoneTasks] = useState<Map<string, Task[]>>(
+    () => new Map()
+  );
+  const [doneTasksLoading, setDoneTasksLoading] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [doneTasksHasMore, setDoneTasksHasMore] = useState<Map<string, boolean>>(
+    () => new Map()
+  );
+
   const handleTaskSelect = (taskId: string) => {
     setSearchParams({ task: taskId });
   };
 
-  const toggleProject = (projectId: string) => {
-    setExpandedProjects((prev) => {
-      const next = new Set(prev);
-      if (next.has(projectId)) {
+  const toggleProject = (projectId: string, currentlyExpanded: boolean) => {
+    if (currentlyExpanded) {
+      // Collapse: add to collapsed, remove from expanded
+      setCollapsedProjects((prev) => new Set([...prev, projectId]));
+      setExpandedProjects((prev) => {
+        const next = new Set(prev);
         next.delete(projectId);
-      } else {
-        next.add(projectId);
-      }
-      return next;
-    });
+        return next;
+      });
+    } else {
+      // Expand: add to expanded, remove from collapsed
+      setExpandedProjects((prev) => new Set([...prev, projectId]));
+      setCollapsedProjects((prev) => {
+        const next = new Set(prev);
+        next.delete(projectId);
+        return next;
+      });
+    }
   };
 
   const handleAddTask = (projectId: string) => {
@@ -137,7 +230,55 @@ export default function ProjectTaskList() {
     setShowTaskCreateModal(true);
     // Ensure the project is expanded when adding a task
     setExpandedProjects((prev) => new Set([...prev, projectId]));
+    setCollapsedProjects((prev) => {
+      const next = new Set(prev);
+      next.delete(projectId);
+      return next;
+    });
   };
+
+  const loadDoneTasks = useCallback(async (projectId: string) => {
+    // Prevent concurrent loads
+    if (doneTasksLoading.has(projectId)) return;
+
+    setDoneTasksLoading((prev) => new Set([...prev, projectId]));
+
+    try {
+      const currentTasks = doneTasks.get(projectId) || [];
+      const offset = currentTasks.length;
+
+      const { data: newTasks } = await fetchProjectDoneTasks({
+        project_id: projectId,
+        offset,
+        limit: DONE_TASKS_PAGE_SIZE,
+      });
+
+      setDoneTasks((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(projectId) || [];
+        // Deduplicate by id
+        const existingIds = new Set(existing.map((t) => t.id));
+        const uniqueNew = newTasks.filter((t) => !existingIds.has(t.id));
+        next.set(projectId, [...existing, ...uniqueNew]);
+        return next;
+      });
+
+      // Check if there are more tasks
+      setDoneTasksHasMore((prev) => {
+        const next = new Map(prev);
+        next.set(projectId, newTasks.length === DONE_TASKS_PAGE_SIZE);
+        return next;
+      });
+    } catch (error) {
+      console.error("Failed to load done tasks:", error);
+    } finally {
+      setDoneTasksLoading((prev) => {
+        const next = new Set(prev);
+        next.delete(projectId);
+        return next;
+      });
+    }
+  }, [doneTasks, doneTasksLoading]);
 
   // Group tasks by project
   const tasksByProject = useMemo(() => {
@@ -152,7 +293,7 @@ export default function ProjectTaskList() {
     tasks
       .filter((task) => task.status !== "done" && !task.archived)
       .forEach((task) => {
-        const projectId = task.project?.id;
+        const projectId = task.project_id;
         if (projectId) {
           if (!grouped.has(projectId)) {
             grouped.set(projectId, []);
@@ -195,21 +336,36 @@ export default function ProjectTaskList() {
       <div className="space-y-1">
         {sortedProjects.map((project) => {
           const projectTasks = tasksByProject.get(project.id) || [];
+          const projectDoneTasks = doneTasks.get(project.id) || [];
           const hasActiveTasks = projectTasks.length > 0;
+          const hasDoneTasks = projectDoneTasks.length > 0;
 
-          // Auto-expand if has active tasks, or manually expanded
-          const shouldExpand = expandedProjects.has(project.id) || hasActiveTasks;
+          // Determine expand state: user choice > default (has active tasks)
+          let shouldExpand: boolean;
+          if (collapsedProjects.has(project.id)) {
+            shouldExpand = false;
+          } else if (expandedProjects.has(project.id)) {
+            shouldExpand = true;
+          } else {
+            // Default: expand if has active tasks or loaded done tasks
+            shouldExpand = hasActiveTasks || hasDoneTasks;
+          }
 
           return (
             <ProjectGroup
               key={project.id}
               project={project}
               tasks={projectTasks}
+              doneTasks={projectDoneTasks}
               expanded={shouldExpand}
-              onToggle={() => toggleProject(project.id)}
+              onToggle={() => toggleProject(project.id, shouldExpand)}
               selectedTaskId={selectedTaskId}
               onTaskSelect={handleTaskSelect}
               onAddTask={handleAddTask}
+              onLoadDoneTasks={loadDoneTasks}
+              isLoadingDone={doneTasksLoading.has(project.id)}
+              hasMoreDone={doneTasksHasMore.get(project.id) ?? true}
+              showDone={projectDoneTasks.length > 0}
             />
           );
         })}

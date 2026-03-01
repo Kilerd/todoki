@@ -31,6 +31,7 @@ import {
   unarchiveTask,
   deleteTask,
 } from "../hooks/useTasks";
+import { getProjectById } from "../hooks/useProjects";
 import { executeTask } from "../api/tasks";
 import type { TaskEvent, TaskStatus } from "../api/types";
 import { EventTimeline } from "@/components/EventTimeline";
@@ -183,15 +184,18 @@ export default function TaskDetail() {
           >
             {statusConfig.label}
           </span>
-          {task.project && (
-            <Badge variant="outline" className="text-xs text-slate-500 flex items-center gap-1.5">
-              <div
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: task.project.color }}
-              />
-              {task.project.name}
-            </Badge>
-          )}
+          {task.project_id && (() => {
+            const project = getProjectById(task.project_id);
+            return project ? (
+              <Badge variant="outline" className="text-xs text-slate-500 flex items-center gap-1.5">
+                <div
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: project.color }}
+                />
+                {project.name}
+              </Badge>
+            ) : null;
+          })()}
           {task.archived && (
             <Badge variant="outline" className="text-xs text-orange-500 border-orange-200">
               Archived

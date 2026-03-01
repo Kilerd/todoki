@@ -58,35 +58,27 @@ impl DatabaseService {
     // Task operations
     // ========================================================================
 
-    /// Get tasks by status (not archived) with their projects
-    async fn get_tasks_by_status(
-        &self,
-        statuses: &[TaskStatus],
-    ) -> crate::Result<Vec<(Task, Project)>> {
+    /// Get tasks by status (not archived)
+    async fn get_tasks_by_status(&self, statuses: &[TaskStatus]) -> crate::Result<Vec<Task>> {
         let conn = self
             .pool
             .get()
             .await
             .map_err(|e| crate::TodokiError::Database(e))?;
 
-        let status_wrappers: Vec<SqlTypeWrapper<TaskStatus>> = statuses.iter().map(|s| SqlTypeWrapper(*s)).collect();
+        let status_wrappers: Vec<SqlTypeWrapper<TaskStatus>> =
+            statuses.iter().map(|s| SqlTypeWrapper(*s)).collect();
         let placeholders: Vec<String> = (1..=status_wrappers.len())
             .map(|i| format!("${}", i))
             .collect();
 
         let query = format!(
             r#"
-            SELECT t.id, t.priority, t.content, t.project_id, t.status, t.create_at, t.archived, t.agent_id,
-                   p.id as p_id, p.name as p_name, p.description as p_description,
-                   p.color as p_color, p.archived as p_archived,
-                   p.created_at as p_created_at, p.updated_at as p_updated_at,
-                   p.general_template as p_general_template, p.business_template as p_business_template,
-                   p.coding_template as p_coding_template, p.qa_template as p_qa_template
-            FROM tasks t
-            JOIN projects p ON t.project_id = p.id
-            WHERE t.status IN ({})
-              AND t.archived = false
-            ORDER BY t.priority DESC, t.create_at DESC
+            SELECT id, priority, content, project_id, status, create_at, archived, agent_id
+            FROM tasks
+            WHERE status IN ({})
+              AND archived = false
+            ORDER BY priority DESC, create_at DESC
             "#,
             placeholders.join(", ")
         );
@@ -101,68 +93,53 @@ impl DatabaseService {
 
         Ok(rows
             .iter()
-            .map(|row| {
-                let task = Task {
-                    id: row.get("id"),
-                    priority: row.get("priority"),
-                    content: row.get("content"),
-                    project_id: row.get("project_id"),
-                    status: row.get::<_, SqlTypeWrapper<TaskStatus>>("status").0,
-                    create_at: row.get("create_at"),
-                    archived: row.get("archived"),
-                    agent_id: row.get("agent_id"),
-                };
-                let project = Project {
-                    id: row.get("p_id"),
-                    name: row.get("p_name"),
-                    description: row.get("p_description"),
-                    color: row.get("p_color"),
-                    archived: row.get("p_archived"),
-                    created_at: row.get("p_created_at"),
-                    updated_at: row.get("p_updated_at"),
-                    general_template: row.get("p_general_template"),
-                    business_template: row.get("p_business_template"),
-                    coding_template: row.get("p_coding_template"),
-                    qa_template: row.get("p_qa_template"),
-                };
-                (task, project)
+            .map(|row| Task {
+                id: row.get("id"),
+                priority: row.get("priority"),
+                content: row.get("content"),
+                project_id: row.get("project_id"),
+                status: row.get::<_, SqlTypeWrapper<TaskStatus>>("status").0,
+                create_at: row.get("create_at"),
+                archived: row.get("archived"),
+                agent_id: row.get("agent_id"),
             })
             .collect())
     }
 
     /// Get today's tasks (todo, not archived)
-    pub async fn get_today_tasks(&self) -> crate::Result<Vec<(Task, Project)>> {
+    pub async fn get_today_tasks(&self) -> crate::Result<Vec<Task>> {
         self.get_tasks_by_status(&[TaskStatus::Todo]).await
     }
 
     /// Get inbox tasks (todo, in-progress, in-review, not archived)
-    pub async fn get_inbox_tasks(&self) -> crate::Result<Vec<(Task, Project)>> {
-        self.get_tasks_by_status(&[
-            TaskStatus::Todo,
-            TaskStatus::InProgress,
-            TaskStatus::InReview,
-        ])
-        .await
+    pub async fn get_inbox_tasks(&self) -> crate::Result<Vec<Task>> {
+        self.get_tasks_by_status(&[TaskStatus::Todo, TaskStatus::InProgress, TaskStatus::InReview])
+            .await
     }
 
     /// Get backlog tasks (backlog, not archived)
-    pub async fn get_backlog_tasks(&self) -> crate::Result<Vec<(Task, Project)>> {
+    pub async fn get_backlog_tasks(&self) -> crate::Result<Vec<Task>> {
         self.get_tasks_by_status(&[TaskStatus::Backlog]).await
     }
 
     /// Get in-progress tasks (in-progress or in-review, not archived)
-    pub async fn get_in_progress_tasks(&self) -> crate::Result<Vec<(Task, Project)>> {
+    pub async fn get_in_progress_tasks(&self) -> crate::Result<Vec<Task>> {
         self.get_tasks_by_status(&[TaskStatus::InProgress, TaskStatus::InReview])
             .await
     }
 
     /// Get done tasks (done, not archived)
-    pub async fn get_done_tasks(&self) -> crate::Result<Vec<(Task, Project)>> {
+    pub async fn get_done_tasks(&self) -> crate::Result<Vec<Task>> {
         self.get_tasks_by_status(&[TaskStatus::Done]).await
     }
 
-    /// Get tasks marked done today (not archived)
-    pub async fn get_today_done_tasks(&self) -> crate::Result<Vec<(Task, Project)>> {
+    /// Get done tasks for a specific project with pagination
+    pub async fn get_project_done_tasks(
+        &self,
+        project_id: Uuid,
+        offset: i64,
+        limit: i64,
+    ) -> crate::Result<Vec<Task>> {
         let conn = self
             .pool
             .get()
@@ -170,15 +147,48 @@ impl DatabaseService {
             .map_err(|e| crate::TodokiError::Database(e))?;
 
         let query = r#"
-            SELECT DISTINCT ON (t.id) t.id, t.priority, t.content, t.project_id, t.status, t.create_at, t.archived, t.agent_id,
-                   p.id as p_id, p.name as p_name, p.description as p_description,
-                   p.color as p_color, p.archived as p_archived,
-                   p.created_at as p_created_at, p.updated_at as p_updated_at,
-                   p.general_template as p_general_template, p.business_template as p_business_template,
-                   p.coding_template as p_coding_template, p.qa_template as p_qa_template
+            SELECT id, priority, content, project_id, status, create_at, archived, agent_id
+            FROM tasks
+            WHERE project_id = $1
+              AND status = 'done'
+              AND archived = false
+            ORDER BY create_at DESC
+            OFFSET $2
+            LIMIT $3
+        "#;
+
+        let rows = conn
+            .query(query, &[&project_id, &offset, &limit])
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Ok(rows
+            .iter()
+            .map(|row| Task {
+                id: row.get("id"),
+                priority: row.get("priority"),
+                content: row.get("content"),
+                project_id: row.get("project_id"),
+                status: row.get::<_, SqlTypeWrapper<TaskStatus>>("status").0,
+                create_at: row.get("create_at"),
+                archived: row.get("archived"),
+                agent_id: row.get("agent_id"),
+            })
+            .collect())
+    }
+
+    /// Get tasks marked done today (not archived)
+    pub async fn get_today_done_tasks(&self) -> crate::Result<Vec<Task>> {
+        let conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        let query = r#"
+            SELECT DISTINCT ON (t.id) t.id, t.priority, t.content, t.project_id, t.status, t.create_at, t.archived, t.agent_id
             FROM tasks t
             JOIN task_events e ON t.id = e.task_id
-            JOIN projects p ON t.project_id = p.id
             WHERE t.status = 'done'
               AND t.archived = false
               AND e.event_type = 'StatusChange'
@@ -194,31 +204,15 @@ impl DatabaseService {
 
         Ok(rows
             .iter()
-            .map(|row| {
-                let task = Task {
-                    id: row.get("id"),
-                    priority: row.get("priority"),
-                    content: row.get("content"),
-                    project_id: row.get("project_id"),
-                    status: row.get::<_, SqlTypeWrapper<TaskStatus>>("status").0,
-                    create_at: row.get("create_at"),
-                    archived: row.get("archived"),
-                    agent_id: row.get("agent_id"),
-                };
-                let project = Project {
-                    id: row.get("p_id"),
-                    name: row.get("p_name"),
-                    description: row.get("p_description"),
-                    color: row.get("p_color"),
-                    archived: row.get("p_archived"),
-                    created_at: row.get("p_created_at"),
-                    updated_at: row.get("p_updated_at"),
-                    general_template: row.get("p_general_template"),
-                    business_template: row.get("p_business_template"),
-                    coding_template: row.get("p_coding_template"),
-                    qa_template: row.get("p_qa_template"),
-                };
-                (task, project)
+            .map(|row| Task {
+                id: row.get("id"),
+                priority: row.get("priority"),
+                content: row.get("content"),
+                project_id: row.get("project_id"),
+                status: row.get::<_, SqlTypeWrapper<TaskStatus>>("status").0,
+                create_at: row.get("create_at"),
+                archived: row.get("archived"),
+                agent_id: row.get("agent_id"),
             })
             .collect())
     }
@@ -253,11 +247,7 @@ impl DatabaseService {
     }
 
     /// Get full task response with events, comments, agent info, and artifacts
-    pub async fn get_task_response(
-        &self,
-        task: Task,
-        project: Project,
-    ) -> crate::Result<TaskResponse> {
+    pub async fn get_task_response(&self, task: Task) -> crate::Result<TaskResponse> {
         let events = self.get_task_events(task.id).await?;
         let comments = self.get_task_comments(task.id).await?;
 
@@ -276,72 +266,11 @@ impl DatabaseService {
             .map(crate::models::ArtifactResponse::from)
             .collect();
 
-        Ok(TaskResponse::from_task(
-            task,
-            project.into(),
-            events,
-            comments,
-            agent,
-            artifacts,
-        ))
-    }
-
-    /// Get task with project by task ID
-    pub async fn get_task_with_project(&self, task_id: Uuid) -> crate::Result<Option<(Task, Project)>> {
-        let conn = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?;
-
-        let query = r#"
-            SELECT t.id, t.priority, t.content, t.project_id, t.status, t.create_at, t.archived, t.agent_id,
-                   p.id as p_id, p.name as p_name, p.description as p_description,
-                   p.color as p_color, p.archived as p_archived,
-                   p.created_at as p_created_at, p.updated_at as p_updated_at,
-                   p.general_template as p_general_template, p.business_template as p_business_template,
-                   p.coding_template as p_coding_template, p.qa_template as p_qa_template
-            FROM tasks t
-            JOIN projects p ON t.project_id = p.id
-            WHERE t.id = $1
-        "#;
-
-        let row = conn
-            .query_opt(query, &[&task_id])
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?;
-
-        Ok(row.map(|r| {
-            let task = Task {
-                id: r.get("id"),
-                priority: r.get("priority"),
-                content: r.get("content"),
-                project_id: r.get("project_id"),
-                status: r.get::<_, SqlTypeWrapper<TaskStatus>>("status").0,
-                create_at: r.get("create_at"),
-                archived: r.get("archived"),
-                agent_id: r.get("agent_id"),
-            };
-            let project = Project {
-                id: r.get("p_id"),
-                name: r.get("p_name"),
-                description: r.get("p_description"),
-                color: r.get("p_color"),
-                archived: r.get("p_archived"),
-                created_at: r.get("p_created_at"),
-                updated_at: r.get("p_updated_at"),
-                general_template: r.get("p_general_template"),
-                business_template: r.get("p_business_template"),
-                coding_template: r.get("p_coding_template"),
-                qa_template: r.get("p_qa_template"),
-            };
-            (task, project)
-        }))
+        Ok(TaskResponse::from_task(task, events, comments, agent, artifacts))
     }
 
     /// Create a new task
-    pub async fn create_task(&self, create_task: CreateTask) -> crate::Result<(Task, Project)> {
-        let project_id = create_task.project_id;
+    pub async fn create_task(&self, create_task: CreateTask) -> crate::Result<Task> {
         let task_id = create_task
             .insert::<Task>()
             .returning_pk(&*self.pool)
@@ -356,15 +285,9 @@ impl DatabaseService {
             .await
             .map_err(|e| crate::TodokiError::Database(e))?;
 
-        let task = Task::fetch_one_by_pk(&task_id, &*self.pool)
+        Task::fetch_one_by_pk(&task_id, &*self.pool)
             .await
-            .map_err(|e| crate::TodokiError::Database(e))?;
-
-        let project = Project::fetch_one_by_pk(&project_id, &*self.pool)
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?;
-
-        Ok((task, project))
+            .map_err(|e| crate::TodokiError::Database(e))
     }
 
     /// Update a task
@@ -374,7 +297,7 @@ impl DatabaseService {
         priority: i32,
         content: String,
         project_id: Uuid,
-    ) -> crate::Result<(Task, Project)> {
+    ) -> crate::Result<Task> {
         let mut task = Task::fetch_one_by_pk(&task_id, &*self.pool)
             .await
             .map_err(|e| crate::TodokiError::Database(e))?;
@@ -387,11 +310,7 @@ impl DatabaseService {
             .await
             .map_err(|e| crate::TodokiError::Database(e))?;
 
-        let project = Project::fetch_one_by_pk(&project_id, &*self.pool)
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?;
-
-        Ok((task, project))
+        Ok(task)
     }
 
     /// Update task status
@@ -399,7 +318,7 @@ impl DatabaseService {
         &self,
         task_id: Uuid,
         new_status: TaskStatus,
-    ) -> crate::Result<(Task, Project)> {
+    ) -> crate::Result<Task> {
         let mut task = Task::fetch_one_by_pk(&task_id, &*self.pool)
             .await
             .map_err(|e| crate::TodokiError::Database(e))?;
@@ -419,15 +338,11 @@ impl DatabaseService {
             .await
             .map_err(|e| crate::TodokiError::Database(e))?;
 
-        let project = Project::fetch_one_by_pk(&task.project_id, &*self.pool)
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?;
-
-        Ok((task, project))
+        Ok(task)
     }
 
     /// Archive a task
-    pub async fn archive_task(&self, task_id: Uuid) -> crate::Result<(Task, Project)> {
+    pub async fn archive_task(&self, task_id: Uuid) -> crate::Result<Task> {
         let mut task = Task::fetch_one_by_pk(&task_id, &*self.pool)
             .await
             .map_err(|e| crate::TodokiError::Database(e))?;
@@ -446,15 +361,11 @@ impl DatabaseService {
             .await
             .map_err(|e| crate::TodokiError::Database(e))?;
 
-        let project = Project::fetch_one_by_pk(&task.project_id, &*self.pool)
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?;
-
-        Ok((task, project))
+        Ok(task)
     }
 
     /// Unarchive a task
-    pub async fn unarchive_task(&self, task_id: Uuid) -> crate::Result<(Task, Project)> {
+    pub async fn unarchive_task(&self, task_id: Uuid) -> crate::Result<Task> {
         let mut task = Task::fetch_one_by_pk(&task_id, &*self.pool)
             .await
             .map_err(|e| crate::TodokiError::Database(e))?;
@@ -473,11 +384,7 @@ impl DatabaseService {
             .await
             .map_err(|e| crate::TodokiError::Database(e))?;
 
-        let project = Project::fetch_one_by_pk(&task.project_id, &*self.pool)
-            .await
-            .map_err(|e| crate::TodokiError::Database(e))?;
-
-        Ok((task, project))
+        Ok(task)
     }
 
     /// Delete a task

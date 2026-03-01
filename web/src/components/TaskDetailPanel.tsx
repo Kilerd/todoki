@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   X,
@@ -24,10 +24,10 @@ import {
   deleteTask,
 } from "../hooks/useTasks";
 import { useProjects } from "../hooks/useProjects";
-import { executeTask } from "../api/tasks";
+import { executeTask, fetchTask } from "../api/tasks";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import type { TaskStatus } from "../api/types";
+import type { TaskStatus, TaskResponse } from "../api/types";
 
 interface TaskDetailPanelProps {
   events?: Event[];
@@ -46,14 +46,29 @@ export default function TaskDetailPanel({
   const { projects } = useProjects();
   const { toast } = useToast();
   const [isExecuting, setIsExecuting] = useState(false);
+  const [fetchedTask, setFetchedTask] = useState<TaskResponse | null>(null);
 
-  const task = useMemo(
+  // First try to find task in inbox tasks
+  const inboxTask = useMemo(
     () => tasks.find((t) => t.id === selectedTaskId),
     [tasks, selectedTaskId]
   );
 
+  // Fetch task separately if not found in inbox (e.g., done tasks)
+  useEffect(() => {
+    if (selectedTaskId && !inboxTask) {
+      fetchTask({ task_id: selectedTaskId })
+        .then(({ data }) => setFetchedTask(data))
+        .catch(() => setFetchedTask(null));
+    } else {
+      setFetchedTask(null);
+    }
+  }, [selectedTaskId, inboxTask]);
+
+  const task = inboxTask || fetchedTask;
+
   const project = useMemo(
-    () => projects.find((p) => p.id === task?.project?.id),
+    () => projects.find((p) => p.id === task?.project_id),
     [projects, task]
   );
 

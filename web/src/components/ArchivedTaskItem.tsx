@@ -1,4 +1,5 @@
 import { deleteTask, unarchiveTask } from "../hooks/useTasks";
+import { getProjectById } from "../hooks/useProjects";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RotateCcw, Trash2 } from "lucide-react";
@@ -24,15 +25,17 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function ArchivedTaskItem(props: Props) {
+  const project = props.project_id ? getProjectById(props.project_id) : null;
+
   return (
     <div className="flex items-center justify-between p-2 rounded-md text-gray-600 hover:bg-gray-100 group">
       <div className="flex items-center gap-2">
         <span className="text-gray-500 flex items-center gap-1.5">
           <div
             className="w-2 h-2 rounded-full"
-            style={{ backgroundColor: props.project?.color ?? "#6B7280" }}
+            style={{ backgroundColor: project?.color ?? "#6B7280" }}
           />
-          {props.project?.name ?? "Inbox"}
+          {project?.name ?? "Inbox"}
         </span>
         <span className={cn("px-2 py-0.5 rounded text-xs opacity-60", STATUS_COLORS[props.status])}>
           {STATUS_LABELS[props.status]}

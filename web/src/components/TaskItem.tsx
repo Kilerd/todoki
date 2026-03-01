@@ -29,6 +29,7 @@ import {
   updateTaskStatus,
   executeTask,
 } from "../hooks/useTasks";
+import { getProjectById } from "../hooks/useProjects";
 import type { TaskResponse, TaskStatus } from "../api/types";
 
 type Props = TaskResponse & {
@@ -145,20 +146,23 @@ export default function TaskItem(props: Props) {
             )}
           </div>
 
-          {props.project && (
-            <div className="mt-1 flex items-center gap-1.5">
-              <div
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: props.project.color }}
-              />
-              <Badge
-                variant="outline"
-                className="text-[10px] text-slate-400 border-slate-200 font-normal"
-              >
-                {props.project.name}
-              </Badge>
-            </div>
-          )}
+          {props.project_id && (() => {
+            const project = getProjectById(props.project_id);
+            return project ? (
+              <div className="mt-1 flex items-center gap-1.5">
+                <div
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: project.color }}
+                />
+                <Badge
+                  variant="outline"
+                  className="text-[10px] text-slate-400 border-slate-200 font-normal"
+                >
+                  {project.name}
+                </Badge>
+              </div>
+            ) : null;
+          })()}
         </div>
       </div>
 

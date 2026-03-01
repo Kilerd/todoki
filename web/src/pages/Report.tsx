@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import NavBar from "../components/NavBar";
 import type { TaskResponse, TaskEvent } from "../api/types";
 import { useTasks, useTodayDoneTasks } from "../hooks/useTasks";
+import { getProjectById } from "../hooks/useProjects";
 import { fetchReport } from "../api/tasks";
 
 interface ReportSummary {
@@ -167,7 +168,10 @@ export default function Report() {
     );
 
     // Group by task project
-    const byGroup = groupBy(taskActivities, (a) => a.task.project?.name || "Inbox");
+    const byGroup = groupBy(taskActivities, (a) => {
+      const project = a.task.project_id ? getProjectById(a.task.project_id) : null;
+      return project?.name || "Inbox";
+    });
     return sortBy(Object.keys(byGroup)).map((groupName) => ({
       groupName,
       activities: sortBy(byGroup[groupName], (a) => a.lastEventTime).reverse(),
