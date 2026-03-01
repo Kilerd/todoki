@@ -14,9 +14,10 @@ interface Artifact {
 
 interface ArtifactPreviewProps {
   events: Event[];
+  onClose?: () => void;
 }
 
-export default function ArtifactPreview({ events }: ArtifactPreviewProps) {
+export default function ArtifactPreview({ events, onClose }: ArtifactPreviewProps) {
   const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(
     null
   );
@@ -50,7 +51,11 @@ export default function ArtifactPreview({ events }: ArtifactPreviewProps) {
   }, [artifacts.length]);
 
   const handleClose = () => {
-    setSelectedArtifact(null);
+    if (onClose) {
+      onClose();
+    } else {
+      setSelectedArtifact(null);
+    }
   };
 
   const renderArtifactContent = () => {
