@@ -3,9 +3,16 @@ import { useSearchParams } from "react-router-dom";
 import { ChevronDown, Plus } from "lucide-react";
 import { orderBy } from "lodash";
 import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import TaskItem from "./TaskItem";
-import { useTasks, createTask } from "../hooks/useTasks";
+import { useTasks } from "../hooks/useTasks";
 import { useProjects } from "../hooks/useProjects";
+import TaskCreateModal from "../modals/TaskCreateModal";
 import type { TaskResponse as Task, Project } from "../api/types";
 
 interface ProjectGroupProps {
@@ -16,12 +23,6 @@ interface ProjectGroupProps {
   selectedTaskId?: string;
   onTaskSelect: (taskId: string) => void;
   onAddTask: (projectId: string) => void;
-  isAddingTask: boolean;
-  newTaskContent: string;
-  onNewTaskContentChange: (content: string) => void;
-  onNewTaskSubmit: () => void;
-  onNewTaskCancel: () => void;
-  onNewTaskKeyDown: (e: React.KeyboardEvent) => void;
 }
 
 function ProjectGroup({
@@ -32,12 +33,6 @@ function ProjectGroup({
   selectedTaskId,
   onTaskSelect,
   onAddTask,
-  isAddingTask,
-  newTaskContent,
-  onNewTaskContentChange,
-  onNewTaskSubmit,
-  onNewTaskCancel,
-  onNewTaskKeyDown,
 }: ProjectGroupProps) {
   const sortedTasks = useMemo(
     () => orderBy(tasks, ["priority", "create_at"], ["desc", "asc"]),
@@ -97,25 +92,7 @@ function ProjectGroup({
               <TaskItem {...task} compact />
             </div>
           ))}
-          {isAddingTask && (
-            <div className="flex items-center gap-2 px-3 py-2">
-              <input
-                type="text"
-                className="flex-1 text-sm bg-transparent border-none outline-none placeholder:text-slate-400"
-                placeholder="New task..."
-                value={newTaskContent}
-                onChange={(e) => onNewTaskContentChange(e.target.value)}
-                onKeyDown={onNewTaskKeyDown}
-                onBlur={() => {
-                  if (!newTaskContent.trim()) {
-                    onNewTaskCancel();
-                  }
-                }}
-                autoFocus
-              />
-            </div>
-          )}
-          {tasks.length === 0 && !isAddingTask && (
+          {tasks.length === 0 && (
             <div className="text-xs text-slate-400 py-2 px-3">No tasks</div>
           )}
         </div>
@@ -135,9 +112,9 @@ export default function ProjectTaskList() {
     () => new Set()
   );
 
-  // Track which project is in "new task" mode
-  const [newTaskProjectId, setNewTaskProjectId] = useState<string | null>(null);
-  const [newTaskContent, setNewTaskContent] = useState("");
+  // Track task creation modal
+  const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
+  const [selectedProjectForTask, setSelectedProjectForTask] = useState<string | null>(null);
 
   const handleTaskSelect = (taskId: string) => {
     setSearchParams({ task: taskId });
@@ -156,33 +133,10 @@ export default function ProjectTaskList() {
   };
 
   const handleAddTask = (projectId: string) => {
-    setNewTaskProjectId(projectId);
-    setNewTaskContent("");
+    setSelectedProjectForTask(projectId);
+    setShowTaskCreateModal(true);
     // Ensure the project is expanded when adding a task
     setExpandedProjects((prev) => new Set([...prev, projectId]));
-  };
-
-  const handleNewTaskSubmit = async () => {
-    if (!newTaskContent.trim() || !newTaskProjectId) return;
-
-    await createTask({
-      content: newTaskContent.trim(),
-      priority: 0,
-      project_id: newTaskProjectId,
-      status: "todo",
-    });
-    setNewTaskContent("");
-    setNewTaskProjectId(null);
-  };
-
-  const handleNewTaskKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleNewTaskSubmit();
-    } else if (e.key === "Escape") {
-      setNewTaskProjectId(null);
-      setNewTaskContent("");
-    }
   };
 
   // Group tasks by project
@@ -196,7 +150,7 @@ export default function ProjectTaskList() {
 
     // Group tasks
     tasks
-      .filter((task) => task.status !== "done" && task.status !== "archived")
+      .filter((task) => task.status !== "done" && !task.archived)
       .forEach((task) => {
         const projectId = task.project?.id;
         if (projectId) {
@@ -234,7 +188,7 @@ export default function ProjectTaskList() {
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-slate-800">Projects</h2>
         <p className="text-xs text-slate-500 mt-1">
-          {tasks.filter((t) => t.status !== "done" && t.status !== "archived").length} active tasks
+          {tasks.filter((t) => t.status !== "done" && !t.archived).length} active tasks
         </p>
       </div>
 
@@ -256,19 +210,34 @@ export default function ProjectTaskList() {
               selectedTaskId={selectedTaskId}
               onTaskSelect={handleTaskSelect}
               onAddTask={handleAddTask}
-              isAddingTask={newTaskProjectId === project.id}
-              newTaskContent={newTaskContent}
-              onNewTaskContentChange={setNewTaskContent}
-              onNewTaskSubmit={handleNewTaskSubmit}
-              onNewTaskCancel={() => {
-                setNewTaskProjectId(null);
-                setNewTaskContent("");
-              }}
-              onNewTaskKeyDown={handleNewTaskKeyDown}
             />
           );
         })}
       </div>
+
+      {/* Task Create Modal */}
+      <Dialog
+        open={showTaskCreateModal}
+        onOpenChange={(open) => {
+          setShowTaskCreateModal(open);
+          if (!open) setSelectedProjectForTask(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Task</DialogTitle>
+          </DialogHeader>
+          <TaskCreateModal
+            open={showTaskCreateModal}
+            onOpenChange={setShowTaskCreateModal}
+            projectId={selectedProjectForTask || undefined}
+            onSuccess={() => {
+              setShowTaskCreateModal(false);
+              setSelectedProjectForTask(null);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

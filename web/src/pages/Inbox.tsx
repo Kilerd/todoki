@@ -5,100 +5,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { useOs } from "@mantine/hooks";
 import { Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import NavBar from "../components/NavBar";
 import ProjectTaskList from "../components/ProjectTaskList";
 import TaskDetailPanel from "../components/TaskDetailPanel";
 import ArtifactPreview from "../components/ArtifactPreview";
-import { createTask } from "../hooks/useTasks";
-import { getProjectByName } from "../hooks/useProjects";
-import ProjectSelectModal from "../modals/ProjectSelectModal";
-import { parseTask } from "../utils/taskParser";
-import type { Project } from "../api/types";
-
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="inline-flex h-5 select-none items-center rounded border border-slate-200 bg-slate-50 px-1.5 font-mono text-[10px] font-medium text-slate-500">
-      {children}
-    </kbd>
-  );
-}
+import TaskCreateModal from "../modals/TaskCreateModal";
 
 function Inbox() {
-  const os = useOs();
   const [searchParams] = useSearchParams();
   const selectedTaskId = searchParams.get("task");
-  const [newTaskText, setNewTaskText] = useState("");
-  const [showProjectModal, setShowProjectModal] = useState(false);
-  const [pendingTaskData, setPendingTaskData] = useState<{
-    content: string;
-    priority: number;
-    suggestedName?: string;
-  } | null>(null);
-
-  const parsedTask = useMemo(() => parseTask(newTaskText), [newTaskText]);
-
-  const handleNewTask = async () => {
-    if (newTaskText.trim() === "") return;
-
-    // If user typed +tag, try to find or create that project
-    if (parsedTask.group) {
-      const existingProject = await getProjectByName(parsedTask.group);
-      if (existingProject) {
-        // Project exists, create task directly
-        await createTask({
-          content: parsedTask.content,
-          priority: parsedTask.priority,
-          project_id: existingProject.id,
-          status: "todo",
-        });
-        setNewTaskText("");
-      } else {
-        // Project doesn't exist, show modal to confirm creation
-        setPendingTaskData({
-          content: parsedTask.content,
-          priority: parsedTask.priority,
-          suggestedName: parsedTask.group,
-        });
-        setShowProjectModal(true);
-      }
-    } else {
-      // No +tag specified, show project selection modal
-      setPendingTaskData({
-        content: parsedTask.content,
-        priority: parsedTask.priority,
-      });
-      setShowProjectModal(true);
-    }
-  };
-
-  const handleProjectSelect = async (project: Project) => {
-    if (!pendingTaskData) return;
-
-    await createTask({
-      content: pendingTaskData.content,
-      priority: pendingTaskData.priority,
-      project_id: project.id,
-      status: "todo",
-    });
-    setNewTaskText("");
-    setPendingTaskData(null);
-    setShowProjectModal(false);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      handleNewTask();
-    }
-  };
+  const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
 
   return (
-    <div className="h-screen overflow-hidden">
+    <div className="h-screen overflow-hidden relative">
       <div className="h-full grid grid-cols-[320px_1fr] lg:grid-cols-[320px_480px_1fr] gap-0">
         {/* Column 1: Project Task List */}
         <div
@@ -131,24 +53,28 @@ function Inbox() {
         </div>
       </div>
 
-      {/* Project Selection Modal */}
+      {/* Floating Action Button */}
+      <Button
+        className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg hover:shadow-xl transition-shadow"
+        onClick={() => setShowTaskCreateModal(true)}
+        title="Create new task"
+      >
+        <Plus className="h-6 w-6" />
+      </Button>
+
+      {/* Task Create Modal */}
       <Dialog
-        open={showProjectModal}
-        onOpenChange={(open) => {
-          setShowProjectModal(open);
-          if (!open) setPendingTaskData(null);
-        }}
+        open={showTaskCreateModal}
+        onOpenChange={setShowTaskCreateModal}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Select Project</DialogTitle>
+            <DialogTitle>Create New Task</DialogTitle>
           </DialogHeader>
-          <ProjectSelectModal
-            open={showProjectModal}
-            onOpenChange={setShowProjectModal}
-            mode="select-or-create"
-            suggestedName={pendingTaskData?.suggestedName}
-            onSelect={handleProjectSelect}
+          <TaskCreateModal
+            open={showTaskCreateModal}
+            onOpenChange={setShowTaskCreateModal}
+            onSuccess={() => setShowTaskCreateModal(false)}
           />
         </DialogContent>
       </Dialog>
