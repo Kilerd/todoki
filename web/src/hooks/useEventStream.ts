@@ -8,7 +8,7 @@
  * - Event filtering by kind patterns
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { getToken } from '@/lib/auth';
 
 export interface Event {
@@ -103,6 +103,10 @@ export function useEventStream(options: UseEventStreamOptions = {}): UseEventStr
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
 
+  // Stabilize kinds array reference by serializing to string
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const kindsKey = useMemo(() => kinds?.join(',') || '', [JSON.stringify(kinds)]);
+
   const buildWebSocketUrl = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     // Use VITE_API_URL from env, extract host from it, or fallback to current host with backend port
@@ -118,8 +122,9 @@ export function useEventStream(options: UseEventStreamOptions = {}): UseEventStr
     }
     const params = new URLSearchParams();
 
-    if (kinds && kinds.length > 0) {
-      params.set('kinds', kinds.join(','));
+    // Use kindsKey (serialized string) to avoid array reference issues
+    if (kindsKey) {
+      params.set('kinds', kindsKey);
     }
     if (cursor !== undefined) {
       params.set('cursor', cursor.toString());
@@ -135,7 +140,7 @@ export function useEventStream(options: UseEventStreamOptions = {}): UseEventStr
     }
 
     return `${protocol}//${host}/ws/event-bus?${params.toString()}`;
-  }, [kinds, cursor, agentId, taskId, token]);
+  }, [kindsKey, cursor, agentId, taskId, token]);
 
   const connect = useCallback(() => {
     if (!enabled) {

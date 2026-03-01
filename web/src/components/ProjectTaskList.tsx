@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import TaskItem from "./TaskItem";
 import { useTasks, createTask } from "../hooks/useTasks";
 import { useProjects } from "../hooks/useProjects";
-import type { Task, Project } from "../api/types";
+import type { TaskResponse as Task, Project } from "../api/types";
 
 interface ProjectGroupProps {
   project: Project;
@@ -130,9 +130,9 @@ export default function ProjectTaskList() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedTaskId = searchParams.get("task") || undefined;
 
-  // Track expanded state for each project
+  // Track expanded state for each project (empty initially, will auto-expand based on tasks)
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
-    () => new Set(["inbox"])
+    () => new Set()
   );
 
   // Track which project is in "new task" mode
@@ -168,7 +168,7 @@ export default function ProjectTaskList() {
     await createTask({
       content: newTaskContent.trim(),
       priority: 0,
-      project_id: newTaskProjectId === "inbox" ? undefined : newTaskProjectId,
+      project_id: newTaskProjectId,
       status: "todo",
     });
     setNewTaskContent("");
@@ -189,9 +189,6 @@ export default function ProjectTaskList() {
   const tasksByProject = useMemo(() => {
     const grouped = new Map<string, Task[]>();
 
-    // Initialize inbox
-    grouped.set("inbox", []);
-
     // Initialize all projects
     projects.forEach((project) => {
       grouped.set(project.id, []);
@@ -201,32 +198,25 @@ export default function ProjectTaskList() {
     tasks
       .filter((task) => task.status !== "done" && task.status !== "archived")
       .forEach((task) => {
-        const projectId = task.project_id || "inbox";
-        if (!grouped.has(projectId)) {
-          grouped.set(projectId, []);
+        const projectId = task.project?.id;
+        if (projectId) {
+          if (!grouped.has(projectId)) {
+            grouped.set(projectId, []);
+          }
+          grouped.get(projectId)!.push(task);
         }
-        grouped.get(projectId)!.push(task);
       });
 
     return grouped;
   }, [tasks, projects]);
 
-  // Create virtual inbox project
-  const inboxProject: Project = {
-    id: "inbox",
-    name: "Inbox",
-    color: "#64748b",
-    description: "",
-    create_at: "",
-    update_at: "",
-  };
-
   // Sort projects: Inbox first, then by name
   const sortedProjects = useMemo(() => {
-    return [
-      inboxProject,
-      ...orderBy(projects, [(p) => p.name.toLowerCase()], ["asc"]),
-    ];
+    return orderBy(
+      projects,
+      [(p) => (p.name.toLowerCase() === "inbox" ? 0 : 1), (p) => p.name.toLowerCase()],
+      ["asc", "asc"]
+    );
   }, [projects]);
 
   if (isLoading || isProjectsLoading) {
@@ -254,9 +244,7 @@ export default function ProjectTaskList() {
           const hasActiveTasks = projectTasks.length > 0;
 
           // Auto-expand if has active tasks, or manually expanded
-          const shouldExpand =
-            expandedProjects.has(project.id) ||
-            (project.id === "inbox" && hasActiveTasks);
+          const shouldExpand = expandedProjects.has(project.id) || hasActiveTasks;
 
           return (
             <ProjectGroup
