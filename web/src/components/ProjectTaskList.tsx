@@ -328,9 +328,6 @@ export default function ProjectTaskList() {
     <div className="h-full overflow-y-auto p-4">
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-slate-800">Projects</h2>
-        <p className="text-xs text-slate-500 mt-1">
-          {tasks.filter((t) => t.status !== "done" && !t.archived).length} active tasks
-        </p>
       </div>
 
       <div className="space-y-1">
