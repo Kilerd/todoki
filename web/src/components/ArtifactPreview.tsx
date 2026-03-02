@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
-import { X, ExternalLink, AlertCircle } from "lucide-react";
+import { useState, useMemo } from "react";
+import { ExternalLink, AlertCircle, Github } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import type { Event } from "../hooks/useEventStream";
 
 interface Artifact {
@@ -17,11 +18,11 @@ interface ArtifactPreviewProps {
   onClose?: () => void;
 }
 
-export default function ArtifactPreview({ events, onClose }: ArtifactPreviewProps) {
-  const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(
-    null
+export default function ArtifactPreview({ events }: ArtifactPreviewProps) {
+  const [expandedArtifactIds, setExpandedArtifactIds] = useState<Set<string>>(
+    new Set()
   );
-  const [iframeError, setIframeError] = useState(false);
+  const [iframeErrors, setIframeErrors] = useState<Set<string>>(new Set());
 
   // Extract artifacts from events
   const artifacts = useMemo(() => {
@@ -36,158 +37,169 @@ export default function ArtifactPreview({ events, onClose }: ArtifactPreviewProp
       }));
   }, [events]);
 
-  // Auto-select the latest artifact when artifacts change
-  useEffect(() => {
-    if (artifacts.length > 0 && !selectedArtifact) {
-      setSelectedArtifact(artifacts[artifacts.length - 1]);
-    }
-  }, [artifacts, selectedArtifact]);
-
-  // Reset selection when events change significantly
-  useEffect(() => {
-    if (artifacts.length === 0) {
-      setSelectedArtifact(null);
-    }
-  }, [artifacts.length]);
-
-  const handleClose = () => {
-    if (onClose) {
-      onClose();
-    } else {
-      setSelectedArtifact(null);
-    }
+  const toggleArtifactExpanded = (artifactId: string) => {
+    setExpandedArtifactIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(artifactId)) {
+        newSet.delete(artifactId);
+      } else {
+        newSet.add(artifactId);
+      }
+      return newSet;
+    });
   };
 
-  const renderArtifactContent = () => {
-    if (!selectedArtifact) return null;
+  const handleIframeError = (artifactId: string) => {
+    setIframeErrors((prev) => new Set(prev).add(artifactId));
+  };
+
+  const renderArtifactContent = (artifact: Artifact, isExpanded: boolean) => {
+    if (!isExpanded) return null;
+
+    const hasError = iframeErrors.has(artifact.id);
 
     // GitHub PR - try iframe first
-    if (
-      selectedArtifact.type === "github_pr" &&
-      selectedArtifact.url &&
-      !iframeError
-    ) {
+    if (artifact.type === "github_pr" && artifact.url && !hasError) {
       return (
-        <div className="relative w-full h-full">
+        <div className="relative w-full h-[600px] mt-3">
           <iframe
-            src={selectedArtifact.url}
-            className="w-full h-full border-0"
+            src={artifact.url}
+            className="w-full h-full border-0 rounded"
             sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-            title={selectedArtifact.title}
-            onError={() => setIframeError(true)}
+            title={artifact.title}
+            onError={() => handleIframeError(artifact.id)}
           />
         </div>
       );
     }
 
     // Fallback for iframe errors or custom rendering
-    if (iframeError || selectedArtifact.type === "github_pr") {
+    if (hasError || artifact.type === "github_pr") {
       return (
-        <div className="p-6 space-y-4">
-          <div className="flex items-center gap-2 text-amber-600">
-            <AlertCircle className="h-5 w-5" />
+        <div className="p-4 space-y-3 mt-3 bg-amber-50 rounded-lg border border-amber-200">
+          <div className="flex items-center gap-2 text-amber-700">
+            <AlertCircle className="h-4 w-4" />
             <span className="text-sm font-medium">
               Unable to load iframe preview
             </span>
           </div>
-          <p className="text-sm text-slate-600">
-            The artifact cannot be displayed in an embedded frame. You can open
-            it directly:
+          <p className="text-sm text-amber-600">
+            The artifact cannot be displayed in an embedded frame due to security restrictions.
           </p>
-          {selectedArtifact.url && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => window.open(selectedArtifact.url, "_blank")}
-              className="gap-2"
-            >
-              <ExternalLink className="h-4 w-4" />
-              Open in new tab
-            </Button>
-          )}
         </div>
       );
     }
 
     // Generic artifact rendering
     return (
-      <div className="p-6">
-        <pre className="text-xs text-slate-600 bg-slate-50 p-4 rounded overflow-auto">
-          {JSON.stringify(selectedArtifact, null, 2)}
+      <div className="mt-3">
+        <pre className="text-xs text-slate-600 bg-slate-50 p-4 rounded overflow-auto max-h-[400px]">
+          {JSON.stringify(artifact.data || artifact, null, 2)}
         </pre>
       </div>
     );
   };
 
-  if (!selectedArtifact) {
+  if (artifacts.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center text-slate-400 text-sm">
-        No artifacts yet
+      <div className="h-full flex items-center justify-center text-slate-400 text-sm p-6">
+        <div className="text-center">
+          <Github className="h-12 w-12 mx-auto mb-3 text-slate-300" />
+          <p>No artifacts yet</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className="h-full flex flex-col bg-slate-50">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-slate-200">
-        <div className="flex items-center gap-3 flex-1 min-w-0">
-          <Badge variant="outline" className="flex-shrink-0">
-            {selectedArtifact.type}
+      <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-white">
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-slate-700">Artifacts</h2>
+          <Badge variant="secondary" className="text-xs">
+            {artifacts.length}
           </Badge>
-          <h3 className="text-sm font-medium text-slate-700 truncate">
-            {selectedArtifact.title}
-          </h3>
-        </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          {selectedArtifact.url && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => window.open(selectedArtifact.url, "_blank")}
-            >
-              <ExternalLink className="h-4 w-4" />
-            </Button>
-          )}
-          <Button variant="ghost" size="icon" onClick={handleClose}>
-            <X className="h-4 w-4" />
-          </Button>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto">{renderArtifactContent()}</div>
+      {/* Artifacts List - Vertical Scrollable */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {artifacts.map((artifact) => {
+          const isExpanded = expandedArtifactIds.has(artifact.id);
 
-      {/* Artifact List (if multiple) */}
-      {artifacts.length > 1 && (
-        <div className="border-t border-slate-200 p-3">
-          <div className="text-xs text-slate-500 mb-2">
-            {artifacts.length} artifacts
-          </div>
-          <div className="flex gap-2 overflow-x-auto">
-            {artifacts.map((artifact) => (
-              <Button
-                key={artifact.id}
-                variant="outline"
-                size="sm"
-                className={
-                  selectedArtifact?.id === artifact.id
-                    ? "bg-teal-50 border-teal-500"
-                    : ""
-                }
-                onClick={() => {
-                  setSelectedArtifact(artifact);
-                  setIframeError(false);
-                }}
-              >
-                <span className="text-xs truncate max-w-[150px]">
-                  {artifact.title}
-                </span>
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
+          return (
+            <Card
+              key={artifact.id}
+              className="bg-white shadow-sm hover:shadow-md transition-shadow"
+            >
+              <div className="p-4">
+                {/* Artifact Header */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge
+                        variant="outline"
+                        className={
+                          artifact.type === "github_pr"
+                            ? "bg-purple-50 border-purple-300 text-purple-700"
+                            : "bg-slate-50"
+                        }
+                      >
+                        {artifact.type === "github_pr" ? (
+                          <div className="flex items-center gap-1">
+                            <Github className="h-3 w-3" />
+                            <span>GitHub PR</span>
+                          </div>
+                        ) : (
+                          artifact.type
+                        )}
+                      </Badge>
+                    </div>
+                    <h3 className="text-sm font-medium text-slate-900 break-words">
+                      {artifact.title}
+                    </h3>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {artifact.url && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open(artifact.url, "_blank")}
+                        className="gap-1.5 h-8"
+                        title="Open in new tab"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        <span className="text-xs">Open</span>
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => toggleArtifactExpanded(artifact.id)}
+                      className="h-8 text-xs"
+                    >
+                      {isExpanded ? "Collapse" : "Expand"}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Artifact URL */}
+                {artifact.url && (
+                  <div className="mt-2 text-xs text-slate-500 truncate">
+                    {artifact.url}
+                  </div>
+                )}
+
+                {/* Artifact Content */}
+                {renderArtifactContent(artifact, isExpanded)}
+              </div>
+            </Card>
+          );
+        })}
+      </div>
     </div>
   );
 }
