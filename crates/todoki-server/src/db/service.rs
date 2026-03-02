@@ -122,10 +122,56 @@ impl DatabaseService {
         self.get_tasks_by_status(&[TaskStatus::Backlog]).await
     }
 
-    /// Get in-progress tasks (in-progress or in-review, not archived)
+    /// Get in-progress tasks (any working status, not archived)
     pub async fn get_in_progress_tasks(&self) -> crate::Result<Vec<Task>> {
-        self.get_tasks_by_status(&[TaskStatus::InProgress, TaskStatus::InReview])
-            .await
+        self.get_tasks_by_status(&[
+            TaskStatus::InProgress,
+            TaskStatus::InReview,
+            // Plan phase working states
+            TaskStatus::PlanInProgress,
+            TaskStatus::PlanReview,
+            // Coding phase working states
+            TaskStatus::CodingInProgress,
+            TaskStatus::CodingReview,
+            // Cross-review phase working states
+            TaskStatus::CrossReviewInProgress,
+        ])
+        .await
+    }
+
+    /// Get tasks in Plan phase (not archived)
+    pub async fn get_plan_phase_tasks(&self) -> crate::Result<Vec<Task>> {
+        self.get_tasks_by_status(&[
+            TaskStatus::PlanPending,
+            TaskStatus::PlanInProgress,
+            TaskStatus::PlanReview,
+            TaskStatus::PlanDone,
+        ])
+        .await
+    }
+
+    /// Get tasks in Coding phase (not archived)
+    pub async fn get_coding_phase_tasks(&self) -> crate::Result<Vec<Task>> {
+        self.get_tasks_by_status(&[
+            TaskStatus::CodingPending,
+            TaskStatus::CodingInProgress,
+            TaskStatus::CodingReview,
+            TaskStatus::CodingDone,
+            TaskStatus::InProgress,
+            TaskStatus::InReview,
+        ])
+        .await
+    }
+
+    /// Get tasks in Cross-Review phase (not archived)
+    pub async fn get_cross_review_phase_tasks(&self) -> crate::Result<Vec<Task>> {
+        self.get_tasks_by_status(&[
+            TaskStatus::CrossReviewPending,
+            TaskStatus::CrossReviewInProgress,
+            TaskStatus::CrossReviewPass,
+            TaskStatus::CrossReviewFail,
+        ])
+        .await
     }
 
     /// Get done tasks (done, not archived)

@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ChevronDown, Plus, History, Loader2 } from "lucide-react";
-import { orderBy } from "lodash";
+import { orderBy, groupBy } from "lodash";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -9,11 +9,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import TaskItem from "./TaskItem";
 import { useTasks } from "../hooks/useTasks";
 import { useProjects } from "../hooks/useProjects";
 import { fetchProjectDoneTasks } from "../api/projects";
 import TaskCreateModal from "../modals/TaskCreateModal";
+import {
+  getTaskPhase,
+  getPhaseLabel,
+  isTerminalStatus,
+  type TaskPhase,
+} from "@/lib/taskStatus";
 import type { TaskResponse as Task, Project } from "../api/types";
 
 const DONE_TASKS_PAGE_SIZE = 20;
@@ -32,6 +39,16 @@ interface ProjectGroupProps {
   hasMoreDone: boolean;
   showDone: boolean;
 }
+
+const PHASE_ORDER: TaskPhase[] = ["simple", "plan", "coding", "cross-review", "done"];
+
+const PHASE_COLORS: Record<TaskPhase, string> = {
+  simple: "bg-slate-100",
+  plan: "bg-purple-100",
+  coding: "bg-blue-100",
+  "cross-review": "bg-amber-100",
+  done: "bg-green-100",
+};
 
 function ProjectGroup({
   project,
@@ -55,6 +72,18 @@ function ProjectGroup({
   const sortedDoneTasks = useMemo(
     () => orderBy(doneTasks, ["create_at"], ["desc"]),
     [doneTasks]
+  );
+
+  // Group tasks by phase
+  const tasksByPhase = useMemo(() => {
+    const grouped = groupBy(sortedTasks, (task) => getTaskPhase(task.status));
+    return grouped as Record<TaskPhase, Task[]>;
+  }, [sortedTasks]);
+
+  // Check if we have any agile tasks
+  const hasAgileTasks = useMemo(
+    () => sortedTasks.some((t) => !["backlog", "todo"].includes(t.status)),
+    [sortedTasks]
   );
 
   const handleAddClick = (e: React.MouseEvent) => {
@@ -101,20 +130,67 @@ function ProjectGroup({
 
       {expanded && (
         <div className="mt-1 space-y-1 pl-6">
-          {sortedTasks.map((task) => (
-            <div
-              key={task.id}
-              className={cn(
-                "cursor-pointer rounded-lg transition-colors",
-                selectedTaskId === task.id
-                  ? "bg-teal-50 ring-2 ring-teal-500 ring-inset"
-                  : "hover:bg-slate-50"
-              )}
-              onClick={() => onTaskSelect(task.id)}
-            >
-              <TaskItem {...task} compact />
+          {/* Show phase swimlanes if there are agile tasks */}
+          {hasAgileTasks ? (
+            <div className="space-y-3">
+              {PHASE_ORDER.filter((phase) => phase !== "done").map((phase) => {
+                const phaseTasks = tasksByPhase[phase] || [];
+                if (phaseTasks.length === 0) return null;
+
+                return (
+                  <div key={phase} className="space-y-1">
+                    <div className="flex items-center gap-2 px-2 py-1">
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[10px] font-medium",
+                          PHASE_COLORS[phase]
+                        )}
+                      >
+                        {getPhaseLabel(phase)}
+                      </Badge>
+                      <span className="text-[10px] text-slate-400">
+                        {phaseTasks.length}
+                      </span>
+                    </div>
+                    {phaseTasks.map((task) => (
+                      <div
+                        key={task.id}
+                        className={cn(
+                          "cursor-pointer rounded-lg transition-colors",
+                          selectedTaskId === task.id
+                            ? "bg-teal-50 ring-2 ring-teal-500 ring-inset"
+                            : "hover:bg-slate-50"
+                        )}
+                        onClick={() => onTaskSelect(task.id)}
+                      >
+                        <TaskItem {...task} compact />
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
             </div>
-          ))}
+          ) : (
+            /* Simple list for non-agile tasks */
+            <>
+              {sortedTasks.map((task) => (
+                <div
+                  key={task.id}
+                  className={cn(
+                    "cursor-pointer rounded-lg transition-colors",
+                    selectedTaskId === task.id
+                      ? "bg-teal-50 ring-2 ring-teal-500 ring-inset"
+                      : "hover:bg-slate-50"
+                  )}
+                  onClick={() => onTaskSelect(task.id)}
+                >
+                  <TaskItem {...task} compact />
+                </div>
+              ))}
+            </>
+          )}
+
           {tasks.length === 0 && !showDone && (
             <div className="text-xs text-slate-400 py-2 px-3">No active tasks</div>
           )}
@@ -289,9 +365,9 @@ export default function ProjectTaskList() {
       grouped.set(project.id, []);
     });
 
-    // Group tasks
+    // Group tasks (exclude terminal states and archived)
     tasks
-      .filter((task) => task.status !== "done" && !task.archived)
+      .filter((task) => !isTerminalStatus(task.status) && !task.archived)
       .forEach((task) => {
         const projectId = task.project_id;
         if (projectId) {
@@ -328,6 +404,9 @@ export default function ProjectTaskList() {
     <div className="h-full overflow-y-auto p-4">
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-slate-800">Projects</h2>
+        <p className="text-xs text-slate-500 mt-1">
+          {tasks.filter((t) => !isTerminalStatus(t.status) && !t.archived).length} active tasks
+        </p>
       </div>
 
       <div className="space-y-1">

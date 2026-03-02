@@ -14,12 +14,108 @@ use super::artifact::ArtifactResponse;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Schematic, TextEnum, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum TaskStatus {
+    // Simple flow
     #[default]
     Backlog,
     Todo,
-    InProgress,
-    InReview,
+
+    // Plan phase
+    PlanPending,
+    PlanInProgress,
+    PlanReview,
+    PlanDone,
+
+    // Coding phase
+    CodingPending,
+    CodingInProgress,
+    CodingReview,
+    CodingDone,
+
+    // Cross-review phase
+    CrossReviewPending,
+    CrossReviewInProgress,
+    CrossReviewPass,
+    CrossReviewFail,
+
+    // Terminal state
     Done,
+
+    // Legacy (backward compatible)
+    #[serde(alias = "in-progress")]
+    InProgress,
+    #[serde(alias = "in-review")]
+    InReview,
+}
+
+// ============================================================================
+// Task Phase
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Schematic)]
+#[serde(rename_all = "kebab-case")]
+pub enum TaskPhase {
+    Simple,
+    Plan,
+    Coding,
+    CrossReview,
+    Done,
+}
+
+impl TaskStatus {
+    /// Get the phase this status belongs to
+    pub fn phase(&self) -> TaskPhase {
+        match self {
+            // Simple flow
+            TaskStatus::Backlog | TaskStatus::Todo => TaskPhase::Simple,
+
+            // Plan phase
+            TaskStatus::PlanPending
+            | TaskStatus::PlanInProgress
+            | TaskStatus::PlanReview
+            | TaskStatus::PlanDone => TaskPhase::Plan,
+
+            // Coding phase
+            TaskStatus::CodingPending
+            | TaskStatus::CodingInProgress
+            | TaskStatus::CodingReview
+            | TaskStatus::CodingDone
+            | TaskStatus::InProgress
+            | TaskStatus::InReview => TaskPhase::Coding,
+
+            // Cross-review phase
+            TaskStatus::CrossReviewPending
+            | TaskStatus::CrossReviewInProgress
+            | TaskStatus::CrossReviewPass
+            | TaskStatus::CrossReviewFail => TaskPhase::CrossReview,
+
+            // Done
+            TaskStatus::Done => TaskPhase::Done,
+        }
+    }
+
+    /// Check if this status represents active work (not pending/done)
+    pub fn is_working(&self) -> bool {
+        matches!(
+            self,
+            TaskStatus::PlanInProgress
+                | TaskStatus::PlanReview
+                | TaskStatus::CodingInProgress
+                | TaskStatus::CodingReview
+                | TaskStatus::CrossReviewInProgress
+                | TaskStatus::InProgress
+                | TaskStatus::InReview
+        )
+    }
+
+    /// Check if this is a terminal state
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, TaskStatus::Done | TaskStatus::CrossReviewPass)
+    }
+
+    /// Check if this task uses the agile workflow
+    pub fn is_agile(&self) -> bool {
+        !matches!(self, TaskStatus::Backlog | TaskStatus::Todo | TaskStatus::Done)
+    }
 }
 
 // ============================================================================

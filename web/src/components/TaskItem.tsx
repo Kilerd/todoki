@@ -8,18 +8,32 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import {
+  getTaskPhase,
+  isTerminalStatus,
+  getNextStatus,
+  getStatusLabel,
+  getStatusColorClasses,
+} from "@/lib/taskStatus";
 import dayjs from "dayjs";
 import {
   Archive,
   Bot,
   Check,
+  CheckCircle,
   Clock,
+  Code,
+  FileSearch,
   Inbox,
   Loader2,
   MessageSquare,
   MoreHorizontal,
+  PenLine,
   Play,
+  RefreshCcw,
+  Send,
   Trash2,
+  XCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -59,12 +73,12 @@ export default function TaskItem(props: Props) {
     (dayjs().unix() - dayjs(props.events[0]?.datetime).unix()) / 86400
   );
 
-  const isDone = props.status === "done";
+  const phase = getTaskPhase(props.status);
+  const isDone = isTerminalStatus(props.status);
   const isBacklog = props.status === "backlog";
   const isTodo = props.status === "todo";
-  const isWorking =
-    props.status === "in-progress" || props.status === "in-review";
-  const isActive = isTodo || isWorking;
+  const isActive = !isDone && !isBacklog;
+  const nextStatus = getNextStatus(props.status);
 
   // Compact mode for three-column layout
   if (props.compact) {
@@ -95,14 +109,9 @@ export default function TaskItem(props: Props) {
         </div>
         <Badge
           variant="outline"
-          className={cn(
-            "text-[10px] shrink-0 ml-2",
-            isWorking && "bg-blue-50 text-blue-700 border-blue-200",
-            isTodo && "bg-slate-50 text-slate-600 border-slate-200",
-            isDone && "bg-green-50 text-green-700 border-green-200"
-          )}
+          className={cn("text-[10px] shrink-0 ml-2", getStatusColorClasses(props.status))}
         >
-          {props.status}
+          {getStatusLabel(props.status)}
         </Badge>
       </div>
     );
@@ -168,36 +177,234 @@ export default function TaskItem(props: Props) {
 
       {/* Action buttons - context-aware */}
       <div className="hidden group-hover:flex items-center gap-1 shrink-0">
-        {/* Backlog task: Move to Inbox */}
+        {/* Backlog task: Move to Inbox or Start Agile */}
         {isBacklog && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs text-slate-500 hover:text-teal-600 cursor-pointer"
-            onClick={() => handleStatusChange("todo")}
-            title="Move to Inbox"
-          >
-            <Inbox className="h-3.5 w-3.5 mr-1" />
-            Inbox
-          </Button>
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-slate-500 hover:text-teal-600 cursor-pointer"
+              onClick={() => handleStatusChange("todo")}
+              title="Move to Inbox"
+            >
+              <Inbox className="h-3.5 w-3.5 mr-1" />
+              Inbox
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-slate-500 hover:text-purple-600 cursor-pointer"
+              onClick={() => handleStatusChange("plan-pending")}
+              title="Start agile workflow"
+            >
+              <PenLine className="h-3.5 w-3.5 mr-1" />
+              Agile
+            </Button>
+          </>
         )}
 
-        {/* Todo task: Start working */}
+        {/* Todo task: Start simple or Start Agile */}
         {isTodo && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs text-slate-500 hover:text-amber-600 cursor-pointer"
-            onClick={() => handleStatusChange("in-progress")}
-            title="Start working"
-          >
-            <Play className="h-3.5 w-3.5 mr-1" />
-            Start
-          </Button>
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-slate-500 hover:text-amber-600 cursor-pointer"
+              onClick={() => handleStatusChange("in-progress")}
+              title="Start working (simple)"
+            >
+              <Play className="h-3.5 w-3.5 mr-1" />
+              Start
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-slate-500 hover:text-purple-600 cursor-pointer"
+              onClick={() => handleStatusChange("plan-pending")}
+              title="Start agile workflow"
+            >
+              <PenLine className="h-3.5 w-3.5 mr-1" />
+              Agile
+            </Button>
+          </>
+        )}
+
+        {/* Plan phase actions */}
+        {phase === "plan" && (
+          <>
+            {props.status === "plan-pending" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-slate-500 hover:text-purple-600 cursor-pointer"
+                onClick={() => handleStatusChange("plan-in-progress")}
+                title="Start planning"
+              >
+                <PenLine className="h-3.5 w-3.5 mr-1" />
+                Plan
+              </Button>
+            )}
+            {props.status === "plan-in-progress" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-slate-500 hover:text-purple-600 cursor-pointer"
+                onClick={() => handleStatusChange("plan-review")}
+                title="Submit for review"
+              >
+                <Send className="h-3.5 w-3.5 mr-1" />
+                Review
+              </Button>
+            )}
+            {props.status === "plan-review" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-slate-500 hover:text-green-600 cursor-pointer"
+                onClick={() => handleStatusChange("plan-done")}
+                title="Approve plan"
+              >
+                <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                Approve
+              </Button>
+            )}
+            {props.status === "plan-done" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-slate-500 hover:text-blue-600 cursor-pointer"
+                onClick={() => handleStatusChange("coding-pending")}
+                title="Start coding phase"
+              >
+                <Code className="h-3.5 w-3.5 mr-1" />
+                Coding
+              </Button>
+            )}
+          </>
+        )}
+
+        {/* Coding phase actions */}
+        {phase === "coding" && (
+          <>
+            {(props.status === "coding-pending" || props.status === "in-progress") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-slate-500 hover:text-blue-600 cursor-pointer"
+                onClick={() => handleStatusChange("coding-in-progress")}
+                title="Start coding"
+              >
+                <Code className="h-3.5 w-3.5 mr-1" />
+                Code
+              </Button>
+            )}
+            {props.status === "coding-in-progress" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-slate-500 hover:text-blue-600 cursor-pointer"
+                onClick={() => handleStatusChange("coding-review")}
+                title="Submit PR"
+              >
+                <Send className="h-3.5 w-3.5 mr-1" />
+                PR
+              </Button>
+            )}
+            {(props.status === "coding-review" || props.status === "in-review") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-slate-500 hover:text-green-600 cursor-pointer"
+                onClick={() => handleStatusChange("coding-done")}
+                title="Merge PR"
+              >
+                <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                Merge
+              </Button>
+            )}
+            {props.status === "coding-done" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-slate-500 hover:text-amber-600 cursor-pointer"
+                onClick={() => handleStatusChange("cross-review-pending")}
+                title="Request cross review"
+              >
+                <FileSearch className="h-3.5 w-3.5 mr-1" />
+                Cross Review
+              </Button>
+            )}
+          </>
+        )}
+
+        {/* Cross-review phase actions */}
+        {phase === "cross-review" && (
+          <>
+            {props.status === "cross-review-pending" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-slate-500 hover:text-amber-600 cursor-pointer"
+                onClick={() => handleStatusChange("cross-review-in-progress")}
+                title="Start review"
+              >
+                <FileSearch className="h-3.5 w-3.5 mr-1" />
+                Review
+              </Button>
+            )}
+            {props.status === "cross-review-in-progress" && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-slate-500 hover:text-green-600 cursor-pointer"
+                  onClick={() => handleStatusChange("cross-review-pass")}
+                  title="Pass review"
+                >
+                  <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                  Pass
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-slate-500 hover:text-red-600 cursor-pointer"
+                  onClick={() => handleStatusChange("cross-review-fail")}
+                  title="Fail review"
+                >
+                  <XCircle className="h-3.5 w-3.5 mr-1" />
+                  Fail
+                </Button>
+              </>
+            )}
+            {props.status === "cross-review-pass" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-slate-500 hover:text-teal-600 cursor-pointer"
+                onClick={() => handleStatusChange("done")}
+                title="Complete task"
+              >
+                <Check className="h-3.5 w-3.5 mr-1" />
+                Done
+              </Button>
+            )}
+            {props.status === "cross-review-fail" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-slate-500 hover:text-blue-600 cursor-pointer"
+                onClick={() => handleStatusChange("coding-pending")}
+                title="Return to coding"
+              >
+                <RefreshCcw className="h-3.5 w-3.5 mr-1" />
+                Rework
+              </Button>
+            )}
+          </>
         )}
 
         {/* Active task: Execute with agent */}
-        {isActive && (
+        {isActive && !isDone && (
           <Button
             variant="ghost"
             size="sm"
@@ -210,8 +417,8 @@ export default function TaskItem(props: Props) {
           </Button>
         )}
 
-        {/* Active task: Mark as done */}
-        {isActive && (
+        {/* Simple flow: Quick done */}
+        {(isTodo || props.status === "in-progress" || props.status === "in-review") && (
           <Button
             variant="ghost"
             size="sm"
@@ -250,8 +457,18 @@ export default function TaskItem(props: Props) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {/* Move forward to next status */}
+            {nextStatus && !isDone && (
+              <DropdownMenuItem
+                onClick={() => handleStatusChange(nextStatus)}
+                className="cursor-pointer"
+              >
+                <Play className="h-4 w-4 mr-2" />
+                {getStatusLabel(nextStatus)}
+              </DropdownMenuItem>
+            )}
             {/* Active task: Move to Later */}
-            {isActive && (
+            {isActive && !isDone && (
               <DropdownMenuItem
                 onClick={() => handleStatusChange("backlog")}
                 className="cursor-pointer"
