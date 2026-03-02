@@ -97,10 +97,10 @@ function ProjectGroup({
   };
 
   return (
-    <div className="mb-4">
+    <div className="mb-5">
       <div
         className={cn(
-          "flex items-center gap-2 px-3 py-2 cursor-pointer select-none rounded-lg hover:bg-slate-50 transition-colors group",
+          "flex items-center gap-2.5 px-3 py-2.5 cursor-pointer select-none rounded-lg hover:bg-slate-50 transition-colors group",
           expanded && "bg-slate-50"
         )}
         onClick={onToggle}
@@ -112,44 +112,44 @@ function ProjectGroup({
           )}
         />
         <div
-          className="w-2 h-2 rounded-full"
+          className="w-2.5 h-2.5 rounded-full"
           style={{ backgroundColor: project.color || "#94a3b8" }}
         />
         <span className="text-sm font-medium text-slate-700 flex-1">
           {project.name}
         </span>
-        <span className="text-xs text-slate-400">{tasks.length}</span>
+        <span className="text-xs text-slate-500 font-medium">{tasks.length}</span>
         <button
-          className="h-5 w-5 flex items-center justify-center rounded text-slate-400 hover:text-slate-600 hover:bg-slate-200 opacity-0 group-hover:opacity-100 transition-opacity"
+          className="h-6 w-6 flex items-center justify-center rounded text-slate-400 hover:text-slate-600 hover:bg-slate-200 opacity-0 group-hover:opacity-100 transition-opacity"
           onClick={handleAddClick}
           title="Add task"
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus className="h-4 w-4" />
         </button>
       </div>
 
       {expanded && (
-        <div className="mt-1 space-y-1 pl-6">
+        <div className="mt-2 space-y-1.5 pl-5">
           {/* Show phase swimlanes if there are agile tasks */}
           {hasAgileTasks ? (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {PHASE_ORDER.filter((phase) => phase !== "done").map((phase) => {
                 const phaseTasks = tasksByPhase[phase] || [];
                 if (phaseTasks.length === 0) return null;
 
                 return (
-                  <div key={phase} className="space-y-1">
-                    <div className="flex items-center gap-2 px-2 py-1">
+                  <div key={phase} className="space-y-1.5">
+                    <div className="flex items-center gap-2 px-2 py-1.5">
                       <Badge
                         variant="outline"
                         className={cn(
-                          "text-[10px] font-medium",
+                          "text-xs font-medium px-2 py-0.5",
                           PHASE_COLORS[phase]
                         )}
                       >
                         {getPhaseLabel(phase)}
                       </Badge>
-                      <span className="text-[10px] text-slate-400">
+                      <span className="text-xs text-slate-500 font-medium">
                         {phaseTasks.length}
                       </span>
                     </div>
@@ -192,37 +192,39 @@ function ProjectGroup({
           )}
 
           {tasks.length === 0 && !showDone && (
-            <div className="text-xs text-slate-400 py-2 px-3">No active tasks</div>
+            <div className="text-xs text-slate-400 py-3 px-3">No active tasks</div>
           )}
 
           {/* Done tasks section */}
           {showDone && sortedDoneTasks.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-slate-100">
-              <div className="text-xs text-slate-400 px-3 pb-2 flex items-center gap-1.5">
-                <History className="h-3 w-3" />
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <div className="text-xs text-slate-500 font-medium px-3 pb-2 flex items-center gap-2">
+                <History className="h-3.5 w-3.5" />
                 Completed ({doneTasks.length})
               </div>
-              {sortedDoneTasks.map((task) => (
-                <div
-                  key={task.id}
-                  className={cn(
-                    "cursor-pointer rounded-lg transition-colors opacity-60",
-                    selectedTaskId === task.id
-                      ? "bg-teal-50 ring-2 ring-teal-500 ring-inset opacity-100"
-                      : "hover:bg-slate-50 hover:opacity-80"
-                  )}
-                  onClick={() => onTaskSelect(task.id)}
-                >
-                  <TaskItem {...task} compact />
-                </div>
-              ))}
+              <div className="space-y-1">
+                {sortedDoneTasks.map((task) => (
+                  <div
+                    key={task.id}
+                    className={cn(
+                      "cursor-pointer rounded-lg transition-colors opacity-60",
+                      selectedTaskId === task.id
+                        ? "bg-teal-50 ring-2 ring-teal-500 ring-inset opacity-100"
+                        : "hover:bg-slate-50 hover:opacity-80"
+                    )}
+                    onClick={() => onTaskSelect(task.id)}
+                  >
+                    <TaskItem {...task} compact />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
           {/* Load more button */}
           <button
             className={cn(
-              "w-full text-xs text-slate-400 hover:text-slate-600 py-2 px-3 text-left hover:bg-slate-50 rounded-lg transition-colors flex items-center gap-1.5",
+              "w-full text-xs text-slate-500 hover:text-slate-700 py-2.5 px-3 mt-2 text-left hover:bg-slate-50 rounded-lg transition-colors flex items-center gap-2 font-medium",
               isLoadingDone && "cursor-not-allowed"
             )}
             onClick={handleLoadDoneClick}
@@ -230,12 +232,12 @@ function ProjectGroup({
           >
             {isLoadingDone ? (
               <>
-                <Loader2 className="h-3 w-3 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Loading...
               </>
             ) : hasMoreDone || !showDone ? (
               <>
-                <History className="h-3 w-3" />
+                <History className="h-3.5 w-3.5" />
                 {showDone ? "Load more completed" : "Load completed tasks"}
               </>
             ) : doneTasks.length > 0 ? (
@@ -402,14 +404,14 @@ export default function ProjectTaskList() {
 
   return (
     <div className="h-full overflow-y-auto p-4">
-      <div className="mb-4">
+      <div className="mb-6">
         <h2 className="text-lg font-semibold text-slate-800">Projects</h2>
-        <p className="text-xs text-slate-500 mt-1">
+        <p className="text-xs text-slate-500 mt-1.5">
           {tasks.filter((t) => !isTerminalStatus(t.status) && !t.archived).length} active tasks
         </p>
       </div>
 
-      <div className="space-y-1">
+      <div className="space-y-2">
         {sortedProjects.map((project) => {
           const projectTasks = tasksByProject.get(project.id) || [];
           const projectDoneTasks = doneTasks.get(project.id) || [];
