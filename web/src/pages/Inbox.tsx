@@ -1,29 +1,21 @@
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   Sheet,
   SheetContent,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { ChevronLeft, ChevronRight, FileText, Menu, PanelRightClose, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Menu, PanelRightClose } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import ProjectTaskList from "../components/ProjectTaskList";
 import TaskDetailPanel from "../components/TaskDetailPanel";
 import ArtifactPreview from "../components/ArtifactPreview";
-import TaskCreateModal from "../modals/TaskCreateModal";
 import { useEventStream, type Event } from "../hooks/useEventStream";
 import { queryEvents, type EventBusEvent } from "../api/eventBus";
 
 function Inbox() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedTaskId = searchParams.get("task");
-  const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
 
   // Responsive layout states
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false); // PC only
@@ -247,32 +239,6 @@ function Inbox() {
           </SheetContent>
         </Sheet>
       </div>
-
-      {/* Floating Action Button */}
-      <Button
-        className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg hover:shadow-xl transition-shadow"
-        onClick={() => setShowTaskCreateModal(true)}
-        title="Create new task"
-      >
-        <Plus className="h-6 w-6" />
-      </Button>
-
-      {/* Task Create Modal */}
-      <Dialog
-        open={showTaskCreateModal}
-        onOpenChange={setShowTaskCreateModal}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create New Task</DialogTitle>
-          </DialogHeader>
-          <TaskCreateModal
-            open={showTaskCreateModal}
-            onOpenChange={setShowTaskCreateModal}
-            onSuccess={() => setShowTaskCreateModal(false)}
-          />
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

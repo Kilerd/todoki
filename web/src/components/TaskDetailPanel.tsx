@@ -11,9 +11,11 @@ import {
   RotateCcw,
   Trash2,
   Inbox as InboxIcon,
+  Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { ConversationView } from "./chat";
 import type { Event } from "@/hooks/useEventStream";
 import {
@@ -24,7 +26,8 @@ import {
   deleteTask,
 } from "../hooks/useTasks";
 import { useProjects } from "../hooks/useProjects";
-import { executeTask, fetchTask } from "../api/tasks";
+import { executeTask, fetchTask, fetchTaskExecution } from "../api/tasks";
+import { emitEvent } from "../api/eventBus";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import type { TaskStatus, TaskResponse } from "../api/types";
@@ -47,6 +50,8 @@ export default function TaskDetailPanel({
   const { toast } = useToast();
   const [isExecuting, setIsExecuting] = useState(false);
   const [fetchedTask, setFetchedTask] = useState<TaskResponse | null>(null);
+  const [humanInput, setHumanInput] = useState("");
+  const [isSendingInput, setIsSendingInput] = useState(false);
 
   // First try to find task in inbox tasks
   const inboxTask = useMemo(
@@ -118,6 +123,40 @@ export default function TaskDetailPanel({
       });
     } finally {
       setIsExecuting(false);
+    }
+  };
+
+  const handleSendInput = async () => {
+    if (!selectedTaskId || !humanInput.trim()) return;
+    setIsSendingInput(true);
+    try {
+      // Get execution info (relay_id, session_id)
+      const { data: execInfo } = await fetchTaskExecution({ task_id: selectedTaskId });
+
+      // Send input via event bus
+      await emitEvent({
+        agent_id: "00000000-0000-0000-0000-000000000001",
+        kind: "relay.input_requested",
+        data: {
+          relay_id: execInfo.relay_id,
+          session_id: execInfo.session_id,
+          input: humanInput + "\n",
+        },
+      });
+
+      setHumanInput("");
+      toast({
+        title: "Input sent",
+        description: "Your message was sent to the agent",
+      });
+    } catch (e) {
+      toast({
+        title: "Failed to send input",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSendingInput(false);
     }
   };
 
@@ -314,6 +353,36 @@ export default function TaskDetailPanel({
           autoScroll
           className="flex-1"
         />
+
+        {/* Human Input - only show when agent is running */}
+        {task.agent?.status === "running" && (
+          <div className="p-3 border-t border-slate-200 bg-slate-50">
+            <div className="flex gap-2">
+              <Textarea
+                value={humanInput}
+                onChange={(e) => setHumanInput(e.target.value)}
+                placeholder="Send guidance to the agent..."
+                className="min-h-[60px] max-h-[120px] resize-none bg-white"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    handleSendInput();
+                  }
+                }}
+              />
+              <Button
+                onClick={handleSendInput}
+                disabled={isSendingInput || !humanInput.trim()}
+                className="self-end"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-slate-400 mt-1.5">
+              Press Cmd+Enter to send
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

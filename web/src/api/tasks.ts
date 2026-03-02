@@ -14,4 +14,5 @@ export const archiveTask = fetcher.path("/api/tasks/{task_id}/archive").method("
 export const unarchiveTask = fetcher.path("/api/tasks/{task_id}/unarchive").method("post").create();
 export const addComment = fetcher.path("/api/tasks/{task_id}/comments").method("post").create();
 export const executeTask = fetcher.path("/api/tasks/{task_id}/execute").method("post").create();
+export const fetchTaskExecution = fetcher.path("/api/tasks/{task_id}/execution").method("get").create();
 export const fetchReport = fetcher.path("/api/report").method("get").create();

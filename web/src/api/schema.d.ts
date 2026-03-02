@@ -626,6 +626,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{task_id}/execution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Task Execution
+         * @description GET /api/tasks/:task_id/execution - Get current execution info (session_id, relay_id)
+         */
+        get: operations["get_task_execution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{task_id}/status": {
         parameters: {
             query?: never;
@@ -3220,6 +3240,31 @@ export interface operations {
                             /** @enum {string} */
                             status: "running" | "completed" | "failed" | "cancelled";
                         };
+                    };
+                };
+            };
+        };
+    };
+    get_task_execution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description default return */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        relay_id: string;
+                        session_id: string;
                     };
                 };
             };

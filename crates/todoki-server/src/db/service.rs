@@ -863,6 +863,37 @@ impl DatabaseService {
         }))
     }
 
+    /// Get running session for an agent (if any)
+    pub async fn get_agent_running_session(&self, agent_id: Uuid) -> crate::Result<Option<AgentSession>> {
+        let conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        let row = conn
+            .query_opt(
+                r#"
+                SELECT id, agent_id, status, started_at, ended_at
+                FROM agent_sessions
+                WHERE agent_id = $1 AND status = 'running'
+                ORDER BY started_at DESC
+                LIMIT 1
+                "#,
+                &[&agent_id],
+            )
+            .await
+            .map_err(|e| crate::TodokiError::Database(e))?;
+
+        Ok(row.map(|r| AgentSession {
+            id: r.get("id"),
+            agent_id: r.get("agent_id"),
+            status: r.get::<_, SqlTypeWrapper<SessionStatus>>("status").0,
+            started_at: r.get("started_at"),
+            ended_at: r.get("ended_at"),
+        }))
+    }
+
     /// Get sessions for an agent
     pub async fn get_agent_sessions(&self, agent_id: Uuid) -> crate::Result<Vec<AgentSession>> {
         let conn = self

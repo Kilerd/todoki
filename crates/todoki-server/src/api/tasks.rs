@@ -250,6 +250,12 @@ pub struct ExecuteTaskResponse {
     pub session: AgentSessionResponse,
 }
 
+#[derive(Debug, Serialize, Schematic)]
+pub struct TaskExecutionInfo {
+    pub session_id: String,
+    pub relay_id: String,
+}
+
 /// Default execution template
 const DEFAULT_TEMPLATE: &str = r#"# Task Execution
 
@@ -458,5 +464,44 @@ pub async fn execute_task(
     Ok(Json(ExecuteTaskResponse {
         agent: AgentResponse::from(agent),
         session: AgentSessionResponse::from(session),
+    }))
+}
+
+/// GET /api/tasks/:task_id/execution - Get current execution info (session_id, relay_id)
+#[gotcha::api]
+pub async fn get_task_execution(
+    Extension(auth): Extension<AuthContext>,
+    State(db): State<Db>,
+    State(relays): State<Relays>,
+    Path(task_id): Path<Uuid>,
+) -> Result<Json<TaskExecutionInfo>, ApiError> {
+    auth.require_auth().map_err(|_| ApiError::unauthorized())?;
+
+    // 1. Get task
+    let task = db
+        .get_task_by_id(task_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("task not found"))?;
+
+    // 2. Check if task has an agent assigned
+    let agent_id = task
+        .agent_id
+        .ok_or_else(|| ApiError::not_found("task has no agent assigned"))?;
+
+    // 3. Get running session for the agent
+    let session = db
+        .get_agent_running_session(agent_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("no running session for this task"))?;
+
+    // 4. Get relay_id from RelayManager
+    let relay_id = relays
+        .get_relay_for_session(&session.id.to_string())
+        .await
+        .ok_or_else(|| ApiError::not_found("relay not found for session"))?;
+
+    Ok(Json(TaskExecutionInfo {
+        session_id: session.id.to_string(),
+        relay_id,
     }))
 }

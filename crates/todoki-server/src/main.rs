@@ -284,6 +284,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .delete("/api/tasks/:task_id", tasks::delete_task)
         .post("/api/tasks/:task_id/comments", tasks::add_comment)
         .post("/api/tasks/:task_id/execute", tasks::execute_task)
+        .get("/api/tasks/:task_id/execution", tasks::get_task_execution)
         // Project routes
         .get("/api/projects", projects::list_projects)
         .post("/api/projects", projects::create_project)
