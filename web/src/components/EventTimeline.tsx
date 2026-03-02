@@ -230,9 +230,14 @@ function OutputBatchContent({ data }: { data: OutputBatchData }) {
 
     if (uniqueTools.size === 0) return null;
 
+    const toolList = Array.from(uniqueTools.values());
+    const completedTools = toolList.filter(tool => tool.status === "completed");
+    const activeTools = toolList.filter(tool => tool.status !== "completed");
+
     return (
       <div className="mt-2 space-y-2">
-        {Array.from(uniqueTools.values()).map((tool) => (
+        {/* Show active tools individually */}
+        {activeTools.map((tool) => (
           <div key={tool.id} className="flex items-start gap-2">
             {streamIcon}
             <div className="flex-1">
@@ -244,11 +249,9 @@ function OutputBatchContent({ data }: { data: OutputBatchData }) {
                   variant="outline"
                   className={cn(
                     "text-[10px] h-4",
-                    tool.status === "completed"
-                      ? "text-green-600 border-green-300"
-                      : tool.status === "error"
-                        ? "text-red-600 border-red-300"
-                        : "text-slate-500 border-slate-300"
+                    tool.status === "error"
+                      ? "text-red-600 border-red-300"
+                      : "text-slate-500 border-slate-300"
                   )}
                 >
                   {tool.status}
@@ -264,6 +267,26 @@ function OutputBatchContent({ data }: { data: OutputBatchData }) {
             </div>
           </div>
         ))}
+
+        {/* Aggregate completed tools */}
+        {completedTools.length > 0 && (
+          <details className="text-xs">
+            <summary className="flex items-center gap-2 cursor-pointer hover:text-slate-800 text-green-600">
+              <CheckCircle2 className="h-3 w-3" />
+              <span>
+                {completedTools.length} completed tool call{completedTools.length > 1 ? "s" : ""}
+              </span>
+            </summary>
+            <div className="mt-1 pl-5 space-y-1">
+              {completedTools.map((tool) => (
+                <div key={tool.id} className="flex items-center gap-2 text-[10px] text-slate-600">
+                  <CheckCircle2 className="h-3 w-3 text-green-500" />
+                  <span>{tool.title || tool.kind}</span>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
       </div>
     );
   }
