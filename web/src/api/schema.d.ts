@@ -1732,6 +1732,17 @@ export interface operations {
                     };
                     /** @enum {string} */
                     kind: "system.relay_disconnected";
+                } | {
+                    /**
+                     * @description Data for human.message event - a human user sends a message to a task conversation.
+                     *     This allows communication with PM or other agents even when no relay is running.
+                     */
+                    data: {
+                        /** @description The message content from the human user. */
+                        content: string;
+                    };
+                    /** @enum {string} */
+                    kind: "human.message";
                 }) | {
                     /**
                      * Format: json

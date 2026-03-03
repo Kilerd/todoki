@@ -153,7 +153,7 @@ export default function TaskDetailPanel({
           kind: "human.message",
           data: {
             content: humanInput,
-          } as any, // Type assertion needed until OpenAPI schema is updated
+          },
         });
       }
 
