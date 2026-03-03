@@ -86,6 +86,9 @@ impl EventKind {
     // System
     pub const SYSTEM_RELAY_CONNECTED: &str = "system.relay_connected";
     pub const SYSTEM_RELAY_DISCONNECTED: &str = "system.relay_disconnected";
+
+    // Human interaction
+    pub const HUMAN_MESSAGE: &str = "human.message";
 }
 
 // ============================================================================
@@ -639,6 +642,20 @@ pub struct SystemRelayConnectionData {
 }
 
 // ============================================================================
+// Human Interaction Data Structures
+// ============================================================================
+// Events from human users interacting with tasks (e.g., sending messages to PM).
+
+/// Data for human.message event - a human user sends a message to a task conversation.
+/// This allows communication with PM or other agents even when no relay is running.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schematic", derive(Schematic))]
+pub struct HumanMessageData {
+    /// The message content from the human user.
+    pub content: String,
+}
+
+// ============================================================================
 // Permission Event Data (for permission.requested/responded)
 // ============================================================================
 // These are higher-level permission events after relay routing has been resolved.
@@ -689,6 +706,7 @@ pub struct PermissionRespondedData {
 /// - **Permission events**: Permission request/response flow
 /// - **Relay events**: Relay-to-server communication (output forwarding, status, commands)
 /// - **System events**: Infrastructure events (relay connections)
+/// - **Human events**: Human user interactions (messages to tasks/PM)
 ///
 /// The enum is serialized with `#[serde(tag = "kind", content = "data")]`,
 /// producing JSON like: `{"kind": "task.created", "data": {...}}`
@@ -807,6 +825,10 @@ pub enum BuiltinEvent {
     SystemRelayConnected(SystemRelayConnectionData),
     #[serde(rename = "system.relay_disconnected")]
     SystemRelayDisconnected(SystemRelayConnectionData),
+
+    // Human interaction events
+    #[serde(rename = "human.message")]
+    HumanMessage(HumanMessageData),
 }
 
 // ============================================================================

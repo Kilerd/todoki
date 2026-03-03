@@ -58,11 +58,15 @@ interface PermissionState {
   outcome?: { selected?: { option_id: string }; cancelled?: boolean };
 }
 
+interface HumanMessageData {
+  content: string;
+}
+
 interface ParsedMessage {
   id: string;
   cursor: number;
   timestamp: number;
-  stream: OutputBatchData["stream"] | "permission";
+  stream: OutputBatchData["stream"] | "permission" | "human";
   sessionId: string;
   agentId: string;
   taskId?: string | null;
@@ -72,6 +76,7 @@ interface ParsedMessage {
   toolCalls?: ToolCallData[];
   systemData?: SystemMessageData[];
   permissionData?: PermissionState;
+  humanData?: HumanMessageData;
 }
 
 export function ConversationView({
@@ -186,6 +191,22 @@ export function ConversationView({
 
       // Skip permission.responded - merged into permission.requested above
       if (event.kind === "permission.responded") continue;
+
+      // Handle human.message events
+      if (event.kind === "human.message") {
+        const data = event.data as unknown as HumanMessageData;
+        result.push({
+          id: `${event.cursor}-human`,
+          cursor: event.cursor,
+          timestamp: new Date(event.time).getTime() * 1000000,
+          stream: "human",
+          sessionId: event.session_id || "",
+          agentId: event.agent_id,
+          taskId: event.task_id,
+          humanData: data,
+        });
+        continue;
+      }
 
       if (event.kind !== "agent.output_batch") continue;
 
@@ -361,6 +382,17 @@ export function ConversationView({
                   outcome={msg.permissionData?.outcome}
                   timestamp={msg.timestamp}
                 />
+              );
+
+            case "human":
+              return (
+                <div key={msg.id} className="py-3">
+                  <div className="flex justify-end">
+                    <div className="max-w-[80%] bg-blue-500 text-white rounded-lg px-3 py-2">
+                      <p className="text-sm whitespace-pre-wrap">{msg.humanData?.content}</p>
+                    </div>
+                  </div>
+                </div>
               );
 
             default:

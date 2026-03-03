@@ -1,9 +1,10 @@
 use super::types::Event;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use conservator::{Executor, PooledConnection};
+use conservator::{Creatable, Domain, Executor, PooledConnection};
 use std::sync::Arc;
+use tracing::error;
 use uuid::Uuid;
 
 /// Event Store trait for persistence
@@ -44,29 +45,27 @@ impl PgEventStore {
 #[async_trait]
 impl EventStore for PgEventStore {
     async fn append(&self, event: &mut Event) -> Result<i64> {
-        let conn = self.pool.get().await?;
+        let create_event = event.to_create();
+        let cursor = create_event
+            .insert::<Event>()
+            .returning_pk(&*self.pool)
+            .await
+            .map_err(|e| {
+                error!(
+                    error = %e,
+                    kind = %event.kind,
+                    agent_id = %event.agent_id,
+                    task_id = ?event.task_id,
+                    "Failed to insert event into database"
+                );
+                e
+            })
+            .context(format!(
+                "Failed to insert event kind={} agent_id={} task_id={:?}",
+                event.kind, event.agent_id, event.task_id
+            ))?;
 
-        let row = conn
-            .query_one(
-                r#"
-                INSERT INTO events (kind, time, agent_id, session_id, task_id, data)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                RETURNING cursor
-                "#,
-                &[
-                    &event.kind,
-                    &event.time,
-                    &event.agent_id,
-                    &event.session_id,
-                    &event.task_id,
-                    &event.data,
-                ],
-            )
-            .await?;
-
-        let cursor: i64 = row.get("cursor");
         event.cursor = cursor;
-
         Ok(cursor)
     }
 
@@ -79,6 +78,8 @@ impl EventStore for PgEventStore {
         task_id: Option<Uuid>,
         limit: Option<usize>,
     ) -> Result<Vec<Event>> {
+        // For complex queries with wildcard kinds, use raw SQL
+        // This is more efficient and supports LIKE patterns
         let conn = self.pool.get().await?;
         let limit_i64 = limit.unwrap_or(1000).min(10000) as i64;
 
@@ -134,23 +135,19 @@ impl EventStore for PgEventStore {
 
     async fn latest_cursor(&self) -> Result<i64> {
         let conn = self.pool.get().await?;
-
         let row = conn
             .query_one("SELECT COALESCE(MAX(cursor), 0) as cursor FROM events", &[])
             .await?;
-
         let cursor: i64 = row.get("cursor");
         Ok(cursor)
     }
 
     async fn prune_before(&self, before: DateTime<Utc>) -> Result<u64> {
-        let conn = self.pool.get().await?;
-
-        let result = conn
-            .execute("DELETE FROM events WHERE time < $1", &[&before])
+        let deleted = Event::delete()
+            .filter(Event::COLUMNS.time.lt(before))
+            .execute(&*self.pool)
             .await?;
-
-        Ok(result)
+        Ok(deleted)
     }
 }
 

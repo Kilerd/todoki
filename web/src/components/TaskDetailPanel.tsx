@@ -130,28 +130,43 @@ export default function TaskDetailPanel({
     if (!selectedTaskId || !humanInput.trim()) return;
     setIsSendingInput(true);
     try {
-      // Get execution info (relay_id, session_id)
-      const { data: execInfo } = await fetchTaskExecution({ task_id: selectedTaskId });
+      // If agent is running, send to relay; otherwise send as human message
+      if (task?.agent?.status === "running") {
+        // Get execution info (relay_id, session_id)
+        const { data: execInfo } = await fetchTaskExecution({ task_id: selectedTaskId });
 
-      // Send input via event bus
-      await emitEvent({
-        agent_id: "00000000-0000-0000-0000-000000000001",
-        kind: "relay.input_requested",
-        data: {
-          relay_id: execInfo.relay_id,
-          session_id: execInfo.session_id,
-          input: humanInput + "\n",
-        },
-      });
+        // Send input via event bus to relay
+        await emitEvent({
+          agent_id: "00000000-0000-0000-0000-000000000001",
+          kind: "relay.input_requested",
+          data: {
+            relay_id: execInfo.relay_id,
+            session_id: execInfo.session_id,
+            input: humanInput + "\n",
+          },
+        });
+      } else {
+        // Send as human message for PM or other listeners
+        await emitEvent({
+          agent_id: "00000000-0000-0000-0000-000000000001",
+          task_id: selectedTaskId,
+          kind: "human.message",
+          data: {
+            content: humanInput,
+          },
+        });
+      }
 
       setHumanInput("");
       toast({
-        title: "Input sent",
-        description: "Your message was sent to the agent",
+        title: "Message sent",
+        description: task?.agent?.status === "running"
+          ? "Your message was sent to the agent"
+          : "Your message was posted to the conversation",
       });
     } catch (e) {
       toast({
-        title: "Failed to send input",
+        title: "Failed to send message",
         description: e instanceof Error ? e.message : "Unknown error",
         variant: "destructive",
       });
@@ -354,35 +369,37 @@ export default function TaskDetailPanel({
           className="flex-1"
         />
 
-        {/* Human Input - only show when agent is running */}
-        {task.agent?.status === "running" && (
-          <div className="p-3 border-t border-slate-200 bg-slate-50">
-            <div className="flex gap-2">
-              <Textarea
-                value={humanInput}
-                onChange={(e) => setHumanInput(e.target.value)}
-                placeholder="Send guidance to the agent..."
-                className="min-h-[60px] max-h-[120px] resize-none bg-white"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                    e.preventDefault();
-                    handleSendInput();
-                  }
-                }}
-              />
-              <Button
-                onClick={handleSendInput}
-                disabled={isSendingInput || !humanInput.trim()}
-                className="self-end"
-              >
-                <Send className="h-4 w-4" />
-              </Button>
-            </div>
-            <p className="text-xs text-slate-400 mt-1.5">
-              Press Cmd+Enter to send
-            </p>
+        {/* Human Input - always available for conversation with PM or agent */}
+        <div className="p-3 border-t border-slate-200 bg-slate-50">
+          <div className="flex gap-2">
+            <Textarea
+              value={humanInput}
+              onChange={(e) => setHumanInput(e.target.value)}
+              placeholder={
+                task.agent?.status === "running"
+                  ? "Send guidance to the agent..."
+                  : "Send a message..."
+              }
+              className="min-h-[60px] max-h-[120px] resize-none bg-white"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  handleSendInput();
+                }
+              }}
+            />
+            <Button
+              onClick={handleSendInput}
+              disabled={isSendingInput || !humanInput.trim()}
+              className="self-end"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
           </div>
-        )}
+          <p className="text-xs text-slate-400 mt-1.5">
+            Press Cmd+Enter to send
+          </p>
+        </div>
       </div>
     </div>
   );

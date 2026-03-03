@@ -212,6 +212,9 @@ pub mod kinds {
     // System
     pub const RELAY_CONNECTED: &str = "system.relay_connected";
     pub const RELAY_DISCONNECTED: &str = "system.relay_disconnected";
+
+    // Human interaction
+    pub const HUMAN_MESSAGE: &str = "human.message";
 }
 ```
 
@@ -249,6 +252,20 @@ pub mod kinds {
       {"subtask": "Implement fix", "assignee": "coding-agent"},
       {"subtask": "Run tests", "assignee": "qa-agent"}
     ]
+  }
+}
+```
+
+```json
+{
+  "cursor": 12360,
+  "kind": "human.message",
+  "time": "2026-02-27T10:35:00Z",
+  "agent_id": "00000000-0000-0000-0000-000000000001",
+  "session_id": null,
+  "task_id": "a1b2c3d4-...",
+  "data": {
+    "content": "Please prioritize the login flow bug fix"
   }
 }
 ```

@@ -106,6 +106,12 @@ Backlog → Todo → Done
 | `artifact.github_pr_opened` | Coding | 创建 GitHub PR |
 | `artifact.github_pr_merged` | Coding→CrossReview | PR 合并 |
 
+### 人类交互事件
+
+| Event Kind | 适用阶段 | 说明 |
+|------------|---------|------|
+| `human.message` | 任意 | 人类用户向任务对话发送消息，用于与 PM 或其他 Agent 沟通（即使没有 Relay 运行） |
+
 ---
 
 ## 状态-事件关联矩阵
@@ -273,6 +279,7 @@ cross-review-in-progress
 - `task.failed` - 失败处理
 - `agent.qa_test_passed` / `agent.qa_test_failed` - QA 结果
 - `permission.requested` - 权限请求
+- `human.message` - 人类用户的消息输入
 
 ### Coding Agent 应订阅
 

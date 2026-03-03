@@ -175,7 +175,11 @@ pub async fn emit_event(
     let cursor = publisher
         .emit(event)
         .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+        .map_err(|e| {
+            // Include full error chain for debugging
+            let error_chain: Vec<String> = e.chain().map(|e| e.to_string()).collect();
+            ApiError::internal(error_chain.join(": "))
+        })?;
 
     Ok(Json(cursor))
 }

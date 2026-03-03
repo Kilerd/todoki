@@ -25,7 +25,7 @@ function Inbox() {
 
   // Event stream for all task-related events
   const { events, isConnected, isReplaying } = useEventStream({
-    kinds: ["agent.output_batch", "permission.*", "artifact.*"],
+    kinds: ["agent.output_batch", "permission.*", "artifact.*", "human.message"],
     taskId: selectedTaskId || undefined,
   });
 
@@ -45,7 +45,7 @@ function Inbox() {
       try {
         const response = await queryEvents({
           cursor: 0,
-          kinds: "agent.output_batch,permission.*,artifact.*",
+          kinds: "agent.output_batch,permission.*,artifact.*,human.message",
           task_id: selectedTaskId,
           limit: 500,
         });
