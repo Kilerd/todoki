@@ -83,33 +83,33 @@ export default function TaskItem(props: Props) {
   // Compact mode for three-column layout
   if (props.compact) {
     return (
-      <div className="flex items-center justify-between py-2 px-3 group">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
+      <div className="flex items-center justify-between py-2.5 px-3 group">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
           {isLoading && (
             <Loader2 className="h-4 w-4 animate-spin text-slate-400 shrink-0" />
           )}
-          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             {props.priority > 0 && (
-              <span className="text-red-500 font-medium text-xs shrink-0">
+              <span className="text-red-500 font-medium text-sm shrink-0">
                 {"!".repeat(props.priority)}
               </span>
             )}
             <span
               className={cn(
-                "text-sm text-slate-700 truncate",
+                "text-sm text-slate-700 line-clamp-1",
                 isDone || props.archived ? "line-through text-slate-400" : ""
               )}
             >
               {props.content}
             </span>
             {props.comments.length > 0 && (
-              <MessageSquare className="h-3 w-3 text-slate-400 shrink-0" />
+              <MessageSquare className="h-3.5 w-3.5 text-slate-400 shrink-0" />
             )}
           </div>
         </div>
         <Badge
           variant="outline"
-          className={cn("text-[10px] shrink-0 ml-2", getStatusColorClasses(props.status))}
+          className={cn("text-xs shrink-0 ml-2", getStatusColorClasses(props.status))}
         >
           {getStatusLabel(props.status)}
         </Badge>
