@@ -1,10 +1,15 @@
 import { NavLink } from "react-router-dom";
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
+import { FolderKanban } from "lucide-react";
 import { useTasks, useBacklogTasks } from "../hooks/useTasks";
+import { ProjectManageModal } from "../modals/ProjectManageModal";
+import { useState } from "react";
 
 function NavBar() {
   const { tasks } = useTasks();
   const { tasks: laterTasks } = useBacklogTasks();
+  const [showProjectManageModal, setShowProjectManageModal] = useState(false);
 
   const todoTasksNumber = tasks.filter(
     (item) => item.archived === false && item.status === "todo"
@@ -84,8 +89,22 @@ function NavBar() {
             Events
           </NavLink>
         </div>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setShowProjectManageModal(true)}
+          title="Manage Projects"
+        >
+          <FolderKanban className="h-5 w-5" />
+        </Button>
       </div>
       <Separator />
+
+      <ProjectManageModal
+        open={showProjectManageModal}
+        onOpenChange={setShowProjectManageModal}
+      />
     </>
   );
 }
