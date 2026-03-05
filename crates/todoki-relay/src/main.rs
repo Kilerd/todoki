@@ -5,12 +5,11 @@ use tracing_subscriber::EnvFilter;
 use todoki_relay::config::{DaemonArgs, RelayConfig};
 use todoki_relay::relay::Relay;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     // Parse daemon args first (before full config load)
     let daemon_args = DaemonArgs::parse_daemon_args();
 
-    // Daemonize if requested (must be done before logging init)
+    // Daemonize before Tokio runtime init. Forking after runtime start can break I/O.
     if daemon_args.daemonize {
         let stdout = File::create(&daemon_args.log_file)?;
         let stderr = stdout.try_clone()?;
@@ -22,6 +21,14 @@ async fn main() -> anyhow::Result<()> {
             .stderr(stderr)
             .start()?;
     }
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    rt.block_on(async_main())
+}
+
+async fn async_main() -> anyhow::Result<()> {
 
     // Initialize logging
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
