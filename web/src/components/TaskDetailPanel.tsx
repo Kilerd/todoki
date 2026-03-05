@@ -2,8 +2,6 @@ import { useMemo, useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   X,
-  Calendar,
-  Tag,
   Clock,
   Play,
   Check,
@@ -185,80 +183,67 @@ export default function TaskDetailPanel({
 
   return (
     <div className="h-full flex flex-col bg-white">
-      {/* Header */}
-      <div className="flex items-start justify-between p-4 border-b border-slate-200">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2">
-            {task.priority > 0 && (
-              <span className="text-red-500 font-medium text-sm">
-                {"!".repeat(task.priority)}
-              </span>
-            )}
-            <Badge
-              variant="outline"
-              className={
-                task.status === "in-progress"
-                  ? "bg-blue-50 text-blue-700 border-blue-200"
-                  : task.status === "in-review"
-                  ? "bg-purple-50 text-purple-700 border-purple-200"
-                  : "bg-slate-50 text-slate-700 border-slate-200"
-              }
-            >
-              {task.status}
-            </Badge>
-          </div>
-          <h2 className="text-lg font-semibold text-slate-800 break-words">
+      {/* Compact Header with Metadata */}
+      <div className="flex items-center gap-2 p-2 border-b border-slate-200 flex-wrap">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          {task.priority > 0 && (
+            <span className="text-red-500 font-medium text-xs">
+              {"!".repeat(task.priority)}
+            </span>
+          )}
+          <Badge
+            variant="outline"
+            className={
+              task.status === "in-progress"
+                ? "bg-blue-50 text-blue-700 border-blue-200 text-xs"
+                : task.status === "in-review"
+                ? "bg-purple-50 text-purple-700 border-purple-200 text-xs"
+                : "bg-slate-50 text-slate-700 border-slate-200 text-xs"
+            }
+          >
+            {task.status}
+          </Badge>
+          <h2 className="text-sm font-semibold text-slate-800 truncate flex-1">
             {task.content}
           </h2>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          {project && (
+            <div className="flex items-center gap-1">
+              <div
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ backgroundColor: project.color || "#94a3b8" }}
+              />
+              <span className="font-medium">{project.name}</span>
+            </div>
+          )}
+          {task.create_at && (
+            <span className="hidden sm:inline">
+              {format(new Date(task.create_at), "MMM d")}
+            </span>
+          )}
         </div>
         <Button
           variant="ghost"
           size="icon"
           onClick={handleClose}
-          className="flex-shrink-0 ml-2"
+          className="flex-shrink-0 h-6 w-6"
         >
-          <X className="h-4 w-4" />
+          <X className="h-3 w-3" />
         </Button>
       </div>
 
-      {/* Metadata */}
-      <div className="p-4 border-b border-slate-100 space-y-3">
-        {project && (
-          <div className="flex items-center gap-2 text-sm">
-            <Tag className="h-4 w-4 text-slate-400" />
-            <span className="text-slate-600">Project:</span>
-            <div className="flex items-center gap-1.5">
-              <div
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: project.color || "#94a3b8" }}
-              />
-              <span className="font-medium text-slate-700">{project.name}</span>
-            </div>
-          </div>
-        )}
-
-        {task.create_at && (
-          <div className="flex items-center gap-2 text-sm">
-            <Calendar className="h-4 w-4 text-slate-400" />
-            <span className="text-slate-600">Created:</span>
-            <span className="text-slate-700">
-              {format(new Date(task.create_at), "MMM d, yyyy 'at' h:mm a")}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="flex flex-wrap items-center gap-2 p-4 border-b border-slate-100">
+      {/* Compact Actions */}
+      <div className="flex flex-wrap items-center gap-1.5 px-2 py-1.5 border-b border-slate-100">
         {task.status === "backlog" && !task.archived && (
           <Button
             variant="outline"
             size="sm"
             onClick={() => handleStatusChange("todo")}
-            className="cursor-pointer"
+            className="cursor-pointer h-7 text-xs"
           >
-            <InboxIcon className="h-4 w-4 mr-1.5" />
-            Move to Inbox
+            <InboxIcon className="h-3 w-3 mr-1" />
+            Inbox
           </Button>
         )}
 
@@ -269,17 +254,17 @@ export default function TaskDetailPanel({
                 variant="outline"
                 size="sm"
                 onClick={() => handleStatusChange("backlog")}
-                className="cursor-pointer"
+                className="cursor-pointer h-7 text-xs"
               >
-                <Clock className="h-4 w-4 mr-1.5" />
+                <Clock className="h-3 w-3 mr-1" />
                 Later
               </Button>
               <Button
                 size="sm"
                 onClick={() => handleStatusChange("done")}
-                className="bg-teal-600 hover:bg-teal-700 cursor-pointer"
+                className="bg-teal-600 hover:bg-teal-700 cursor-pointer h-7 text-xs"
               >
-                <Check className="h-4 w-4 mr-1.5" />
+                <Check className="h-3 w-3 mr-1" />
                 Done
               </Button>
               {(!task.agent || task.agent.status !== "running") && (
@@ -288,10 +273,10 @@ export default function TaskDetailPanel({
                   size="sm"
                   onClick={handleExecute}
                   disabled={isExecuting}
-                  className="cursor-pointer"
+                  className="cursor-pointer h-7 text-xs"
                 >
-                  <Play className="h-4 w-4 mr-1.5" />
-                  {isExecuting ? "Starting..." : "Execute on Relay"}
+                  <Play className="h-3 w-3 mr-1" />
+                  {isExecuting ? "Starting..." : "Execute"}
                 </Button>
               )}
             </>
@@ -303,18 +288,18 @@ export default function TaskDetailPanel({
               variant="outline"
               size="sm"
               onClick={() => handleStatusChange("todo")}
-              className="cursor-pointer"
+              className="cursor-pointer h-7 text-xs"
             >
-              <RotateCcw className="h-4 w-4 mr-1.5" />
+              <RotateCcw className="h-3 w-3 mr-1" />
               Reopen
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={handleArchive}
-              className="cursor-pointer"
+              className="cursor-pointer h-7 text-xs"
             >
-              <Archive className="h-4 w-4 mr-1.5" />
+              <Archive className="h-3 w-3 mr-1" />
               Archive
             </Button>
           </>
@@ -325,9 +310,9 @@ export default function TaskDetailPanel({
             variant="outline"
             size="sm"
             onClick={handleUnarchive}
-            className="cursor-pointer"
+            className="cursor-pointer h-7 text-xs"
           >
-            <RotateCcw className="h-4 w-4 mr-1.5" />
+            <RotateCcw className="h-3 w-3 mr-1" />
             Restore
           </Button>
         )}
@@ -336,31 +321,25 @@ export default function TaskDetailPanel({
           variant="ghost"
           size="sm"
           onClick={handleDelete}
-          className="text-red-500 hover:text-red-600 hover:bg-red-50 ml-auto cursor-pointer"
+          className="text-red-500 hover:text-red-600 hover:bg-red-50 cursor-pointer h-7 text-xs"
         >
-          <Trash2 className="h-4 w-4 mr-1.5" />
+          <Trash2 className="h-3 w-3 mr-1" />
           Delete
         </Button>
+
+        {/* Live Status Indicator */}
+        <div className="flex items-center gap-1.5 ml-auto">
+          <div
+            className={`w-1.5 h-1.5 rounded-full ${isConnected ? "bg-green-500" : "bg-slate-300"}`}
+          />
+          <span className="text-xs text-slate-500">
+            {isConnected ? "Live" : "Offline"}
+          </span>
+        </div>
       </div>
 
       {/* Conversation View */}
       <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-700">Conversation</h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Agent activity and messages
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <div
-              className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-500" : "bg-slate-300"}`}
-            />
-            <span className="text-xs text-slate-500">
-              {isConnected ? "Live" : "Offline"}
-            </span>
-          </div>
-        </div>
         <ConversationView
           events={events}
           isConnected={isConnected}
@@ -370,7 +349,7 @@ export default function TaskDetailPanel({
         />
 
         {/* Human Input - always available for conversation with PM or agent */}
-        <div className="p-3 border-t border-slate-200 bg-slate-50">
+        <div className="p-2 border-t border-slate-200 bg-slate-50">
           <div className="flex gap-2">
             <Textarea
               value={humanInput}
@@ -380,7 +359,7 @@ export default function TaskDetailPanel({
                   ? "Send guidance to the agent..."
                   : "Send a message..."
               }
-              className="min-h-[60px] max-h-[120px] resize-none bg-white"
+              className="min-h-[48px] max-h-[96px] resize-none bg-white text-sm"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
@@ -391,13 +370,14 @@ export default function TaskDetailPanel({
             <Button
               onClick={handleSendInput}
               disabled={isSendingInput || !humanInput.trim()}
-              className="self-end"
+              size="sm"
+              className="self-end h-8"
             >
-              <Send className="h-4 w-4" />
+              <Send className="h-3 w-3" />
             </Button>
           </div>
-          <p className="text-xs text-slate-400 mt-1.5">
-            Press Cmd+Enter to send
+          <p className="text-xs text-slate-400 mt-1">
+            Cmd+Enter to send
           </p>
         </div>
       </div>
